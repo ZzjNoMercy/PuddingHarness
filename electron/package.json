@@ -5,14 +5,18 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "../scripts/start-electron-dev.sh",
+    "dev": "electron .",
     "build": "electron-builder",
     "build:dir": "electron-builder --dir",
-    "build:dmg": "electron-builder --mac dmg --arm64"
+    "build:dmg": "electron-builder --mac dmg --arm64",
+    "verify:runtime": "node ../packages/puddingclaw-deploy-cli/scripts/verify-publish.mjs",
+    "prebuild": "npm run verify:runtime",
+    "prebuild:dir": "npm run verify:runtime",
+    "prebuild:dmg": "npm run verify:runtime"
   },
   "build": {
-    "appId": "com.puddingclaw.app",
-    "productName": "PuddingClaw",
+    "appId": "com.puddingai.puddingharness",
+    "productName": "PuddingHarness",
     "forceCodeSigning": true,
     "directories": {
       "output": "../dist-electron"
@@ -26,11 +30,6 @@
     ],
     "extraResources": [
       {
-        "from": "../frontend/.next-build/standalone",
-        "to": "frontend/.next-build/standalone",
-        "filter": ["**/*", "!**/.env", "!**/.env.*"]
-      },
-      {
         "from": "../backend",
         "to": "backend",
         "filter": [
@@ -40,24 +39,26 @@
           "capabilities.py",
           "config.py",
           "provider_registry.py",
-          "config.json",
-          "higress_config_reader.py",
-          "logging.yaml",
-          ".env.example",
+          "*.py",
           "api/**/*",
+          "connectors/**/*",
+          "evaluation/**/*",
           "graph/**/*",
-          "knowledge/**/*",
+          "harness/**/*",
           "llm/**/*",
           "mcp_clients/**/*",
           "memory/**/*",
+          "projects/**/*",
           "prompts/**/*",
+          "runtime_identity/**/*",
+          "services/**/*",
           "sessions/**/*",
           "skills/**/*",
           "storage/**/*",
           "tools/**/*",
           "utils/**/*",
+          "web_search/**/*",
           "workspace/**/*",
-          "data/**/*",
           "!**/__pycache__/**",
           "!**/*.pyc",
           "!**/.DS_Store"
@@ -66,15 +67,6 @@
       {
         "from": "../README.md",
         "to": "README.md"
-      },
-      {
-        "from": "../docker-compose.infra.yml",
-        "to": "docker-compose.infra.yml"
-      },
-      {
-        "from": "../data/higress",
-        "to": "data/higress",
-        "filter": ["**/*"]
       },
       {
         "from": "../packages/puddingclaw-deploy-cli",
@@ -95,7 +87,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "category": "public.app-category.developer-tools",
@@ -110,7 +104,9 @@
       "notarize": true
     },
     "asar": true,
-    "asarUnpack": ["managers/**/*.js"]
+    "asarUnpack": [
+      "managers/**/*.js"
+    ]
   },
   "devDependencies": {
     "electron": "^31.0.0",

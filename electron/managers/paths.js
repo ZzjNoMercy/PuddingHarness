@@ -16,16 +16,12 @@ function getBackendDir() {
 }
 
 function getFrontendStandaloneDir() {
+  if (app.isPackaged) return path.join(process.resourcesPath, 'cli', 'runtime-bundle', 'web');
   return path.join(getRepoRoot(), 'frontend', '.next-build', 'standalone');
-}
-
-function getInfraComposePath() {
-  return path.join(getRepoRoot(), 'docker-compose.infra.yml');
 }
 
 module.exports = {
   getRepoRoot,
   getBackendDir,
   getFrontendStandaloneDir,
-  getInfraComposePath,
 };

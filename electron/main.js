@@ -2,18 +2,21 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const backendManager = require('./managers/backend');
-const dockerManager = require('./managers/docker');
 const cliManager = require('./managers/cli');
 const { getFrontendStandaloneDir } = require('./managers/paths');
+const { assertPortAvailable } = require('./managers/port-guard');
 
 let mainWindow;
 let frontendProcess = null;
-const FRONTEND_PORT = 3000;
 
 function getFrontendUrl() {
-  const isDev = !app.isPackaged;
-  const port = isDev ? (process.env.FRONTEND_DEV_PORT || '3000') : String(FRONTEND_PORT);
+  const port = getFrontendPort();
   return `http://localhost:${port}/app-control`;
+}
+
+function getFrontendPort() {
+  if (!app.isPackaged) return Number(process.env.FRONTEND_DEV_PORT || '3000');
+  return cliManager.getConfiguredPorts().frontendPort;
 }
 
 async function startFrontendServer() {
@@ -26,23 +29,32 @@ async function startFrontendServer() {
   const standaloneDir = getFrontendStandaloneDir();
   const serverJs = path.join(standaloneDir, 'server.js');
   const fs = require('fs');
+  const frontendPort = getFrontendPort();
+  const backendPort = cliManager.getConfiguredPorts().backendPort;
 
   if (!fs.existsSync(serverJs)) {
     throw new Error(`未找到 frontend standalone server: ${serverJs}`);
   }
 
-  // 清理可能残留的 3000 端口
-  require('child_process').execSync('lsof -ti:3000 | xargs kill 2>/dev/null || true');
+  // A listener may belong to another Harness instance or an unrelated app.
+  // Never kill by port; fail closed unless this process owns the listener.
+  await assertPortAvailable(frontendPort, 'frontend');
 
   frontendProcess = spawn(process.execPath, ['server.js'], {
     cwd: standaloneDir,
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
-      PORT: String(FRONTEND_PORT),
-      BACKEND_INTERNAL_URL: 'http://localhost:8888',
+      PORT: String(frontendPort),
+      BACKEND_INTERNAL_URL: `http://localhost:${backendPort}`,
     },
     stdio: 'pipe',
+  });
+
+  let frontendSpawnError = null;
+  frontendProcess.once('error', (error) => {
+    frontendSpawnError = error;
+    frontendProcess = null;
   });
 
   frontendProcess.stdout.on('data', (data) => {
@@ -57,8 +69,11 @@ async function startFrontendServer() {
   const http = require('http');
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 1000));
+    if (frontendSpawnError) {
+      throw new Error(`frontend server 启动失败: ${frontendSpawnError.message}`);
+    }
     const ready = await new Promise((resolve) => {
-      const req = http.get(`http://localhost:${FRONTEND_PORT}/app-control`, { timeout: 2000 }, (res) => {
+      const req = http.get(`http://localhost:${frontendPort}/app-control`, { timeout: 2000 }, (res) => {
         resolve(res.statusCode === 200);
       });
       req.on('error', () => resolve(false));
@@ -120,7 +135,6 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     backendManager.stopBackend();
-    dockerManager.stopInfra();
     if (frontendProcess) frontendProcess.kill();
     app.quit();
   }
@@ -132,7 +146,6 @@ app.on('activate', () => {
 
 app.on('before-quit', async () => {
   await backendManager.stopBackend();
-  await dockerManager.stopInfra();
   if (frontendProcess) frontendProcess.kill();
 });
 
@@ -142,40 +155,6 @@ ipcMain.handle('select-project-folder', async () => {
     properties: ['openDirectory'],
     title: '选择项目文件夹',
     buttonLabel: '选择',
-  });
-
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-
-  return result.filePaths[0];
-});
-
-// IPC: 选择本地 Markdown 知识库文件
-ipcMain.handle('select-knowledge-file', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile'],
-    title: '选择 Markdown 知识库文件',
-    buttonLabel: '导入',
-    filters: [
-      { name: 'Markdown', extensions: ['md', 'markdown'] },
-      { name: 'All Files', extensions: ['*'] },
-    ],
-  });
-
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-
-  return result.filePaths[0];
-});
-
-// IPC: 选择本地知识库目录
-ipcMain.handle('select-knowledge-folder', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory', 'createDirectory'],
-    title: '选择知识库目录',
-    buttonLabel: '设为知识库',
   });
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -206,27 +185,6 @@ ipcMain.handle('get-backend-status', async () => {
   return backendManager.getStatus();
 });
 
-// IPC: Docker infra 管理
-ipcMain.handle('start-infra', async () => {
-  const result = await dockerManager.startInfra();
-  if (mainWindow) {
-    mainWindow.webContents.send('infra-status-change', await dockerManager.checkInfraStatus());
-  }
-  return result;
-});
-
-ipcMain.handle('stop-infra', async () => {
-  const result = await dockerManager.stopInfra();
-  if (mainWindow) {
-    mainWindow.webContents.send('infra-status-change', await dockerManager.checkInfraStatus());
-  }
-  return result;
-});
-
-ipcMain.handle('get-infra-status', async () => {
-  return dockerManager.checkInfraStatus();
-});
-
 // IPC: 首次启动模式选择与 CLI 依赖探测
 ipcMain.handle('get-onboarding-state', async () => cliManager.getOnboardingState());
 
@@ -255,10 +213,4 @@ setInterval(async () => {
     console.error('backend status update error:', err);
   }
 
-  try {
-    const infraStatus = await dockerManager.checkInfraStatus();
-    mainWindow.webContents.send('infra-status-change', infraStatus);
-  } catch (err) {
-    console.error('infra status update error:', err);
-  }
 }, 3000);

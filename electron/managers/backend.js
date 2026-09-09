@@ -3,26 +3,29 @@ const http = require('http');
 const { app } = require('electron');
 const { getBackendDir } = require('./paths');
 const cliManager = require('./cli');
+const { isPortOccupied } = require('./port-guard');
 
 const BACKEND_DIR = getBackendDir();
-const BACKEND_PORT = 8888;
-const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}/api/capabilities`;
 
 let backendProcess = null;
 let backendStatus = 'stopped'; // stopped | starting | running | error
 let backendError = null;
 
-function getBackendCommand() {
+function getBackendPort() {
+  return cliManager.getConfiguredPorts().backendPort;
+}
+
+function getBackendCommand(port) {
   const isDev = !app.isPackaged;
 
   if (isDev) {
     return {
       cmd: 'uv',
       args: [
-        'run', '--all-extras', '--group', 'dev', '--group', 'deepagents-test',
+        'run', '--locked', '--group', 'dev',
         'python', '-m', 'uvicorn', 'app:app',
-        '--host', '0.0.0.0',
-        '--port', String(BACKEND_PORT),
+        '--host', '127.0.0.1',
+        '--port', String(port),
         '--reload',
         // Provider registry and other shared backend modules live at the
         // backend root, not only beneath API/graph/tool folders.
@@ -31,7 +34,6 @@ function getBackendCommand() {
         '--reload-exclude', '__pycache__',
         '--reload-include', '*.py',
         '--log-level', 'info',
-        '--log-config', '../logging.yaml',
       ],
       cwd: BACKEND_DIR,
     };
@@ -43,9 +45,10 @@ function getBackendCommand() {
   return prepared;
 }
 
-async function checkBackendStatus() {
+async function checkBackendStatus(port = getBackendPort()) {
+  const backendUrl = `http://127.0.0.1:${port}/api/capabilities`;
   return new Promise((resolve) => {
-    const req = http.get(BACKEND_URL, { timeout: 2000 }, (res) => {
+    const req = http.get(backendUrl, { timeout: 2000 }, (res) => {
       resolve(res.statusCode === 200 ? 'running' : 'error');
     });
     req.on('error', () => resolve('stopped'));
@@ -57,10 +60,24 @@ async function checkBackendStatus() {
 }
 
 async function startBackend() {
-  const current = await checkBackendStatus();
+  const port = getBackendPort();
+  const current = await checkBackendStatus(port);
   if (current === 'running') {
+    if (!backendProcess) {
+      backendStatus = 'error';
+      backendError = `backend port ${port} is already in use by an unmanaged process; refusing to reuse it`;
+      return { status: 'error', message: backendError };
+    }
     backendStatus = 'running';
     return { status: 'running', message: 'backend 已经在运行' };
+  }
+
+  // A non-Harness listener may not expose /api/capabilities. Check the port
+  // itself before spawning so uvicorn cannot race with or mask that conflict.
+  if (await isPortOccupied(port)) {
+    backendStatus = 'error';
+    backendError = `backend port ${port} is already in use by an unmanaged process; refusing to terminate or reuse it`;
+    return { status: 'error', message: backendError };
   }
 
   if (backendProcess) {
@@ -74,24 +91,21 @@ async function startBackend() {
     const isDev = !app.isPackaged;
     if (!isDev) await cliManager.ensurePreparedRuntime();
 
-    const { cmd, args, cwd } = getBackendCommand();
+    const { cmd, args, cwd } = getBackendCommand(port);
 
-    const selectedProfile = cliManager.readSelectedProfile();
+    const environment = {
+      ...process.env,
+      // Backend credentials and Provider Registry are user-local, never
+      // stored in the packaged repository. Electron owns the cross-platform
+      // userData path (including Windows APPDATA handling).
+      PUDDINGHARNESS_HOME: cliManager.getPuddingHarnessHome(),
+      VIRTUAL_ENV: '',
+    };
+    delete environment.PUDDINGCLAW_HOME;
+
     backendProcess = spawn(cmd, args, {
       cwd,
-      env: {
-        ...process.env,
-        // Backend credentials and Provider Registry are user-local, never
-        // stored in the packaged repository. Electron owns the cross-platform
-        // userData path (including Windows APPDATA handling).
-        PUDDINGCLAW_HOME: cliManager.getPuddingClawHome(),
-        ...(selectedProfile ? {
-          PUDDINGCLAW_PROFILE: selectedProfile.profile,
-          PUDDINGCLAW_EXTENSIONS: JSON.stringify(selectedProfile.extensions),
-        } : {}),
-        MINERU_URL: process.env.MINERU_URL || 'http://localhost:8002',
-        VIRTUAL_ENV: '',
-      },
+      env: environment,
       stdio: 'pipe',
     });
 
@@ -120,7 +134,7 @@ async function startBackend() {
     // 等待 backend ready
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 1000));
-      const status = await checkBackendStatus();
+      const status = await checkBackendStatus(port);
       if (status === 'running') {
         backendStatus = 'running';
         return { status: 'running', message: 'backend 启动成功' };
@@ -161,7 +175,7 @@ function getStatus() {
   return {
     status: backendStatus,
     error: backendError,
-    url: `http://127.0.0.1:${BACKEND_PORT}`,
+    url: `http://127.0.0.1:${getBackendPort()}`,
   };
 }
 
@@ -169,5 +183,6 @@ module.exports = {
   startBackend,
   stopBackend,
   checkBackendStatus,
+  getBackendCommand,
   getStatus,
 };
