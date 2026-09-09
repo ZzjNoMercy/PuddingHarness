@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1",
-  "id": "puddingclaw",
-  "name": "PuddingClaw",
-  "description": "企业数据分析、NL2SQL、知识查询和指标归因 Worker",
+  "id": "puddingharness",
+  "name": "Pudding Harness",
+  "description": "通用 Agent Harness Worker",
   "kind": "agent-worker",
   "protocolVersion": "1",
   "transport": {
@@ -11,13 +11,7 @@
     "input": "stdin-json",
     "output": "stdout-json"
   },
-  "capabilities": ["data.query", "data.analysis", "data.nl2sql", "knowledge.query"],
-  "modelRouting": {
-    "strategy": "backend",
-    "input": "message",
-    "discoveryCommand": ["agent", "models", "list", "--json"],
-    "ambiguityOutcome": "analytics_model_clarification_required"
-  },
+  "capabilities": ["agent.run", "agent.continue", "agent.respond", "agent.cancel", "hitl.permission"],
   "commands": {
     "probe": ["doctor", "--json"],
     "capabilities": ["agent", "capabilities", "--json"],

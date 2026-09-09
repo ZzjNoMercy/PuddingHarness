@@ -6,7 +6,7 @@ import { CliError } from "./errors.js";
 import { resolveExecutablePath } from "./probes.js";
 
 export const BUNDLED_POSTGRES_IMAGE = "pgvector/pgvector:pg16";
-export const BUNDLED_POSTGRES_CONTAINER = "puddingclaw-postgres";
+export const BUNDLED_POSTGRES_CONTAINER = "puddingharness-postgres";
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -231,8 +231,8 @@ async function installPgvector(installer, database, run) {
 export async function installNativePostgres({
   installer = nativePostgresInstaller(),
   requirePgvector = false,
-  database = "puddingclaw",
-  username = "puddingclaw",
+  database = "puddingharness",
+  username = "puddingharness",
   password = "",
   run = runProcess,
   wait = delay,
@@ -285,14 +285,14 @@ export function bundledPostgresRunArgs({
   home,
   password,
   port = 5432,
-  database = "puddingclaw",
-  username = "puddingclaw",
+  database = "puddingharness",
+  username = "puddingharness",
 }) {
   return [
     "run", "--detach",
     "--name", BUNDLED_POSTGRES_CONTAINER,
-    "--label", "io.puddingclaw.managed=postgresql",
-    "--label", `io.puddingclaw.home=${home}`,
+    "--label", "io.puddingharness.managed=postgresql",
+    "--label", `io.puddingharness.home=${home}`,
     "--restart", "unless-stopped",
     "--publish", `127.0.0.1:${port}:5432`,
     "--env", `POSTGRES_DB=${database}`,
@@ -313,8 +313,8 @@ function inspectedEnvironment(inspected) {
 export async function installDockerPostgres({
   home,
   port = 5432,
-  database = "puddingclaw",
-  username = "puddingclaw",
+  database = "puddingharness",
+  username = "puddingharness",
   password = "",
   requirePgvector = false,
   run = runProcess,
@@ -355,7 +355,7 @@ export async function installDockerPostgres({
       throw new CliError("无法识别现有 PostgreSQL 容器", { code: "postgres_container_invalid" });
     }
     const labels = inspected?.Config?.Labels || {};
-    if (labels["io.puddingclaw.managed"] !== "postgresql" || labels["io.puddingclaw.home"] !== home) {
+    if (labels["io.puddingharness.managed"] !== "postgresql" || labels["io.puddingharness.home"] !== home) {
       throw new CliError(
         `容器 ${BUNDLED_POSTGRES_CONTAINER} 已存在但不属于当前 Home；不会接管或删除它`,
         { code: "postgres_container_conflict", exitCode: 1 },

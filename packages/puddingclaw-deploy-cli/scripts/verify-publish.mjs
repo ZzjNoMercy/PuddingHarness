@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import { verifyRuntimeBundle } from "../src/runtime-bundle.js";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const repositoryRoot = path.resolve(packageRoot, "../..");
 const execFileAsync = promisify(execFile);
 
 async function main() {
@@ -42,7 +41,6 @@ async function main() {
   } catch (error) {
     failures.push(`CLI version assertion failed: ${error.message}`);
   }
-  try { await fs.access(path.join(repositoryRoot, "LICENSE")); } catch { failures.push("root LICENSE is missing"); }
   const runtimeRoot = path.join(packageRoot, "runtime-bundle");
   let manifest;
   try {

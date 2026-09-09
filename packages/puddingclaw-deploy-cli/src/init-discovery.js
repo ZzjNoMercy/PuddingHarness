@@ -79,7 +79,7 @@ export function multimodalProviderPreset(selected) {
 }
 
 export async function discoverInitialProvider({ flags, nonInteractive }) {
-  const configuredByFlags = flags.provider || flags.api_key || process.env.PUDDINGCLAW_INIT_API_KEY;
+  const configuredByFlags = flags.provider || flags.api_key || process.env.PUDDINGHARNESS_INIT_API_KEY;
   if (nonInteractive && !configuredByFlags) {
     return { provider: { status: "unconfigured" }, apiKey: "", probe: { status: "skipped" } };
   }
@@ -123,12 +123,12 @@ export async function discoverInitialProvider({ flags, nonInteractive }) {
     }
   }
 
-  const apiKey = String(flags.api_key || process.env.PUDDINGCLAW_INIT_API_KEY || (
+  const apiKey = String(flags.api_key || process.env.PUDDINGHARNESS_INIT_API_KEY || (
     nonInteractive ? "" : await secretQuestion(`${provider.name} API Key`)
   )).trim();
   if (!apiKey) {
     if (nonInteractive) {
-      throw new CliError("provider API key is required; use PUDDINGCLAW_INIT_API_KEY", {
+      throw new CliError("provider API key is required; use PUDDINGHARNESS_INIT_API_KEY", {
         code: "provider_key_required",
       });
     }
@@ -157,7 +157,7 @@ export async function discoverInitialMultimodalProvider({
   const requested = String(flags.multimodal_provider || "").trim().toLowerCase();
   const configuredByFlags = requested
     || flags.multimodal_api_key
-    || process.env.PUDDINGCLAW_INIT_MULTIMODAL_API_KEY;
+    || process.env.PUDDINGHARNESS_INIT_MULTIMODAL_API_KEY;
   if (nonInteractive && !configuredByFlags) {
     return {
       provider: { status: "unconfigured" },
@@ -248,13 +248,13 @@ export async function discoverInitialMultimodalProvider({
     reusePrimaryCredential
       ? primaryDiscovery?.apiKey || ""
       : flags.multimodal_api_key
-        || process.env.PUDDINGCLAW_INIT_MULTIMODAL_API_KEY
+        || process.env.PUDDINGHARNESS_INIT_MULTIMODAL_API_KEY
         || (nonInteractive ? "" : await secretQuestion(`${provider.name} 多模态 API Key`)),
   ).trim();
   if (!apiKey) {
     if (nonInteractive) {
       throw new CliError(
-        "multimodal provider API key is required; use PUDDINGCLAW_INIT_MULTIMODAL_API_KEY",
+        "multimodal provider API key is required; use PUDDINGHARNESS_INIT_MULTIMODAL_API_KEY",
         { code: "multimodal_provider_key_required" },
       );
     }
@@ -343,8 +343,8 @@ async function promptInstalledDatabase({ docker = false, defaults = {}, allowedO
       });
     }
   }
-  const database = await question("数据库名", defaults.database || "puddingclaw");
-  const username = await question("用户名", defaults.username || "puddingclaw");
+  const database = await question("数据库名", defaults.database || "puddingharness");
+  const username = await question("用户名", defaults.username || "puddingharness");
   const password = await secretQuestion("密码（留空则安全随机生成）");
   return { port, database, username, password };
 }
@@ -439,7 +439,7 @@ async function externalPostgres({
 async function promptExistingPostgres({ configuredUrl, nonInteractive, probes, source, label }) {
   const rawUrl = configuredUrl || await secretQuestion(`${label} URL（postgresql+asyncpg://...）`);
   const metadata = safeDatabaseMetadata(rawUrl);
-  const database = await question("数据库名", metadata.database || "puddingclaw");
+  const database = await question("数据库名", metadata.database || "puddingharness");
   const targetUrl = databaseUrlWithName(rawUrl, database);
   const createDatabaseIfMissing = await confirmCreateMissingDatabase();
   return externalPostgres({
@@ -464,7 +464,7 @@ export async function discoverCoreDatabase({
   const probes = [];
   const explicitMode = String(flags.database_mode || "").trim().toLowerCase();
   const explicitlyConfiguredUrl = String(
-    flags.database_url || process.env.PUDDINGCLAW_INIT_DATABASE_URL || "",
+    flags.database_url || process.env.PUDDINGHARNESS_INIT_DATABASE_URL || "",
   ).trim();
   const configuredUrl = String(
     explicitlyConfiguredUrl
@@ -472,7 +472,7 @@ export async function discoverCoreDatabase({
       || "",
   ).trim();
 
-  // `puddingclaw init` has a zero-config SQLite path. It must not prompt for,
+  // `puddingharness init` has a zero-config SQLite path. It must not prompt for,
   // probe, install or validate PostgreSQL unless the user explicitly passed a
   // database option. `puddingclaw database configure` keeps the interactive
   // selector by leaving promptWhenUnspecified enabled.
@@ -505,10 +505,10 @@ export async function discoverCoreDatabase({
     if (explicitMode === "native") {
       try {
         const installed = await installNativePostgres({
-          requirePgvector: profile === "knowledge" || profile === "full",
-          database: flags.database_name || "puddingclaw",
-          username: flags.database_username || "puddingclaw",
-          password: process.env.PUDDINGCLAW_INIT_DATABASE_PASSWORD || "",
+          requirePgvector: false,
+          database: flags.database_name || "puddingharness",
+          username: flags.database_username || "puddingharness",
+          password: process.env.PUDDINGHARNESS_INIT_DATABASE_PASSWORD || "",
         });
         return { catalog: installed.catalog, databaseUrl: installed.databaseUrl, probes: [...probes, installed.probe] };
       } catch (error) {
@@ -521,11 +521,11 @@ export async function discoverCoreDatabase({
       try {
         const installed = await installDockerPostgres({
           home,
-          requirePgvector: profile === "knowledge" || profile === "full",
+          requirePgvector: false,
           port: flags.database_port || 5432,
-          database: flags.database_name || "puddingclaw",
-          username: flags.database_username || "puddingclaw",
-          password: process.env.PUDDINGCLAW_INIT_DATABASE_PASSWORD || "",
+          database: flags.database_name || "puddingharness",
+          username: flags.database_username || "puddingharness",
+          password: process.env.PUDDINGHARNESS_INIT_DATABASE_PASSWORD || "",
         });
         return { catalog: installed.catalog, databaseUrl: installed.databaseUrl, probes: [...probes, installed.probe] };
       } catch (error) {
@@ -598,7 +598,7 @@ export async function discoverCoreDatabase({
         return { ...sqliteFallback("用户取消本机 PostgreSQL 配置"), probes };
       }
       const installed = await installNativePostgres({
-        requirePgvector: profile === "knowledge" || profile === "full",
+        requirePgvector: false,
         ...connection,
       });
       output.write("✓ 本机 PostgreSQL 已准备完成\n");
@@ -621,7 +621,7 @@ export async function discoverCoreDatabase({
       }
       const installed = await installDockerPostgres({
         home,
-        requirePgvector: profile === "knowledge" || profile === "full",
+        requirePgvector: false,
         ...connection,
       });
       output.write("✓ Docker PostgreSQL 已准备完成\n");
@@ -657,141 +657,10 @@ export async function discoverCoreDatabase({
   }
 }
 
-export async function discoverExtensionInfrastructure({
-  profile,
-  flags,
-  nonInteractive,
-  home,
-  existingDatabaseUrl = "",
-  existingCatalog = null,
-}) {
-  const knowledgeEnabled = profile === "knowledge" || profile === "full";
-  const coreDatabase = await discoverCoreDatabase({
-    profile,
-    flags,
-    nonInteractive,
-    home,
-    existingDatabaseUrl,
-    existingCatalog,
-    promptWhenUnspecified: false,
-  });
-  const result = {
-    catalog: coreDatabase.catalog,
-    milvus: { enabled: false, uri: "http://127.0.0.1:19530", probe_status: "skipped" },
-    embedding: { status: "disabled", provider: "", model: "" },
-    mineru: { enabled: false, base_url: "http://127.0.0.1:8002", probe_status: "skipped" },
-    embeddingApiKey: "",
-    databaseUrl: coreDatabase.databaseUrl,
-    createDatabaseIfMissing: Boolean(coreDatabase.createDatabaseIfMissing),
-    probes: [...coreDatabase.probes],
-  };
-  if (!knowledgeEnabled) return result;
-
-  if (!nonInteractive) {
-    output.write("\n知识库依赖探索（按依赖顺序执行）：\n");
-    output.write("  1. 核心数据库已决策 → 2. Milvus 向量索引 → 3. Embedding 配置\n\n");
-  }
-
-  let localMilvusProbe = null;
-  if (!nonInteractive) {
-    output.write("正在探测本机 Milvus 127.0.0.1:19530…\n");
-    localMilvusProbe = await probeTcpEndpoint({
-      probe: "milvus.discovery",
-      host: "127.0.0.1",
-      port: 19530,
-      required: false,
-    });
-    result.probes.push(localMilvusProbe);
-    output.write(localMilvusProbe.status === "available"
-      ? "✓ 发现 Milvus 端口；选择启用后将继续验证 Collection API\n"
-      : "- 未发现本机 Milvus；可以跳过向量索引或填写远程 URI\n");
-  }
-  const milvusChoice = String(flags.milvus === undefined
-    ? (nonInteractive ? "off" : await question(
-      "启用 Milvus 向量索引？[Y/n]",
-      localMilvusProbe?.status === "available" ? "Y" : "n",
-    ))
-    : flags.milvus).toLowerCase();
-  const milvusEnabled = !["off", "0", "false", "n", "no"].includes(milvusChoice);
-  if (milvusEnabled) {
-    const uri = String(flags.milvus_uri || (nonInteractive
-      ? "http://127.0.0.1:19530"
-      : await question("Milvus URI", "http://127.0.0.1:19530")));
-    let parsed;
-    try {
-      parsed = new URL(uri);
-    } catch {
-      throw new CliError("Milvus URI is invalid", { code: "argument_error" });
-    }
-    const probe = await probeTcpEndpoint({
-      probe: "milvus.connection",
-      host: parsed.hostname,
-      port: Number(parsed.port || 19530),
-    });
-    result.milvus = { enabled: true, uri, probe_status: probe.status };
-    result.probes.push(probe);
-    if (!nonInteractive) {
-      output.write(probe.status === "available"
-        ? `✓ Milvus ${parsed.hostname}:${parsed.port || 19530} 端口可访问（Collection 将在 Runtime 准备后复检）\n`
-        : `! Milvus 不可达：${probe.reason}；向量索引标记为待修复\n`);
-    }
-    const embeddingKey = String(flags.embedding_api_key || process.env.PUDDINGCLAW_INIT_EMBEDDING_API_KEY || (
-      nonInteractive ? "" : await secretQuestion("阿里云百炼 Embedding API Key（text-embedding-v4）")
-    )).trim();
-    if (embeddingKey) {
-      const embeddingProbe = await probeProviderEndpoint({
-        baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        apiKey: embeddingKey,
-      });
-      result.embedding = {
-        status: embeddingProbe.status === "available" ? "configured" : "needs_action",
-        provider: "dashscope",
-        model: "text-embedding-v4",
-      };
-      result.embeddingApiKey = embeddingKey;
-      result.probes.push({ ...embeddingProbe, probe: "provider.embedding_models" });
-      if (!nonInteractive) {
-        output.write(embeddingProbe.status === "available"
-          ? "✓ Embedding Provider 可访问\n"
-          : `! Embedding Provider 尚不可用：${embeddingProbe.reason}\n`);
-      }
-    } else {
-      result.embedding = { status: "needs_action", provider: "dashscope", model: "text-embedding-v4" };
-      result.probes.push({
-        probe: "provider.embedding_models",
-        status: "needs_action",
-        required: true,
-        reason: "Milvus 已启用，但 Embedding API Key 尚未配置",
-      });
-      if (!nonInteractive) output.write("! 未配置 Embedding；Milvus 分支暂不激活索引任务\n");
-    }
-  } else if (!nonInteractive) {
-    output.write("- Milvus：已禁用；知识目录仍可用，但语义/多模态检索不会激活\n");
-  }
-  if (!nonInteractive) {
-    output.write("正在探测可选 MinerU 127.0.0.1:8002/health…\n");
-    const mineruProbe = await probeHttpHealth({
-      probe: "mineru.health",
-      baseUrl: "http://127.0.0.1:8002",
-    });
-    result.probes.push(mineruProbe);
-    result.mineru = {
-      enabled: mineruProbe.status === "available",
-      base_url: "http://127.0.0.1:8002",
-      probe_status: mineruProbe.status,
-    };
-    output.write(mineruProbe.status === "available"
-      ? "✓ MinerU 可用，富文档解析将激活\n"
-      : "- MinerU 未运行；PDF/Office 富解析保持可选，不阻断知识库\n");
-  }
-  return result;
-}
-
 export function validatePreparedInfrastructure({
   python,
   databaseUrl,
   createDatabaseIfMissing = false,
-  milvus,
   requirePgvector = false,
   spawn = spawnSync,
 }) {
@@ -802,8 +671,8 @@ export function validatePreparedInfrastructure({
       "from urllib.parse import unquote,urlsplit,urlunsplit",
       "import asyncpg",
       "async def main():",
-      " url=os.environ['PUDDINGCLAW_PROBE_DATABASE_URL'].replace('postgresql+asyncpg:', 'postgresql:', 1)",
-      " allow_create=os.environ.get('PUDDINGCLAW_CREATE_DATABASE_IF_MISSING')=='1'",
+      " url=os.environ['PUDDINGHARNESS_PROBE_DATABASE_URL'].replace('postgresql+asyncpg:', 'postgresql:', 1)",
+      " allow_create=os.environ.get('PUDDINGHARNESS_CREATE_DATABASE_IF_MISSING')=='1'",
       " created=False",
       " try:",
       "  conn=await asyncpg.connect(url, timeout=5)",
@@ -833,8 +702,8 @@ export function validatePreparedInfrastructure({
       timeout: 10_000,
       env: {
         ...process.env,
-        PUDDINGCLAW_PROBE_DATABASE_URL: databaseUrl,
-        PUDDINGCLAW_CREATE_DATABASE_IF_MISSING: createDatabaseIfMissing ? "1" : "0",
+        PUDDINGHARNESS_PROBE_DATABASE_URL: databaseUrl,
+        PUDDINGHARNESS_CREATE_DATABASE_IF_MISSING: createDatabaseIfMissing ? "1" : "0",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -860,36 +729,6 @@ export function validatePreparedInfrastructure({
         required: true,
         ...(missingDependency ? { code: "runtime_dependency_missing" } : {}),
         reason: stderr.split("\n").at(-1),
-      });
-    }
-  }
-  if (milvus?.enabled) {
-    const script = [
-      "import json,os",
-      "from pymilvus import MilvusClient",
-      "client=MilvusClient(uri=os.environ['PUDDINGCLAW_PROBE_MILVUS_URI'], timeout=5)",
-      "print(json.dumps({'collections':client.list_collections()}))",
-    ].join("\n");
-    const checked = spawn(python, ["-c", script], {
-      encoding: "utf8",
-      timeout: 10_000,
-      env: { ...process.env, PUDDINGCLAW_PROBE_MILVUS_URI: milvus.uri },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    if (checked.status === 0) {
-      const payload = JSON.parse(String(checked.stdout || "{}").trim() || "{}");
-      probes.push({
-        probe: "milvus.collections",
-        status: "available",
-        required: true,
-        collection_count: Array.isArray(payload.collections) ? payload.collections.length : 0,
-      });
-    } else {
-      probes.push({
-        probe: "milvus.collections",
-        status: "needs_action",
-        required: true,
-        reason: String(checked.stderr || "Milvus handshake failed").trim().split("\n").at(-1),
       });
     }
   }

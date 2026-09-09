@@ -18,8 +18,8 @@ async function runAgent(args, { input, env = {}, prepareHome } = {}) {
   const child = spawn(process.execPath, ["--import", mockFetch, cli, ...cliArgs], {
     env: {
       ...process.env,
-      PUDDINGCLAW_HOME: home,
-      PUDDINGCLAW_URL: "http://127.0.0.1:8888",
+      PUDDINGHARNESS_HOME: home,
+      PUDDINGHARNESS_URL: "http://127.0.0.1:8888",
       ...env,
     },
     stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
@@ -50,7 +50,7 @@ test("unified doctor preserves Worker probe fields and adds deployment diagnosti
   assert.equal(diagnostic.status, "ok");
   assert.equal(diagnostic.configured, true);
   assert.equal(diagnostic.reachable, true);
-  assert.equal(diagnostic.agent_id, "puddingclaw");
+  assert.equal(diagnostic.agent_id, "puddingharness");
   assert.equal(diagnostic.deployment.initialized, false);
   assert.equal(diagnostic.deployment.status, "needs_action");
 });
@@ -70,7 +70,7 @@ test("merged run accepts stdin JSON and preserves an explicit workspace", async 
 
 test("merged run discovers the managed runtime's dynamic Backend URL", async () => {
   const result = await runAgent(["run", "endpoint", "--json"], {
-    env: { PUDDINGCLAW_URL: "", PUDDINGCLAW_BACKEND_URL: "" },
+    env: { PUDDINGHARNESS_URL: "", PUDDINGHARNESS_BACKEND_URL: "" },
     prepareHome: async (home) => {
       await writeFile(path.join(home, "runtime.json"), JSON.stringify({
         backend_url: "http://127.0.0.1:45678",
@@ -162,13 +162,13 @@ test("merged respond forwards resumed Run progress as JSONL", async () => {
 
 test("merged run exports only Backend-declared workspace artifacts", async () => {
   const projectsRoot = await mkdtemp(path.join(os.tmpdir(), "puddingclaw-agent-export-"));
-  const workspace = path.join(projectsRoot, "puddingclaw");
+  const workspace = path.join(projectsRoot, "puddingharness");
   const exportDir = path.join(projectsRoot, "handoff");
   try {
     await mkdir(workspace, { recursive: true });
     await writeFile(path.join(workspace, "report.txt"), "report\n");
     const result = await runAgent(["run", "export", "--export", exportDir, "--json"], {
-      env: { PUDDINGCLAW_PROJECTS_ROOT: projectsRoot },
+      env: { PUDDINGHARNESS_PROJECTS_ROOT: projectsRoot },
     });
     assert.equal(result.code, 0, result.stderr);
     assert.equal(await readFile(path.join(exportDir, "report.txt"), "utf8"), "report\n");
@@ -194,12 +194,9 @@ test("merged models and expired Session outcomes remain machine-readable", async
   });
 });
 
-test("merged run rejects caller-selected analytics models", async () => {
-  const option = await runAgent(["run", "hello", "--model", "sales", "--json"]);
-  assert.equal(option.code, 2);
-  assert.equal(JSON.parse(option.stdout).error_code, "argument_error");
+test("merged run rejects caller-selected models", async () => {
   const input = await runAgent(["run", "--input-json", "-", "--json"], {
-    input: { message: "hello", analytics_model_id: "sales" },
+    input: { message: "hello", model: "sales" },
   });
   assert.equal(input.code, 2);
   assert.match(JSON.parse(input.stdout).error, /model input is not supported/);

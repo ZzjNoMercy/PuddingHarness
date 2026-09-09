@@ -190,7 +190,7 @@ export async function startRuntime(paths, { automaticPorts = false, timeoutMs = 
     await fs.rm(paths.runtimeState, { force: true });
   } else if (existing) {
     throw new CliError(
-      "runtime ownership cannot be verified; run `puddingclaw status --json` and do not kill unknown PIDs. "
+      "runtime ownership cannot be verified; run `puddingharness status --json` and do not kill unknown PIDs. "
       + `After confirming they are unrelated, delete ${paths.runtimeState} and retry`,
       {
         code: "stale_runtime_state",
@@ -198,7 +198,7 @@ export async function startRuntime(paths, { automaticPorts = false, timeoutMs = 
         details: {
           ...existingStatus,
           recovery: {
-            inspect: "puddingclaw status --json",
+            inspect: "puddingharness status --json",
             state_file: paths.runtimeState,
             warning: "Never terminate a PID unless you have independently confirmed that you own it.",
           },
@@ -220,9 +220,6 @@ export async function startRuntime(paths, { automaticPorts = false, timeoutMs = 
     || config.multimodal_provider?.reuse_primary_credential
     ? ""
     : await readSecret(paths.multimodalProviderApiKey);
-  const embeddingApiKey = config.infrastructure?.embedding?.status === "disabled"
-    ? ""
-    : await readSecret(paths.embeddingApiKey);
   const catalog = config.infrastructure?.catalog || {};
   // New-schema provider wins; legacy catalogs only carry mode.
   const databaseProvider = ["sqlite", "postgresql"].includes(catalog.provider)
@@ -236,19 +233,14 @@ export async function startRuntime(paths, { automaticPorts = false, timeoutMs = 
     frontendPort: config.server.frontend_port,
     automatic: automaticPorts,
   });
-  const instanceId = `pc-${randomUUID()}`;
-  const extensions = Object.fromEntries(Object.entries(config.extensions)
-    .map(([name, value]) => [name, Boolean(value.enabled)]));
+  const instanceId = `ph-${randomUUID()}`;
   const variables = {
-    PUDDINGCLAW_HOME: paths.home,
-    PUDDINGCLAW_INSTANCE_ID: instanceId,
+    PUDDINGHARNESS_HOME: paths.home,
+    PUDDINGHARNESS_INSTANCE_ID: instanceId,
     BACKEND_PORT: ports.backendPort,
     FRONTEND_PORT: ports.frontendPort,
     BACKEND_URL: `http://${config.server.host}:${ports.backendPort}`,
     FRONTEND_URL: `http://${config.server.host}:${ports.frontendPort}`,
-    EXTENSION_KNOWLEDGE: extensions.knowledge ? "1" : "0",
-    EXTENSION_ANALYTICS: extensions.analytics ? "1" : "0",
-    EXTENSION_HEADLESS_WORKER: extensions.headless_worker ? "1" : "0",
     PYTHON_COMMAND: config.runtime?.python?.command || "",
   };
   const backend = resolveRuntimeProcess(active, "backend", variables);
@@ -271,41 +263,27 @@ export async function startRuntime(paths, { automaticPorts = false, timeoutMs = 
         env: {
           ...process.env,
           ...resolved.env,
-          PUDDINGCLAW_LAUNCH_COMMAND: resolved.command,
-          PUDDINGCLAW_LAUNCH_CWD: resolved.cwd,
-          PUDDINGCLAW_LAUNCH_ARGS: JSON.stringify(resolved.args),
-          PUDDINGCLAW_CONTROL_PATH: control,
-          PUDDINGCLAW_CONTROL_TOKEN: token,
-          PUDDINGCLAW_HOME: paths.home,
-          PUDDINGCLAW_INSTANCE_ID: instanceId,
-          PUDDINGCLAW_PROFILE: config.profile,
-          PUDDINGCLAW_EXTENSIONS: JSON.stringify(extensions),
-          PUDDINGCLAW_EXTENSION_KNOWLEDGE: variables.EXTENSION_KNOWLEDGE,
-          PUDDINGCLAW_EXTENSION_ANALYTICS: variables.EXTENSION_ANALYTICS,
-          PUDDINGCLAW_EXTENSION_HEADLESS_WORKER: variables.EXTENSION_HEADLESS_WORKER,
+          PUDDINGHARNESS_LAUNCH_COMMAND: resolved.command,
+          PUDDINGHARNESS_LAUNCH_CWD: resolved.cwd,
+          PUDDINGHARNESS_LAUNCH_ARGS: JSON.stringify(resolved.args),
+          PUDDINGHARNESS_CONTROL_PATH: control,
+          PUDDINGHARNESS_CONTROL_TOKEN: token,
+          PUDDINGHARNESS_HOME: paths.home,
+          PUDDINGHARNESS_INSTANCE_ID: instanceId,
+          PUDDINGHARNESS_PROFILE: config.profile,
           ...(name === "backend" ? {
-            PUDDINGCLAW_INITIAL_PROVIDER: JSON.stringify(config.provider || {}),
-            PUDDINGCLAW_INITIAL_PROVIDER_BOOTSTRAP_ID: config.initialized_at || "legacy",
-            ...(initialProviderApiKey ? { PUDDINGCLAW_INITIAL_PROVIDER_API_KEY: initialProviderApiKey } : {}),
-            PUDDINGCLAW_INITIAL_MULTIMODAL_PROVIDER: JSON.stringify(config.multimodal_provider || {}),
+            PUDDINGHARNESS_INITIAL_PROVIDER: JSON.stringify(config.provider || {}),
+            PUDDINGHARNESS_INITIAL_PROVIDER_BOOTSTRAP_ID: config.initialized_at || "legacy",
+            ...(initialProviderApiKey ? { PUDDINGHARNESS_INITIAL_PROVIDER_API_KEY: initialProviderApiKey } : {}),
+            PUDDINGHARNESS_INITIAL_MULTIMODAL_PROVIDER: JSON.stringify(config.multimodal_provider || {}),
             ...(initialMultimodalProviderApiKey
-              ? { PUDDINGCLAW_INITIAL_MULTIMODAL_PROVIDER_API_KEY: initialMultimodalProviderApiKey }
+              ? { PUDDINGHARNESS_INITIAL_MULTIMODAL_PROVIDER_API_KEY: initialMultimodalProviderApiKey }
               : {}),
-            ...(embeddingApiKey ? { DASHSCOPE_API_KEY: embeddingApiKey } : {}),
-            PUDDINGCLAW_DATABASE_PROVIDER: databaseProvider,
-            PUDDINGCLAW_DATABASE_MODE: catalog.mode || databaseProvider,
-            PUDDINGCLAW_DATABASE_SOURCE: catalog.source
+            PUDDINGHARNESS_DATABASE_PROVIDER: databaseProvider,
+            PUDDINGHARNESS_DATABASE_MODE: catalog.mode || databaseProvider,
+            PUDDINGHARNESS_DATABASE_SOURCE: catalog.source
               || (databaseProvider === "sqlite" ? "local_file" : "fallback"),
-            ...(databaseUrl ? { PUDDINGCLAW_DATABASE_URL: databaseUrl } : {}),
-            ...(config.infrastructure?.milvus?.enabled
-              ? {
-                PUDDINGCLAW_MILVUS_URI: config.infrastructure.milvus.uri,
-                MILVUS_URL: config.infrastructure.milvus.uri,
-              }
-              : {}),
-            PUDDINGCLAW_ENABLE_MULTIMODAL_INDEX: config.infrastructure?.milvus?.enabled
-              && config.infrastructure?.embedding?.status === "configured" ? "1" : "0",
-            PUDDINGCLAW_MINERU_URL: config.infrastructure?.mineru?.base_url || "http://127.0.0.1:8002",
+            ...(databaseUrl ? { PUDDINGHARNESS_DATABASE_URL: databaseUrl } : {}),
           } : {}),
           BACKEND_PORT: String(ports.backendPort),
           FRONTEND_PORT: String(ports.frontendPort),
@@ -344,7 +322,6 @@ export async function startRuntime(paths, { automaticPorts = false, timeoutMs = 
       instance_id: instanceId,
       home: paths.home,
       release_version: active.manifest.release_version,
-      extensions,
       started_at: new Date().toISOString(),
       backend_url: variables.BACKEND_URL,
       frontend_url: variables.FRONTEND_URL,
@@ -399,14 +376,14 @@ export async function stopRuntime(paths, { force = false } = {}) {
   if (unverified.length) {
     throw new CliError(
       "refusing to stop a process whose ownership cannot be verified; the PID may have been reused. "
-      + `Run \`puddingclaw status --json\`; after confirming the PID is unrelated, delete ${paths.runtimeState} `
+      + `Run \`puddingharness status --json\`; after confirming the PID is unrelated, delete ${paths.runtimeState} `
       + "without terminating that process",
       {
         code: "runtime_ownership_mismatch",
         details: {
           pids: unverified.map((item) => item.pid),
           recovery: {
-            inspect: "puddingclaw status --json",
+            inspect: "puddingharness status --json",
             state_file: paths.runtimeState,
             warning: "Never terminate a PID unless you have independently confirmed that you own it.",
           },

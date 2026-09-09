@@ -5,7 +5,7 @@ import { parseArgs } from "./args.js";
 import { CliError } from "./errors.js";
 import { resolveHome, homePaths } from "./home.js";
 import { runInit } from "./init.js";
-import { configCommand, doctorCommand, extensionCommand, formatDoctor, statusCommand } from "./commands.js";
+import { configCommand, doctorCommand, formatDoctor, statusCommand } from "./commands.js";
 import { logsCommand, requireRuntimeForStart, runtimeCommand } from "./runtime-commands.js";
 import { openRuntime, startRuntime, stopRuntime } from "./supervisor.js";
 import { writeError, writeHuman, writeJson } from "./output.js";
@@ -18,8 +18,8 @@ const { version: VERSION } = createRequire(import.meta.url)("../package.json");
 const COMMAND_FLAGS = Object.freeze({
   init: [
     "api_key", "backend_port", "base_url", "database_create_if_missing", "database_mode",
-    "database_name", "database_port", "database_url", "database_username", "embedding_api_key",
-    "force", "frontend_port", "install_runtime", "milvus", "milvus_uri", "model",
+    "database_name", "database_port", "database_url", "database_username",
+    "force", "frontend_port", "install_runtime", "model",
     "multimodal_api_key", "multimodal_base_url", "multimodal_model", "multimodal_provider",
     "multimodal_provider_id", "multimodal_provider_name", "non_interactive", "plan", "port",
     "prepare_python", "profile", "provider", "provider_id", "provider_name", "python", "uv", "yes",
@@ -35,7 +35,6 @@ const COMMAND_FLAGS = Object.freeze({
   stop: ["force"],
   restart: ["force", "port"],
   config: [],
-  extension: [],
   runtime: [],
   logs: [],
   open: [],
@@ -56,33 +55,32 @@ function assertCommandFlags(command, flags) {
 
 function usage() {
   return [
-    "PuddingClaw CLI",
+    "Pudding Harness CLI",
     "",
     "Usage:",
-    "  puddingclaw init [--profile <harness|knowledge|analytics|full>] [--port auto] [--python /path] [--uv /path] [--prepare-python] [--install-runtime]",
-    "  puddingclaw init --profile <profile> --plan --json",
+    "  puddingharness init [--profile harness] [--port auto] [--python /path] [--uv /path] [--prepare-python] [--install-runtime]",
+    "  puddingharness init --profile harness --plan --json",
     "  puddingclaw config show|get|set ...",
-    "  puddingclaw profile inspect|apply <harness|knowledge|analytics|full> [--json]",
+    "  puddingclaw profile inspect|apply harness [--json]",
     "  puddingclaw database show|configure",
     "  puddingclaw database migrate sqlite-to-postgres --url <pg-url> [--skip-drain] [--drain-timeout <s>]",
     "  puddingclaw database migrate postgres-to-sqlite [--target-path <path>] [--skip-drain] [--drain-timeout <s>]",
-    "  puddingclaw extension list|enable|disable ...",
     "  puddingclaw agent run <message> [--session <id>] [--export <dir>] [--json|--jsonl]",
     "  puddingclaw agent respond <run_id> --input-json - [--json|--jsonl]",
     "  puddingclaw agent cancel <run_id> [--json]",
     "  puddingclaw agent models list [--json]",
     "  puddingclaw agent capabilities [--json]",
-    "  puddingclaw runtime install <bundle-directory|bundled>",
-    "  puddingclaw runtime prepare",
-    "  puddingclaw runtime inspect",
-    "  puddingclaw runtime prune",
+    "  puddingharness runtime install <bundle-directory|bundled>",
+    "  puddingharness runtime prepare",
+    "  puddingharness runtime inspect",
+    "  puddingharness runtime prune",
     "  puddingclaw logs [--json]",
-    "  puddingclaw start [--port auto] [--json]",
-    "  puddingclaw stop [--force] [--json]",
-    "  puddingclaw restart [--force] [--port auto] [--json]",
+    "  puddingharness start [--port auto] [--json]",
+    "  puddingharness stop [--force] [--json]",
+    "  puddingharness restart [--force] [--port auto] [--json]",
     "  puddingclaw open [--json]",
     "  puddingclaw doctor [--json]",
-    "  puddingclaw status [--json]",
+    "  puddingharness status [--json]",
     "  puddingclaw version [--json]",
   ].join("\n");
 }
@@ -96,9 +94,9 @@ async function main({ positionals, flags }) {
     return {
       value: {
         schema_version: "1",
-        cli: "puddingclaw",
+        cli: "puddingharness",
         cli_version: VERSION,
-        agent_id: "puddingclaw",
+        agent_id: "puddingharness",
         protocol_version: "1",
       },
       code: 0,
@@ -118,7 +116,6 @@ async function main({ positionals, flags }) {
   if (command === "config") return { value: await configCommand(rest, paths), code: 0 };
   if (command === "profile") return { value: await profileCommand(rest, paths), code: 0 };
   if (command === "database") return { value: await databaseCommand(rest, flags, paths), code: 0 };
-  if (command === "extension") return { value: await extensionCommand(rest, paths), code: 0 };
   if (command === "runtime") return { value: await runtimeCommand(rest, paths), code: 0 };
   if (command === "logs") return { value: await logsCommand(paths), code: 0 };
   if (command === "start") {
@@ -143,7 +140,7 @@ async function main({ positionals, flags }) {
       ...worker.value,
       schema_version: "1",
       cli_version: VERSION,
-      agent_id: "puddingclaw",
+      agent_id: "puddingharness",
       protocol_version: "1",
       status: workerReady ? "ok" : "needs_action",
       deployment,

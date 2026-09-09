@@ -7,7 +7,7 @@ globalThis.fetch = async (url, options) => {
   if (String(url).endsWith("/api/headless/health")) {
     return new Response(JSON.stringify({
       schema_version: "1",
-      agent_id: "puddingclaw",
+      agent_id: "puddingharness",
       cli_version: packageVersion,
       protocol_version: "1",
       configured: true,

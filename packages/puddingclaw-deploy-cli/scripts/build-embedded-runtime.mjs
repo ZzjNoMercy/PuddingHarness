@@ -9,9 +9,15 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(scriptDirectory, "..");
-const repositoryRoot = path.resolve(packageRoot, "../..");
-const backendRoot = path.join(repositoryRoot, "backend");
-const frontendRoot = path.join(repositoryRoot, "frontend");
+
+function sourceRoots() {
+  const configured = String(process.env.PUDDINGHARNESS_SOURCE_ROOT || "").trim();
+  if (!configured || !path.isAbsolute(configured)) {
+    throw new Error("PUDDINGHARNESS_SOURCE_ROOT must point to an explicit Harness source checkout");
+  }
+  const root = path.resolve(configured);
+  return { root, backendRoot: path.join(root, "backend"), frontendRoot: path.join(root, "frontend") };
+}
 
 function parseArguments(argv) {
   const options = {
@@ -45,9 +51,9 @@ async function run(command, args, options = {}) {
 
 async function findWheel(directory) {
   const wheels = (await fs.readdir(directory))
-    .filter((name) => /^puddingclaw_backend-.*\.whl$/.test(name))
+    .filter((name) => /^puddingharness_backend-.*\.whl$/.test(name))
     .sort();
-  if (!wheels.length) throw new Error(`PuddingClaw Backend wheel not found in ${directory}`);
+  if (!wheels.length) throw new Error(`PuddingHarness Backend wheel not found in ${directory}`);
   return path.join(directory, wheels.at(-1));
 }
 
@@ -81,12 +87,12 @@ async function assertNoSensitiveFiles(root) {
   if (rejected.length) throw new Error(`runtime contains forbidden files: ${rejected.join(", ")}`);
 }
 
-async function sanitizeBuildPaths(root) {
+async function sanitizeBuildPaths(root, sourceRoot, frontendRoot) {
   const replacements = [
-    [frontendRoot, "/__puddingclaw_build__/frontend"],
-    [repositoryRoot, "/__puddingclaw_build__"],
-    [frontendRoot.replaceAll("\\", "\\\\"), "/__puddingclaw_build__/frontend"],
-    [repositoryRoot.replaceAll("\\", "\\\\"), "/__puddingclaw_build__"],
+    [frontendRoot, "/__puddingharness_build__/frontend"],
+    [sourceRoot, "/__puddingharness_build__"],
+    [frontendRoot.replaceAll("\\", "\\\\"), "/__puddingharness_build__/frontend"],
+    [sourceRoot.replaceAll("\\", "\\\\"), "/__puddingharness_build__"],
   ].sort((left, right) => right[0].length - left[0].length);
   for (const relative of await listFiles(root)) {
     const file = path.join(root, relative);
@@ -103,7 +109,7 @@ async function sanitizeBuildPaths(root) {
   const leaks = [];
   for (const relative of await listFiles(root)) {
     const content = (await fs.readFile(path.join(root, relative))).toString("latin1");
-    if (content.includes(repositoryRoot) || content.includes(frontendRoot)) leaks.push(relative);
+    if (content.includes(sourceRoot) || content.includes(frontendRoot)) leaks.push(relative);
   }
   if (leaks.length) throw new Error(`runtime contains local build paths: ${leaks.join(", ")}`);
 }
@@ -113,11 +119,35 @@ async function patchStandaloneServer(serverFile) {
   const source = await fs.readFile(serverFile, "utf8");
   if (!source.includes(marker)) throw new Error("Next standalone server marker was not found");
   const runtimeRewrite = [
+    "const fs = require('fs')",
     "const runtimeBackendUrl = (process.env.BACKEND_INTERNAL_URL || 'http://127.0.0.1:8888').replace(/\\/$/, '')",
+    "const rewriteApiDestination = (destination) => destination.replace(/^https?:\\/\\/[^/]+/, runtimeBackendUrl)",
     "for (const rule of nextConfig?._originalRewrites?.afterFiles || []) {",
     "  if (typeof rule.destination === 'string' && rule.source.startsWith('/api/')) {",
-    "    rule.destination = rule.destination.replace(/^https?:\\/\\/[^/]+/, runtimeBackendUrl)",
+    "    rule.destination = rewriteApiDestination(rule.destination)",
     "  }",
+    "}",
+    "const routesManifestPath = path.resolve(__dirname, nextConfig.distDir, 'routes-manifest.json')",
+    "const rewriteRoutesManifestContent = (file, content) => {",
+    "  if (typeof file !== 'string' || path.resolve(file) !== routesManifestPath) return content",
+    "  const routesManifest = JSON.parse(Buffer.isBuffer(content) ? content.toString('utf8') : content)",
+    "  for (const rule of routesManifest.rewrites || []) {",
+    "    if (typeof rule.destination === 'string' && rule.source.startsWith('/api/')) {",
+    "      rule.destination = rewriteApiDestination(rule.destination)",
+    "    }",
+    "  }",
+    "  const rewritten = JSON.stringify(routesManifest)",
+    "  return Buffer.isBuffer(content) ? Buffer.from(rewritten, 'utf8') : rewritten",
+    "}",
+    "const originalReadFileSync = fs.readFileSync",
+    "fs.readFileSync = function (file, ...args) {",
+    "  const content = originalReadFileSync.call(this, file, ...args)",
+    "  return rewriteRoutesManifestContent(file, content)",
+    "}",
+    "const originalReadFile = fs.promises.readFile",
+    "fs.promises.readFile = async function (file, ...args) {",
+    "  const content = await originalReadFile.call(this, file, ...args)",
+    "  return rewriteRoutesManifestContent(file, content)",
     "}",
     marker,
   ].join("\n");
@@ -151,7 +181,7 @@ async function writeManifest(staging, version, { wheelName, requirementsNames, r
     schema_version: 1,
     release_version: version,
     protocol_version: "1",
-    contracts: { puddingclaw_home: 1, dynamic_ports: 1, extensions: 1 },
+    contracts: { harness_home: 1, dynamic_ports: 1 },
     install: {
       python: {
         wheel: `backend/${wheelName}`,
@@ -186,16 +216,14 @@ async function writeManifest(staging, version, { wheelName, requirementsNames, r
 
 async function main() {
   const options = parseArguments(process.argv.slice(2));
+  const { root: sourceRoot, backendRoot, frontendRoot } = sourceRoots();
   const packageDocument = JSON.parse(await fs.readFile(path.join(packageRoot, "package.json"), "utf8"));
-  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "puddingclaw-runtime-build-"));
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "puddingharness-runtime-build-"));
   const staging = path.join(path.dirname(options.output), `.runtime-bundle-${crypto.randomUUID()}`);
   let frontendBuild = path.join(frontendRoot, ".next-build");
   let wheelDirectory = path.join(backendRoot, "dist");
   let requirementsSources = Object.fromEntries(
-    ["harness", "knowledge", "analytics", "full"].map((profile) => [
-      profile,
-      path.join(backendRoot, "requirements.txt"),
-    ]),
+    [["harness", path.join(backendRoot, "requirements.txt")]],
   );
   let requireHashes = false;
   const frontendTsconfig = path.join(frontendRoot, "tsconfig.json");
@@ -205,14 +233,10 @@ async function main() {
       wheelDirectory = path.join(temporaryRoot, "wheel");
       await fs.mkdir(wheelDirectory, { recursive: true });
       await run("uv", ["build", "--wheel", "--out-dir", wheelDirectory], { cwd: backendRoot });
-      const exportExtras = {
-        // Core 默认 SQLite：harness 不含 asyncpg。knowledge/analytics/full
-        // 可能连接 PostgreSQL 数据源或启用 gbrain(pgvector)，追加 postgres extra。
-        harness: [],
-        knowledge: ["--extra", "knowledge", "--extra", "postgres"],
-        analytics: ["--extra", "analytics", "--extra", "postgres"],
-        full: ["--extra", "knowledge", "--extra", "analytics", "--extra", "postgres"],
-      };
+      // Core Harness keeps PostgreSQL as an explicit catalog option, so the
+      // single shipped lock includes its async driver. Product-specific
+      // dependency groups are intentionally not exported here.
+      const exportExtras = { harness: ["--extra", "postgres"] };
       requirementsSources = {};
       for (const [profile, extras] of Object.entries(exportExtras)) {
         const destination = path.join(temporaryRoot, `requirements-${profile}.lock`);
@@ -263,7 +287,7 @@ async function main() {
     }
     await removeEnvironmentFiles(web);
     await patchStandaloneServer(path.join(web, "server.js"));
-    await sanitizeBuildPaths(web);
+    await sanitizeBuildPaths(web, sourceRoot, frontendRoot);
     await assertNoSensitiveFiles(staging);
     const manifest = await writeManifest(staging, packageDocument.version, {
       wheelName: path.basename(wheel),

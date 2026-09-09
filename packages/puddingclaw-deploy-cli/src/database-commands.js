@@ -78,7 +78,7 @@ async function confirmProviderSwitch() {
 async function requireConfig(paths) {
   const config = await loadConfig(paths.config);
   if (!config?.initialized) {
-    throw new CliError("PuddingClaw is not initialized; run puddingclaw init", {
+    throw new CliError("PuddingClaw is not initialized; run puddingharness init", {
       code: "not_initialized",
       exitCode: 1,
     });
@@ -94,7 +94,7 @@ async function resolveBackendMigrationRuntime(paths, config) {
   const prepared = await readJson(`${paths.runtime}/prepared.json`, null);
   const python = prepared?.python || config.runtime?.python?.command;
   if (!python) {
-    throw new CliError("Runtime Python is not prepared; run puddingclaw runtime prepare first", {
+    throw new CliError("Runtime Python is not prepared; run puddingharness runtime prepare first", {
       code: "runtime_python_not_prepared",
       exitCode: 1,
     });
@@ -123,7 +123,7 @@ export async function databaseMigrateCommand(args, flags, paths, config) {
   const runtimeState = await readJson(paths.runtimeState, null);
   const instance = await probeManagedRuntimeState(paths, runtimeState);
   if (instance.status === "running") {
-    throw new CliError("Backend 正在运行；请先执行 puddingclaw stop，再运行数据库迁移", {
+    throw new CliError("Backend 正在运行；请先执行 puddingharness stop，再运行数据库迁移", {
       code: "backend_running",
       exitCode: 1,
     });
@@ -137,7 +137,7 @@ export async function databaseMigrateCommand(args, flags, paths, config) {
   // 输出透传：迁移报告与中文诊断直接写到用户终端。
   const child = spawn(python, ["-m", "catalog_migration", ...moduleArgs], {
     cwd,
-    env: { ...process.env, PUDDINGCLAW_HOME: paths.home },
+    env: { ...process.env, PUDDINGHARNESS_HOME: paths.home },
     stdio: "inherit",
   });
   const [code] = await once(child, "close");
@@ -147,7 +147,7 @@ export async function databaseMigrateCommand(args, flags, paths, config) {
       exitCode: Number.isInteger(code) && code > 0 ? code : 1,
     });
   }
-  return { status: "migrated", direction, next_command: "puddingclaw start" };
+  return { status: "migrated", direction, next_command: "puddingharness start" };
 }
 
 export async function databaseCommand(args, flags, paths) {
@@ -169,7 +169,7 @@ export async function databaseCommand(args, flags, paths) {
   const previousCatalog = structuredClone(config.infrastructure.catalog);
   const previousProvider = catalogProvider(previousCatalog);
   const discovered = await discoverCoreDatabase({
-    profile: config.profile,
+      profile: "harness",
     flags,
     nonInteractive: Boolean(flags.non_interactive),
     home: paths.home,
@@ -217,7 +217,7 @@ export async function databaseCommand(args, flags, paths) {
   if (discovered.databaseUrl) {
     const prepared = await readJson(`${paths.runtime}/prepared.json`, null);
     if (!prepared?.python) {
-      throw new CliError("Runtime Python is not prepared; run puddingclaw runtime prepare first", {
+      throw new CliError("Runtime Python is not prepared; run puddingharness runtime prepare first", {
         code: "runtime_python_not_prepared",
         exitCode: 1,
       });
@@ -226,20 +226,12 @@ export async function databaseCommand(args, flags, paths) {
       python: prepared.python,
       databaseUrl: discovered.databaseUrl,
       createDatabaseIfMissing: discovered.createDatabaseIfMissing,
-      milvus: { enabled: false },
-      requirePgvector: Boolean(config.extensions?.knowledge?.enabled),
+      requirePgvector: false,
     });
     const databaseProbe = validation.find((probe) => probe.probe === "database.connection");
     if (databaseProbe?.status !== "available") {
       throw new CliError(databaseProbe?.reason || "数据库连接验证失败；原配置未修改", {
         code: databaseProbe?.code || "database_validation_failed",
-        exitCode: 1,
-        details: { validation, previous: publicCatalog(config) },
-      });
-    }
-    if (config.extensions?.knowledge?.enabled && databaseProbe.pgvector?.status !== "available") {
-      throw new CliError(databaseProbe.pgvector?.reason || "知识库已启用，但目标数据库缺少 pgvector", {
-        code: "pgvector_required",
         exitCode: 1,
         details: { validation, previous: publicCatalog(config) },
       });
@@ -269,6 +261,6 @@ export async function databaseCommand(args, flags, paths) {
     validation,
     requires_migration: nextProvider !== previousProvider,
     restart_required: instance.status === "running",
-    next_command: instance.status === "running" ? "puddingclaw restart" : "puddingclaw start",
+    next_command: instance.status === "running" ? "puddingharness restart" : "puddingharness start",
   };
 }

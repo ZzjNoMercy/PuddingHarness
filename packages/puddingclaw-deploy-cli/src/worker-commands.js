@@ -24,7 +24,7 @@ function assertFlags(flags, allowed) {
 export async function agentClientConfig(paths) {
   const runtime = await readJson(paths.runtimeState, null);
   const deploy = await loadConfig(paths.config);
-  const configuredEndpoint = process.env.PUDDINGCLAW_URL || process.env.PUDDINGCLAW_BACKEND_URL;
+  const configuredEndpoint = process.env.PUDDINGHARNESS_URL || process.env.PUDDINGHARNESS_BACKEND_URL;
   const deployHost = deploy?.server?.host === "::1" ? "[::1]" : deploy?.server?.host;
   const fallbackEndpoint = runtime?.backend_url
     || (deploy?.server
@@ -33,16 +33,16 @@ export async function agentClientConfig(paths) {
   const endpoint = String(configuredEndpoint || fallbackEndpoint).replace(/\/+$/, "");
   let parsed;
   try { parsed = new URL(endpoint); } catch {
-    throw new WorkerClientError("PUDDINGCLAW_URL is invalid", { code: "configuration_error" });
+    throw new WorkerClientError("PUDDINGHARNESS_URL is invalid", { code: "configuration_error" });
   }
   if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname)) {
     throw new WorkerClientError("PuddingClaw CLI only connects to a local loopback Backend", {
       code: "configuration_error",
     });
   }
-  const requestedTimeout = Number(process.env.PUDDINGCLAW_TIMEOUT_S || 600);
+  const requestedTimeout = Number(process.env.PUDDINGHARNESS_TIMEOUT_S || 600);
   if (!Number.isFinite(requestedTimeout) || requestedTimeout <= 0) {
-    throw new WorkerClientError("PUDDINGCLAW_TIMEOUT_S must be a positive number", {
+    throw new WorkerClientError("PUDDINGHARNESS_TIMEOUT_S must be a positive number", {
       code: "configuration_error",
     });
   }
@@ -64,7 +64,7 @@ export async function workerDoctorCommand(paths) {
       code: failure.exitCode,
       value: {
         schema_version: "1",
-        agent_id: "puddingclaw",
+        agent_id: "puddingharness",
         protocol_version: "1",
         configured: false,
         reachable: false,
@@ -84,7 +84,7 @@ export async function workerDoctorCommand(paths) {
       code: failure.exitCode,
       value: {
         schema_version: "1",
-        agent_id: "puddingclaw",
+        agent_id: "puddingharness",
         protocol_version: "1",
         configured: true,
         reachable: false,
@@ -111,9 +111,9 @@ async function ensureWorkspace(paths, workspacePath) {
     }
     return resolved;
   }
-  const projectsRoot = String(process.env.PUDDINGCLAW_PROJECTS_ROOT || "").trim();
+  const projectsRoot = String(process.env.PUDDINGHARNESS_PROJECTS_ROOT || "").trim();
   const target = projectsRoot
-    ? path.resolve(projectsRoot, "puddingclaw")
+    ? path.resolve(projectsRoot, "puddingharness")
     : path.resolve(paths.home, "workspace");
   const root = path.resolve(projectsRoot || paths.home);
   if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
@@ -256,7 +256,7 @@ async function resumeWithCliApproval(client, response, { jsonMode, signal, onEve
       body: {
         continuation_token: continuationToken,
         decisions,
-        request_id: `puddingclaw-cli-response-${randomUUID()}`,
+        request_id: `puddingharness-cli-response-${randomUUID()}`,
       },
       signal,
       onEvent,
@@ -334,8 +334,8 @@ async function runCommand(args, flags, paths) {
   if (!message || !String(message).trim()) {
     throw new WorkerClientError("message is required", { code: "argument_error" });
   }
-  if (input?.model !== undefined || input?.analytics_model_id !== undefined) {
-    throw new WorkerClientError("model input is not supported; PuddingClaw routes the question on the backend", {
+  if (input?.model !== undefined) {
+    throw new WorkerClientError("model input is not supported; the Harness routes model selection on the backend", {
       code: "argument_error",
     });
   }
@@ -512,19 +512,13 @@ export async function workerCommand(command, args, flags, paths) {
     return {
       value: {
         schema_version: "1",
-        agent_id: "puddingclaw",
+        agent_id: "puddingharness",
         protocol_version: "1",
         capabilities: WORKER_MANIFEST.capabilities,
         operations: WORKER_MANIFEST.operations,
         interaction_kinds: WORKER_MANIFEST.interactionKinds,
         progress: WORKER_MANIFEST.progress,
         transport: WORKER_MANIFEST.transport.type,
-        analytics_model_routing: {
-          strategy: WORKER_MANIFEST.modelRouting.strategy,
-          input: WORKER_MANIFEST.modelRouting.input,
-          discovery_command: WORKER_MANIFEST.modelRouting.discoveryCommand,
-          ambiguity_outcome: WORKER_MANIFEST.modelRouting.ambiguityOutcome,
-        },
       },
       forceJson: !flags.json,
       code: 0,

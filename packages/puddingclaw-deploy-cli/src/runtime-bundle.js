@@ -26,7 +26,7 @@ export function validateRuntimeManifest(manifest, bundleRoot) {
   if (!SAFE_VERSION.test(String(manifest.release_version || ""))) {
     throw new CliError("runtime manifest release_version is invalid", { code: "invalid_runtime_manifest" });
   }
-  for (const contract of ["puddingclaw_home", "dynamic_ports", "extensions"]) {
+  for (const contract of ["harness_home", "dynamic_ports"]) {
     if (manifest.contracts?.[contract] !== 1) {
       throw new CliError(`runtime contract ${contract}=1 is required`, {
         code: "incompatible_runtime_contract",
@@ -105,7 +105,7 @@ export function validateRuntimeManifest(manifest, bundleRoot) {
           code: "invalid_runtime_manifest",
         });
       }
-      for (const profile of ["harness", "knowledge", "analytics", "full"]) {
+      for (const profile of ["harness"]) {
         const relative = requirementProfiles[profile];
         if (!relative || typeof relative !== "string") {
           throw new CliError(`install.python.requirements_by_profile.${profile} is required`, {

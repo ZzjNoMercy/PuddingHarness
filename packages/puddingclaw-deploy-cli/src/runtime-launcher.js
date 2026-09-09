@@ -5,16 +5,16 @@ import fs from "node:fs";
 import path from "node:path";
 
 const [instanceId, role] = process.argv.slice(2);
-const command = process.env.PUDDINGCLAW_LAUNCH_COMMAND;
-const cwd = process.env.PUDDINGCLAW_LAUNCH_CWD;
-const controlPath = process.env.PUDDINGCLAW_CONTROL_PATH;
-const controlToken = process.env.PUDDINGCLAW_CONTROL_TOKEN;
+const command = process.env.PUDDINGHARNESS_LAUNCH_COMMAND;
+const cwd = process.env.PUDDINGHARNESS_LAUNCH_CWD;
+const controlPath = process.env.PUDDINGHARNESS_CONTROL_PATH;
+const controlToken = process.env.PUDDINGHARNESS_CONTROL_TOKEN;
 
 let args;
 try {
-  args = JSON.parse(process.env.PUDDINGCLAW_LAUNCH_ARGS || "[]");
+  args = JSON.parse(process.env.PUDDINGHARNESS_LAUNCH_ARGS || "[]");
 } catch {
-  process.stderr.write("invalid PUDDINGCLAW_LAUNCH_ARGS\n");
+  process.stderr.write("invalid PUDDINGHARNESS_LAUNCH_ARGS\n");
   process.exit(127);
 }
 
@@ -25,11 +25,11 @@ if (!instanceId || !role || !command || !cwd || !controlPath || !controlToken ||
 
 const childEnv = { ...process.env };
 for (const key of [
-  "PUDDINGCLAW_LAUNCH_COMMAND",
-  "PUDDINGCLAW_LAUNCH_CWD",
-  "PUDDINGCLAW_LAUNCH_ARGS",
-  "PUDDINGCLAW_CONTROL_PATH",
-  "PUDDINGCLAW_CONTROL_TOKEN",
+  "PUDDINGHARNESS_LAUNCH_COMMAND",
+  "PUDDINGHARNESS_LAUNCH_CWD",
+  "PUDDINGHARNESS_LAUNCH_ARGS",
+  "PUDDINGHARNESS_CONTROL_PATH",
+  "PUDDINGHARNESS_CONTROL_TOKEN",
 ]) {
   delete childEnv[key];
 }

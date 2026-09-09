@@ -15,7 +15,7 @@ import { validatePreparedInfrastructure } from "../src/init-discovery.js";
 test("missing asyncpg is a Runtime error, not a PostgreSQL fallback signal", () => {
   const probes = validatePreparedInfrastructure({
     python: "/managed/python",
-    databaseUrl: "postgresql+asyncpg://puddingclaw:secret@127.0.0.1:5432/puddingclaw",
+    databaseUrl: "postgresql+asyncpg://puddingharness:secret@127.0.0.1:5432/puddingharness",
     milvus: { enabled: false },
     spawn: () => ({
       status: 1,
@@ -36,7 +36,7 @@ test("missing asyncpg is a Runtime error, not a PostgreSQL fallback signal", () 
 test("Harness PostgreSQL validation skips optional pgvector", () => {
   const probes = validatePreparedInfrastructure({
     python: "/managed/python",
-    databaseUrl: "postgresql+asyncpg://puddingclaw:secret@127.0.0.1:5432/puddingclaw",
+    databaseUrl: "postgresql+asyncpg://puddingharness:secret@127.0.0.1:5432/puddingharness",
     milvus: { enabled: false },
     requirePgvector: false,
     spawn: () => ({ status: 0, stdout: '{"connected":true,"pgvector":""}\n', stderr: "" }),
@@ -52,7 +52,7 @@ test("Harness PostgreSQL validation skips optional pgvector", () => {
 test("Knowledge PostgreSQL validation requires pgvector", () => {
   const probes = validatePreparedInfrastructure({
     python: "/managed/python",
-    databaseUrl: "postgresql+asyncpg://puddingclaw:secret@127.0.0.1:5432/puddingclaw",
+    databaseUrl: "postgresql+asyncpg://puddingharness:secret@127.0.0.1:5432/puddingharness",
     milvus: { enabled: false },
     requirePgvector: true,
     spawn: () => ({ status: 0, stdout: '{"connected":true,"pgvector":""}\n', stderr: "" }),
@@ -75,7 +75,7 @@ test("database validation creates a missing database only after explicit authori
     },
   });
 
-  assert.equal(captured.options.env.PUDDINGCLAW_CREATE_DATABASE_IF_MISSING, "1");
+  assert.equal(captured.options.env.PUDDINGHARNESS_CREATE_DATABASE_IF_MISSING, "1");
   assert.match(captured.args.at(-1), /CREATE DATABASE/);
   assert.equal(probes[0].created, true);
 });
@@ -115,10 +115,10 @@ test("native PostgreSQL installation configures an isolated role and optional pg
   const result = await installNativePostgres({ installer, requirePgvector: true, run, wait: async () => {} });
   assert.equal(result.catalog.source, "native_apt");
   assert.equal(result.probe.pgvector.package, "postgresql-16-pgvector");
-  assert.match(result.databaseUrl, /^postgresql\+asyncpg:\/\/puddingclaw:/);
+  assert.match(result.databaseUrl, /^postgresql\+asyncpg:\/\/puddingharness:/);
   assert.ok(calls.some((call) => call.args.includes("postgresql-contrib")));
   assert.ok(calls.some((call) => call.args.includes("postgresql-16-pgvector")));
-  assert.ok(calls.some((call) => call.input.includes('CREATE ROLE "puddingclaw" LOGIN')));
+  assert.ok(calls.some((call) => call.input.includes('CREATE ROLE "puddingharness" LOGIN')));
 });
 
 test("native PostgreSQL uses the confirmed database, username, and password", async () => {
@@ -153,7 +153,7 @@ test("native PostgreSQL uses the confirmed database, username, and password", as
 });
 
 test("Docker PostgreSQL is an explicit alternative and labels its ownership", async () => {
-  const home = await mkdtemp(path.join(os.tmpdir(), "puddingclaw-postgres-runtime-"));
+  const home = await mkdtemp(path.join(os.tmpdir(), "puddingharness-postgres-runtime-"));
   const calls = [];
   try {
     const run = async (command, args) => {
@@ -166,8 +166,8 @@ test("Docker PostgreSQL is an explicit alternative and labels its ownership", as
     assert.equal(result.catalog.source, "docker");
     assert.equal(result.catalog.container_name, BUNDLED_POSTGRES_CONTAINER);
     const dockerRun = calls.find((call) => call.args[0] === "run");
-    assert.ok(dockerRun.args.includes("io.puddingclaw.managed=postgresql"));
-    assert.ok(dockerRun.args.includes(`io.puddingclaw.home=${home}`));
+    assert.ok(dockerRun.args.includes("io.puddingharness.managed=postgresql"));
+    assert.ok(dockerRun.args.includes(`io.puddingharness.home=${home}`));
     assert.ok(dockerRun.args.includes("127.0.0.1:5432:5432"));
     assert.deepEqual(
       bundledPostgresRunArgs({ home, password: "secret" }).slice(0, 4),
@@ -179,7 +179,7 @@ test("Docker PostgreSQL is an explicit alternative and labels its ownership", as
 });
 
 test("Docker PostgreSQL applies confirmed port and database fields", async () => {
-  const home = await mkdtemp(path.join(os.tmpdir(), "puddingclaw-postgres-custom-"));
+  const home = await mkdtemp(path.join(os.tmpdir(), "puddingharness-postgres-custom-"));
   const calls = [];
   try {
     const run = async (command, args) => {

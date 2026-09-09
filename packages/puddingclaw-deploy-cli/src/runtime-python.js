@@ -51,7 +51,7 @@ export async function prepareRuntimePython(paths, {
 } = {}) {
   const config = await loadConfig(paths.config);
   if (!config) {
-    throw new CliError("PuddingClaw is not initialized; run `puddingclaw init` first", {
+    throw new CliError("PuddingClaw is not initialized; run `puddingharness init` first", {
       code: "not_initialized",
       exitCode: 1,
     });
@@ -97,15 +97,7 @@ export async function prepareRuntimePython(paths, {
       exitCode: 1,
     });
   }
-  const knowledgeEnabled = Boolean(config.extensions?.knowledge?.enabled);
-  const analyticsEnabled = Boolean(config.extensions?.analytics?.enabled);
-  const dependencyProfile = knowledgeEnabled && analyticsEnabled
-    ? "full"
-    : knowledgeEnabled
-      ? "knowledge"
-      : analyticsEnabled
-        ? "analytics"
-        : "harness";
+  const dependencyProfile = "harness";
   const preparedFile = path.join(paths.runtime, "prepared.json");
   const existing = await readJson(preparedFile, null);
   if (
@@ -134,9 +126,7 @@ export async function prepareRuntimePython(paths, {
     stderr,
     env: {
       ...process.env,
-      PUDDINGCLAW_EXTENSION_KNOWLEDGE: knowledgeEnabled ? "1" : "0",
-      PUDDINGCLAW_EXTENSION_ANALYTICS: analyticsEnabled ? "1" : "0",
-      PUDDINGCLAW_EXTENSION_HEADLESS_WORKER: config.extensions?.headless_worker?.enabled ? "1" : "0",
+      PUDDINGHARNESS_HOME: paths.home,
     },
   });
   config.runtime.python = {

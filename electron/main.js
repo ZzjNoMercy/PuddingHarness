@@ -11,7 +11,7 @@ let frontendProcess = null;
 
 function getFrontendUrl() {
   const port = getFrontendPort();
-  return `http://localhost:${port}/app-control`;
+  return `http://127.0.0.1:${port}/app-control`;
 }
 
 function getFrontendPort() {
@@ -46,7 +46,8 @@ async function startFrontendServer() {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       PORT: String(frontendPort),
-      BACKEND_INTERNAL_URL: `http://localhost:${backendPort}`,
+      HOSTNAME: '127.0.0.1',
+      BACKEND_INTERNAL_URL: `http://127.0.0.1:${backendPort}`,
     },
     stdio: 'pipe',
   });
@@ -73,7 +74,7 @@ async function startFrontendServer() {
       throw new Error(`frontend server 启动失败: ${frontendSpawnError.message}`);
     }
     const ready = await new Promise((resolve) => {
-      const req = http.get(`http://localhost:${frontendPort}/app-control`, { timeout: 2000 }, (res) => {
+      const req = http.get(`http://127.0.0.1:${frontendPort}/app-control`, { timeout: 2000 }, (res) => {
         resolve(res.statusCode === 200);
       });
       req.on('error', () => resolve(false));

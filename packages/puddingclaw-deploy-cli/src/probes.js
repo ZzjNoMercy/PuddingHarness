@@ -47,7 +47,7 @@ function parsePython(output, command) {
 }
 
 export function probePython(explicitCommand = "") {
-  const explicit = String(explicitCommand || process.env.PUDDINGCLAW_DEPLOY_PYTHON || "").trim();
+  const explicit = String(explicitCommand || process.env.PUDDINGHARNESS_DEPLOY_PYTHON || "").trim();
   const candidates = explicit
     ? [[explicit, ["--version"]]]
     : process.platform === "win32"
@@ -74,7 +74,7 @@ export function probePython(explicitCommand = "") {
 }
 
 export function probeUv(explicitCommand = "") {
-  const command = String(explicitCommand || process.env.PUDDINGCLAW_DEPLOY_UV || "uv").trim();
+  const command = String(explicitCommand || process.env.PUDDINGHARNESS_DEPLOY_UV || "uv").trim();
   const result = executableVersion(command, ["--version"], (output, selectedCommand) => {
     const match = output.match(/uv\s+(\d+\.\d+\.\d+)/i);
     return match ? { command: selectedCommand, version: match[1] } : null;
