@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingknowledge.dev/contracts/phase10-rc-validation-manifest/v1",
+  "title": "Agent-native Knowledge Platform Phase 10 RC Validation Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "status", "releaseable", "source", "evidence", "checks", "release_rollback_window_open", "source_observations"],
+  "properties": {
+    "format": { "const": "agent-knowledge-platform-phase10-rc-validation/v1" },
+    "status": { "const": "PHASE10_RC_PREFLIGHT_NOT_RELEASEABLE" },
+    "releaseable": { "const": false },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "tag", "tag_signed", "worktree_clean"],
+      "properties": {
+        "revision": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "tag": { "type": ["string", "null"], "maxLength": 256 },
+        "tag_signed": { "type": "boolean" },
+        "worktree_clean": { "type": "boolean" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extraction_replay_consistent", "extraction_manifest_digest", "installation_shadow_digest"],
+      "properties": {
+        "extraction_replay_consistent": { "const": true },
+        "extraction_manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "installation_shadow_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "evidence"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "status": { "enum": ["blocked", "shadow_verified", "not_run"] },
+          "evidence": { "type": "string", "minLength": 1, "maxLength": 300 }
+        }
+      }
+    },
+    "release_rollback_window_open": { "const": true },
+    "source_observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extraction_preflight", "installation_migration", "harness_dependency_scan", "source_inventory", "package_build", "dependency_sbom", "platform_dependency_closure", "dependency_lock"],
+      "properties": {
+        "extraction_preflight": { "const": "not-executable-local-shadow" },
+        "installation_migration": {
+          "enum": [
+            "synthetic-state-machine-shadow",
+            "real-local-prepared-manifest-state-machine-shadow"
+          ]
+        },
+        "harness_dependency_scan": { "const": "PHASE10_HARNESS_DEPENDENCY_SCAN_BLOCKED" },
+        "source_inventory": { "const": "PHASE10_SOURCE_INVENTORY_PREFLIGHT_NOT_RELEASEABLE" },
+        "package_build": { "const": "PHASE10_PACKAGE_BUILD_SHADOW_PASS_NOT_ACTIVATABLE" },
+        "dependency_sbom": { "const": "PHASE10_DEPENDENCY_SBOM_SHADOW_PASS_NOT_ACTIVATABLE" },
+        "platform_dependency_closure": { "const": "PHASE10_PLATFORM_DEPENDENCY_CLOSURE_SHADOW_PASS_NOT_ACTIVATABLE" },
+        "dependency_lock": { "const": "PHASE10_DEPENDENCY_LOCK_PREFLIGHT_BLOCKED" }
+      }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingknowledge.dev/contracts/phase10-harness-dependency-remediation/v1",
+  "title": "Agent-native Knowledge Platform Harness dependency remediation plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "status", "activation_allowed", "rc_proof", "scan_status", "finding_count", "manual_review_pending", "rules", "files", "scope"],
+  "properties": {
+    "format": { "const": "agent-knowledge-platform-phase10-harness-dependency-remediation/v1" },
+    "status": { "const": "PHASE10_HARNESS_DEPENDENCY_REMEDIATION_REQUIRED" },
+    "activation_allowed": { "const": false },
+    "rc_proof": { "const": false },
+    "scan_status": { "const": "PHASE10_HARNESS_DEPENDENCY_SCAN_BLOCKED" },
+    "finding_count": { "type": "integer", "minimum": 1 },
+    "manual_review_pending": { "type": "integer", "minimum": 1 },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule_id", "action", "rationale", "finding_count"],
+        "properties": {
+          "rule_id": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "action": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "rationale": { "type": "string", "minLength": 1, "maxLength": 300 },
+          "finding_count": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "finding_count", "rule_ids", "lines_by_rule"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^(?!/)(?!~)(?!.*(^|/)\\.\\.(/|$)).+$" },
+          "finding_count": { "type": "integer", "minimum": 1 },
+          "rule_ids": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "lines_by_rule": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["rule_id", "lines"],
+              "properties": {
+                "rule_id": { "type": "string", "minLength": 1 },
+                "lines": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 1 } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "scope": { "const": "path-free remediation planning evidence; no source text, file edits, repository extraction, or release proof" }
+  }
+}

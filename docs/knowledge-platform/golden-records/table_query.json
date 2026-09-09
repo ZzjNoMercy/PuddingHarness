@@ -1,0 +1,478 @@
+{
+  "capability_id": "table_query",
+  "database_side_effects": {
+    "after_async": [
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "analytics_query_results"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "core_runtime_control"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "feishu_app_credentials"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "feishu_oauth_sessions"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "feishu_user_grants"
+      },
+      {
+        "content_digest": "sha256:2d92ca421be7453c41303bbe47a9d801ad50660bfdba622b11886e391b72b3c9",
+        "rows": 1,
+        "table": "knowledge_bases"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_database_sources"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_documents"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_import_events"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_import_jobs"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_source_connections"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_source_items"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_sync_runs"
+      },
+      {
+        "content_digest": "sha256:97d2f49fa11c5ce6d72a740f14e23907a0581d56931f1f2d2c4320bee02cd302",
+        "rows": 1,
+        "table": "knowledge_table_assets"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "read_later_items"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "semantic_dimension_build_events"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "semantic_dimension_build_jobs"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "task_notifications"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "worker_access_logs"
+      }
+    ],
+    "after_sync": [
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "analytics_query_results"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "core_runtime_control"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "feishu_app_credentials"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "feishu_oauth_sessions"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "feishu_user_grants"
+      },
+      {
+        "content_digest": "sha256:2d92ca421be7453c41303bbe47a9d801ad50660bfdba622b11886e391b72b3c9",
+        "rows": 1,
+        "table": "knowledge_bases"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_database_sources"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_documents"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_import_events"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_import_jobs"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_source_connections"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_source_items"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_sync_runs"
+      },
+      {
+        "content_digest": "sha256:97d2f49fa11c5ce6d72a740f14e23907a0581d56931f1f2d2c4320bee02cd302",
+        "rows": 1,
+        "table": "knowledge_table_assets"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "read_later_items"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "semantic_dimension_build_events"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "semantic_dimension_build_jobs"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "task_notifications"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "worker_access_logs"
+      }
+    ],
+    "async_catalog_row_deltas": [],
+    "before": [
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "analytics_query_results"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "core_runtime_control"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "feishu_app_credentials"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "feishu_oauth_sessions"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "feishu_user_grants"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_bases"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_database_sources"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_documents"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_import_events"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_import_jobs"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_source_connections"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_source_items"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_sync_runs"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "knowledge_table_assets"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "read_later_items"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "semantic_dimension_build_events"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "semantic_dimension_build_jobs"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "task_notifications"
+      },
+      {
+        "content_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rows": 0,
+        "table": "worker_access_logs"
+      }
+    ],
+    "business_rows_written": 0,
+    "catalog_rows_added": 2,
+    "sync_catalog_row_deltas": [
+      {
+        "after_rows": 1,
+        "before_rows": 0,
+        "delta_rows": 1,
+        "table": "knowledge_bases"
+      },
+      {
+        "after_rows": 1,
+        "before_rows": 0,
+        "delta_rows": 1,
+        "table": "knowledge_table_assets"
+      }
+    ]
+  },
+  "evidence": {
+    "async_asset_id": null,
+    "async_candidate_count": 1,
+    "async_generated_code": "result = df.groupby('品牌')['销量'].sum().sort_values(ascending=False)",
+    "async_result_preview": "品牌\n比亚迪    30\n蔚来      5",
+    "async_semantic_resolution_mode": "generalized",
+    "async_virtual_path": "<path-redacted>",
+    "content_digest": "sha256:50378b3995cfbdc89a2daf8c4690ca49a63cae73805247319660684319ef22f4",
+    "implementation_dependencies": [
+      {
+        "content_digest": "sha256:52c28e8446fec9276a58b352fb5f6e37ce8c1acbf4fa977b14a2382037a8a7fb",
+        "path": "backend/scripts/phase0a_table_query_observer.py"
+      },
+      {
+        "content_digest": "sha256:bf8b45d92869028d56ce7afb3d9094d2bd82c42739d019fef6bef75d40b415e4",
+        "path": "backend/api/knowledge.py"
+      },
+      {
+        "content_digest": "sha256:e795600bb44aa1646ccad668efebf74e4342db6955f57c9ec75d63d4484952bb",
+        "path": "backend/tools/pandas_knowledge_tool.py"
+      },
+      {
+        "content_digest": "sha256:a94b574753daf266e9defa9b6ac5eb2545adcc6a7c2d540e86850c01262d99df",
+        "path": "backend/utils/table_engine/pandas_query_engine.py"
+      },
+      {
+        "content_digest": "sha256:0683eddb608661c2d0fcdf7fe2b2afd9ece811f6cfe82abbdfde2e4ac4938ad0",
+        "path": "backend/utils/table_engine/executor.py"
+      },
+      {
+        "content_digest": "sha256:1008d60c087efa6dce03a00f9ad7e4181915f6e913a4facc319a8d2f153eb012",
+        "path": "backend/utils/table_engine/runner.py"
+      },
+      {
+        "content_digest": "sha256:5d10da56b7f485276fd9d2da99d29d877bc8dc1b8280fb37972ba40877cdccb0",
+        "path": "backend/utils/table_engine/profiler.py"
+      }
+    ],
+    "sync_asset_id": "tbl_4fcefa90dddcd961db331f2d",
+    "sync_candidate_count": 1,
+    "sync_generated_code": "result = df.groupby('品牌')['销量'].sum().sort_values(ascending=False)",
+    "sync_result_preview": "品牌\n比亚迪    30\n蔚来      5",
+    "sync_semantic_resolution_mode": "generalized",
+    "sync_virtual_path": "<path-redacted>"
+  },
+  "failure_semantics": "no_asset->stable_no_match; unsafe_code->execution_rejected; valid_code->answer_returned",
+  "filesystem_side_effects": {
+    "after": [
+      {
+        "bytes": 80,
+        "content_digest": "sha256:50378b3995cfbdc89a2daf8c4690ca49a63cae73805247319660684319ef22f4",
+        "path": "imported/monthly_sales.csv"
+      }
+    ],
+    "before": [
+      {
+        "bytes": 80,
+        "content_digest": "sha256:50378b3995cfbdc89a2daf8c4690ca49a63cae73805247319660684319ef22f4",
+        "path": "imported/monthly_sales.csv"
+      }
+    ],
+    "business_writes": [],
+    "knowledge_root_unchanged": true
+  },
+  "format": "agent-knowledge-platform-golden-baseline-record/v1",
+  "provider_revision": "legacy-pandas-table-query-v1",
+  "result": {
+    "async": {
+      "answer": "按品牌汇总销量：比亚迪 30，蔚来 5。",
+      "asset": {
+        "asset_id": null,
+        "file_name": "monthly_sales.csv",
+        "matched_score": 28,
+        "sheet_name": null,
+        "virtual_path": "<path-redacted>"
+      },
+      "engine": "puddingclaw_pandas_query_engine",
+      "profile": {
+        "columns": [
+          "品牌",
+          "月份",
+          "销量"
+        ],
+        "dtypes": {
+          "品牌": "str",
+          "月份": "str",
+          "销量": "int64"
+        },
+        "preview": [
+          {
+            "品牌": "比亚迪",
+            "月份": "2024-01",
+            "销量": 10
+          },
+          {
+            "品牌": "比亚迪",
+            "月份": "2024-02",
+            "销量": 20
+          },
+          {
+            "品牌": "蔚来",
+            "月份": "2024-01",
+            "销量": 5
+          }
+        ],
+        "shape": [
+          3,
+          3
+        ]
+      },
+      "query": "按品牌汇总销量，并按销量降序展示"
+    },
+    "same_answer": true,
+    "sync": {
+      "answer": "按品牌汇总销量：比亚迪 30，蔚来 5。",
+      "asset": {
+        "asset_id": "tbl_4fcefa90dddcd961db331f2d",
+        "file_name": "monthly_sales.csv",
+        "matched_score": 28,
+        "sheet_name": null,
+        "virtual_path": "<path-redacted>"
+      },
+      "engine": "puddingclaw_pandas_query_engine",
+      "profile": {
+        "columns": [
+          "品牌",
+          "月份",
+          "销量"
+        ],
+        "dtypes": {
+          "品牌": "str",
+          "月份": "str",
+          "销量": "int64"
+        },
+        "preview": [
+          {
+            "品牌": "比亚迪",
+            "月份": "2024-01",
+            "销量": 10
+          },
+          {
+            "品牌": "比亚迪",
+            "月份": "2024-02",
+            "销量": 20
+          },
+          {
+            "品牌": "蔚来",
+            "月份": "2024-01",
+            "销量": 5
+          }
+        ],
+        "shape": [
+          3,
+          3
+        ]
+      },
+      "query": "按品牌汇总销量，并按销量降序展示"
+    }
+  },
+  "sanitized_fixture_manifest": {
+    "fixtures": [
+      "docs/knowledge-platform/golden-fixtures/table_query.json"
+    ]
+  },
+  "source_revision": "sha256:e23c7ca45504512fa6c5f5bdca020327431de9804e0fdba75f6f4c1beaf5c8b6"
+}

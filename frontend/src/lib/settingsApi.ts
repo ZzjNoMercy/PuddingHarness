@@ -69,6 +69,7 @@ export interface KnowledgeSettings {
       hybrid_enabled: boolean;
     };
     gbrain?: {
+      enabled: boolean;
       embedding_model_id: string;
       think_model_id: string;
     };

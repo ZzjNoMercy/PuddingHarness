@@ -12,13 +12,12 @@ Usage:
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Agent 应使用 write_file 工具直接写入 /knowledge/
-# 脚本运行时默认写入 /knowledge/（若不可写则回退到 /tmp）
-DEFAULT_KB_PATH = Path("/knowledge")
+REPO_SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def format_markdown(data):
@@ -121,12 +120,15 @@ def format_markdown(data):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="GitHub Monitor — Store to KB")
-    parser.add_argument("--kb-path", default=str(DEFAULT_KB_PATH),
-                        help=f"知识库存储路径 (默认: {DEFAULT_KB_PATH})")
+    parser = argparse.ArgumentParser(description="GitHub Monitor — Store to an explicit caller-owned workspace")
+    parser.add_argument("--output-dir", "--kb-path", dest="output_dir", required=True,
+                        help="调用者显式提供的工作区输出目录；不会默认写入 Claw/Platform Home")
     args = parser.parse_args()
 
-    kb_dir = Path(args.kb_path)
+    kb_dir = Path(args.output_dir).expanduser()
+    if kb_dir.is_symlink():
+        print("❌ 输出目录不能是符号链接", file=sys.stderr)
+        sys.exit(2)
     kb_dir.mkdir(parents=True, exist_ok=True)
 
     raw = sys.stdin.read()
@@ -140,10 +142,17 @@ def main():
 
     written = []
     for data in data_list:
+        repo = str(data.get("repo", ""))
+        if not REPO_SLUG_RE.fullmatch(repo):
+            print("❌ repo 必须是安全的 owner/repo 标识", file=sys.stderr)
+            sys.exit(2)
         md = format_markdown(data)
-        repo_name = data.get("repo", "unknown").replace("/", "_")
+        repo_name = repo.replace("/", "_")
         fname = f"{repo_name}_tracker.md"
         fpath = kb_dir / fname
+        if fpath.is_symlink():
+            print(f"❌ 输出文件不能是符号链接: {fname}", file=sys.stderr)
+            sys.exit(2)
         fpath.write_text(md)
         written.append(str(fpath))
 

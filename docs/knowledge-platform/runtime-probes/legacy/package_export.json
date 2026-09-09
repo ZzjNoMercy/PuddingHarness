@@ -1,0 +1,151 @@
+{
+  "format": "agent-native-knowledge-platform-runtime-call-graph-report/v1",
+  "observation_only": true,
+  "probes": [
+    {
+      "edges": [
+        {
+          "callee_function": "get_analytics_model_registry",
+          "callee_module": "analytics.models.registry",
+          "caller_function": "__init__",
+          "caller_module": "analytics.project_export.service"
+        },
+        {
+          "callee_function": "get_semantic_asset_registry",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "__init__",
+          "caller_module": "analytics.project_export.service"
+        },
+        {
+          "callee_function": "list_guardrail_rules",
+          "callee_module": "analytics.nl2sql.guardrails",
+          "caller_function": "_add_guardrails",
+          "caller_module": "analytics.project_export.service"
+        },
+        {
+          "callee_function": "get_model",
+          "callee_module": "analytics.models.registry",
+          "caller_function": "build_plan",
+          "caller_module": "analytics.project_export.service"
+        },
+        {
+          "callee_function": "refresh",
+          "callee_module": "analytics.models.registry",
+          "caller_function": "build_plan",
+          "caller_module": "analytics.project_export.service"
+        },
+        {
+          "callee_function": "list_guardrail_rules",
+          "callee_module": "analytics.nl2sql.guardrails",
+          "caller_function": "build_plan",
+          "caller_module": "analytics.project_export.service"
+        },
+        {
+          "callee_function": "get_model",
+          "callee_module": "analytics.models.registry",
+          "caller_function": "export",
+          "caller_module": "analytics.project_export.service"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "analytics.project_export.schemas",
+          "caller_function": "export",
+          "caller_module": "analytics.project_export.service"
+        },
+        {
+          "callee_function": "ready",
+          "callee_module": "analytics.project_export.schemas",
+          "caller_function": "export",
+          "caller_module": "analytics.project_export.service"
+        },
+        {
+          "callee_function": "observe",
+          "callee_module": "scripts.phase0a_package_export_observer",
+          "caller_function": "capture_runtime_call_graph",
+          "caller_module": "knowledge_platform.baseline.runtime_graph"
+        },
+        {
+          "callee_function": "ready",
+          "callee_module": "analytics.project_export.schemas",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_package_export_observer"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "analytics.project_export.service",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_package_export_observer"
+        },
+        {
+          "callee_function": "export",
+          "callee_module": "analytics.project_export.service",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_package_export_observer"
+        },
+        {
+          "callee_function": "normalized_digest",
+          "callee_module": "knowledge_platform.baseline.normalizer",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_package_export_observer"
+        }
+      ],
+      "format": "agent-knowledge-platform-runtime-call-graph/v1",
+      "graph_digest": "sha256:8e42da23e6f4807d79a574c17e4849a690e86f6c1490a9b53cd6ba4f0ca8329d",
+      "loaded_modules": [
+        "analytics",
+        "analytics.models",
+        "analytics.models.registry",
+        "analytics.nl2sql",
+        "analytics.nl2sql.guardrail_runtime",
+        "analytics.nl2sql.guardrails",
+        "analytics.project_export",
+        "analytics.project_export.portable_guardrails",
+        "analytics.project_export.portable_materializer",
+        "analytics.project_export.schemas",
+        "analytics.project_export.service",
+        "analytics.semantic_assets",
+        "analytics.semantic_assets.registry",
+        "knowledge",
+        "knowledge.database_sources",
+        "knowledge.indexer",
+        "knowledge.mineru_client",
+        "knowledge.models",
+        "knowledge.parsers",
+        "knowledge.parsers.cloud_common",
+        "knowledge.parsers.contracts",
+        "knowledge.parsers.dependency_installer",
+        "knowledge.parsers.llama_parse_cloud",
+        "knowledge.parsers.llamaindex_reader",
+        "knowledge.parsers.mineru_cloud",
+        "knowledge.parsers.mineru_local",
+        "knowledge.parsers.native_file",
+        "knowledge.parsers.registry",
+        "knowledge.parsers.unstructured_local",
+        "knowledge.paths",
+        "knowledge.queue_repository",
+        "knowledge.service",
+        "knowledge_platform",
+        "knowledge_platform.baseline",
+        "knowledge_platform.baseline.fixtures",
+        "knowledge_platform.baseline.normalizer",
+        "knowledge_platform.baseline.runtime_graph",
+        "knowledge_platform.baseline.runtime_registry",
+        "knowledge_platform.baseline.snapshot",
+        "scripts",
+        "scripts.phase0a_package_export_observer"
+      ],
+      "module_prefixes": [
+        "analytics",
+        "graph",
+        "knowledge",
+        "knowledge_contracts",
+        "knowledge_platform",
+        "scripts",
+        "tools",
+        "vanna"
+      ],
+      "observation_only": true,
+      "probe_reference": "scripts.phase0a_package_export_observer:observe"
+    }
+  ]
+}

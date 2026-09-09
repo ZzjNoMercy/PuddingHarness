@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingknowledge.dev/contracts/phase9-mixed-surface-shadow/v1",
+  "title": "Agent-native Knowledge Platform Phase 9 mixed-surface shadow report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "status",
+    "activation_allowed",
+    "execution_allowed",
+    "manual_review_required",
+    "semantic_equivalence_proven",
+    "probes"
+  ],
+  "properties": {
+    "format": { "const": "agent-knowledge-platform-phase9-mixed-surface-shadow/v1" },
+    "status": {
+      "enum": [
+        "PHASE9_MIXED_SURFACE_MARKER_PASS_NOT_ACTIVATABLE",
+        "PHASE9_MIXED_SURFACE_MARKER_BLOCKED"
+      ]
+    },
+    "activation_allowed": { "const": false },
+    "execution_allowed": { "const": false },
+    "manual_review_required": { "const": true },
+    "semantic_equivalence_proven": { "const": false },
+    "probes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/probe" }
+    }
+  },
+  "$defs": {
+    "safe_relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!~)(?!.*\\\\)(?!.*(^|/)\\.\\.(/|$)).+$"
+    },
+    "line_samples": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "type": "integer", "minimum": 1 }
+    },
+    "symbol_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "match_count", "line_samples"],
+      "properties": {
+        "action": { "enum": ["retain_harness", "extract_platform", "shared_adapter"] },
+        "match_count": { "type": "integer", "minimum": 0 },
+        "line_samples": { "$ref": "#/$defs/line_samples" }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "probe_id",
+        "path",
+        "status",
+        "owner",
+        "action",
+        "ownership_matches",
+        "required_marker_count",
+        "missing_marker_ids",
+        "missing_marker_count",
+        "forbidden_marker_ids",
+        "forbidden_marker_count",
+        "required_marker_line_counts",
+        "required_marker_lines",
+        "symbol_evidence"
+      ],
+      "properties": {
+        "probe_id": { "type": "string", "pattern": "^[A-Za-z0-9_]+$" },
+        "path": { "$ref": "#/$defs/safe_relative_path" },
+        "status": { "enum": ["verified", "blocked", "missing"] },
+        "owner": { "enum": ["platform", "harness", "shared"] },
+        "action": { "enum": ["extract", "retain", "manual"] },
+        "ownership_matches": { "type": "boolean" },
+        "required_marker_count": { "type": "integer", "minimum": 1 },
+        "missing_marker_ids": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "missing_marker_count": { "type": "integer", "minimum": 0 },
+        "forbidden_marker_ids": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "forbidden_marker_count": { "type": "integer", "minimum": 0 },
+        "required_marker_line_counts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "required_marker_lines": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/line_samples" }
+        },
+        "symbol_evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/symbol_evidence" }
+        }
+      }
+    }
+  }
+}

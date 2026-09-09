@@ -1,0 +1,57 @@
+format: agent-native-knowledge-platform-vanna-baseline/v1
+spec_revision: v0.7
+status: local-fork-provenance-resolved-upstream-rewrite-not-adopted
+local_vendor:
+  path: backend/vanna
+  packaging: vendored-source-not-pip-dependency
+  evidence_command: "PYTHONPATH=backend backend/.venv/bin/python backend/scripts/vanna_vendor_baseline.py"
+  required_output: [file_count, tree_sha256, files, license_files, license_file_sha256, observed_api_markers, repository_last_commit]
+  observed_snapshot:
+    file_count: 45
+    total_bytes: 687432
+    tree_sha256: 1fdae0c288cf3e608629db7f573632d5a15b1777d1e2f23f27f3259cfb019aab
+    license_files: [backend/vanna/LICENSE]
+    license_file_sha256:
+      backend/vanna/LICENSE: 55888f30c0ea8fd05cc5490062aac0cc9a67e6d0855c2ae78257d1a92e65f519
+    repository_last_commit: 38bf5619951f8ee82df7162254a0c9fb4ceb7bb9
+    captured_by: backend/scripts/vanna_vendor_baseline.py
+  observed_api_markers: [VannaBase, Milvus_VectorStore, OpenAI_Chat, entity_type]
+  license_files_expected: [backend/vanna/LICENSE, backend/vanna/LICENSE.txt, backend/vanna/NOTICE]
+  license_status: official-v0.7.9-license-copied-and-digested
+  local_patch_status: local-source-trees-and-content-addressed-diff-recorded; semantic-change-boundary-documented; entity-black-box-provider-boundary-tested
+  local_patch_provenance_artifact: docs/knowledge-platform/vanna-patch-provenance.json
+  entity_compatibility_test: backend/tests/test_vanna_entity_filters.py::test_vendored_entity_api_is_black_box_compatible_at_provider_boundary
+upstream_reference:
+  repository: https://github.com/vanna-ai/vanna
+  latest_public_release_observed: v2.0.2
+  latest_release_commit_observed: 365d061
+  legacy_compatible_candidate:
+    tag: v0.7.9
+    commit: 4da8dea
+    mapping_status: candidate-reference-not-file-equivalence
+    source: "official GitHub release/tag page; reviewed 2026-09-03"
+  extracted_source_comparison:
+    archive_sha256: 307fac03c8b592f9113134b297d4fe8d1c2b0687f96e2793914482fbf26c1fdd
+    comparison_scope: "python-files-only; non-Python package metadata is not covered"
+    source_root: src/vanna
+    local_python_file_count: 45
+    upstream_python_file_count: 75
+    identical_file_count: 0
+    modified_file_count: 45
+    local_only_file_count: 0
+    upstream_only_file_count: 30
+    comparison_sha256: 8ba0943550ecc3c7d0053f72e5842e43d6a84a9f6ae39468f91bbf8d4c462613
+    evidence_command: "PYTHONPATH=backend backend/.venv/bin/python backend/scripts/vanna_vendor_baseline.py --upstream-root <vanna-0.7.9-extracted>/src/vanna"
+  license_observed: MIT
+  architecture_note: "Official repository describes v2 as a complete rewrite from the 0.x VannaBase API."
+  source: "official GitHub repository/release page; reviewed 2026-09-03"
+compatibility_decision:
+  selected: maintain-platform-fork
+  options: [maintain-platform-fork, adapt-extension-points-upstream]
+  reason: "User decision on 2026-09-03: keep Vanna maintained locally in PuddingClaw. The local tree's 0.x-style API cannot be assumed compatible with the current v2 API; semantic mapping to the upstream candidate remains documented but is not a prerequisite for the local fork."
+  entity_compatibility_status: provider-boundary-black-box-tested; upstream-v0.7.9-entity-api-not-present
+  hard_constraints:
+    - "Platform must expose normalized Evidence and QueryPlan contracts, never Vanna classes."
+    - "PuddingHarness must not package this tree or its Milvus runtime dependencies."
+    - "Entity retrieval compatibility must be black-box tested before extraction."
+    - "License and complete local patch provenance must be resolved before repository extraction."

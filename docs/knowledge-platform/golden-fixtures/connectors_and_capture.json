@@ -1,0 +1,27 @@
+{
+  "format": "agent-knowledge-platform-golden-fixture/connectors-and-capture/v1",
+  "sanitized": true,
+  "scenario": {
+    "web_capture": {
+      "original_url": "https://example.test/agent-notes?utm_source=golden",
+      "html": "<html><head><title>Agent Capture Notes</title><meta property=\"og:site_name\" content=\"Example Lab\"></head><body><nav>navigation noise</nav><article><h1>Agent Capture Notes</h1><p>This captured article contains stable source identity, safe fetching, retry behavior, and enough body text for the production parser to materialize a Markdown knowledge document.</p><p>The captured evidence remains linked to its canonical URL.</p></article></body></html>"
+    },
+    "oauth": {
+      "app_id": "cli_golden_connectors",
+      "app_secret": "sanitized-fixture-app-secret",
+      "redirect_uri": "http://127.0.0.1:3000/knowledge/feishu/oauth/callback",
+      "principal_id": "browser:golden-binding",
+      "code": "sanitized-auth-code",
+      "scopes": ["wiki:wiki:readonly", "offline_access"]
+    },
+    "feishu_sync": {
+      "space_id": "space-golden",
+      "node_token": "wiki-node-golden",
+      "document_token": "docx-golden",
+      "title": "Golden Connector Manual",
+      "revision": "7",
+      "body": "Connector synchronization preserves source identity and only refetches the document when the remote revision changes.",
+      "source_url": "https://example.feishu.cn/wiki/wiki-node-golden"
+    }
+  }
+}

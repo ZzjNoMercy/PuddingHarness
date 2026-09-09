@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingknowledge.dev/contracts/platform-backup/v1",
+  "title": "Agent-native Knowledge Platform local backup manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format",
+    "status",
+    "owner",
+    "created_at",
+    "files",
+    "file_count",
+    "bytes_total",
+    "excluded_roots",
+    "secret_bytes_copied",
+    "source_data_mutation",
+    "legacy_claw_mutation",
+    "execution_allowed",
+    "activation_allowed",
+    "manifest_digest"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "format": { "const": "agent-knowledge-platform-backup/v1" },
+    "status": { "const": "snapshot_created" },
+    "owner": { "const": "puddingknowledge" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "files": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^(?!/)(?!~)(?!.*\\\\)(?!.*(^|/)\\.\\.(/|$)).+$"
+      },
+      "additionalProperties": { "$ref": "#/$defs/file" }
+    },
+    "file_count": { "type": "integer", "minimum": 1 },
+    "bytes_total": { "type": "integer", "minimum": 1 },
+    "excluded_roots": {
+      "const": ["logs", "operations"]
+    },
+    "secret_bytes_copied": { "const": false },
+    "source_data_mutation": { "const": false },
+    "legacy_claw_mutation": { "const": false },
+    "execution_allowed": { "const": false },
+    "activation_allowed": { "const": false },
+    "manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "$defs": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "bytes"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

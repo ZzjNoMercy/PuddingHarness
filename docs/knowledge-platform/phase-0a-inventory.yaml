@@ -1,0 +1,116 @@
+format: agent-knowledge-platform-inventory/v1
+spec_revision: v0.7
+status: frozen-baseline-draft
+frozen_at: 2026-09-02
+scope:
+  repository: PuddingClaw
+  principle: "Phase 0 inventory only; no production path, registry, database connection, or implementation is changed by this artifact."
+  target_repositories:
+    - PuddingClaw
+    - puddingknowledge
+    - puddingharness
+  ownership_decisions_recorded:
+    - "Top-level delivery term is Collection (user decision, 2026-09-03); Dataset remains an internal migration/table concept only."
+    - "Vanna is maintained as a local vendored fork in PuddingClaw; upstream compatibility is not assumed."
+  archive_maintenance_policy_working_default:
+    owner: PuddingClaw project
+    responsibilities:
+      - "Maintain archive format, restore tooling, migration scripts and content-addressed manifests."
+      - "Keep the legacy source read-only during the rollback window and verify package rebuild before cleanup."
+      - "Record deletion/retention approvals in the project progress log; do not silently delete user assets."
+    final_organization_approval: pending
+  ownership_decisions_pending:
+    - "Final organization approval for the PuddingClaw archive/retention policy (the working default is recorded above)."
+    - "Pre-Phase-10 development trunk and backport policy (spec §18.2 #10)."
+subdomains:
+  - id: catalog-files
+    source_paths: [backend/knowledge/models.py, backend/knowledge/service.py, backend/knowledge/sources.py, backend/knowledge/paths.py]
+    orm_tables: [knowledge_bases, knowledge_documents, knowledge_source_connections, knowledge_source_items, knowledge_sync_runs, knowledge_import_jobs, knowledge_import_events, knowledge_table_assets]
+    runtime_surfaces: [backend/api/knowledge.py, frontend/src/app/knowledge/page.tsx]
+    target_owner: puddingknowledge
+    migration: "Extract behind Catalog/Blob repositories; preserve PuddingClaw legacy implementation."
+  - id: processing-parsers
+    source_paths: [backend/knowledge/parsers, backend/knowledge/mineru_client.py, backend/knowledge/import_worker.py, backend/knowledge/import_jobs.py]
+    orm_tables: [knowledge_import_jobs, knowledge_import_events]
+    runtime_surfaces: [backend/api/knowledge.py, backend/skills/pdf]
+    target_owner: puddingknowledge
+    migration: "Platform Processing Worker; credentials move to Platform vault references."
+  - id: retrieval-rag
+    source_paths: [backend/knowledge/indexer.py, backend/tools/search_knowledge_tool.py, backend/llm/embed_client.py, backend/llm/rerank_client.py]
+    orm_tables: [knowledge_documents]
+    runtime_surfaces: [backend/api/knowledge.py, backend/api/mcp.py, backend/skills/knowledge-search]
+    target_owner: puddingknowledge
+    migration: "Platform Retrieval provider; expose normalized Evidence and rebuild manifest, never provider objects."
+  - id: wiki
+    source_paths: [backend/knowledge/llm_wiki.py, backend/knowledge/llm_wiki_compiler_agent.py, backend/tools/llm_wiki_tools.py, backend/knowledge/brain_schema.py]
+    orm_tables: []
+    runtime_surfaces: [backend/api/knowledge.py, frontend/src/app/knowledge/schema/page.tsx, backend/skills/llm-wiki]
+    target_owner: puddingknowledge
+    migration: "Query first; compiler becomes a Platform Worker and no longer calls Claw Tool adapters."
+  - id: structured-assets
+    source_paths: [backend/analytics/table_catalog.py, backend/tools/pandas_knowledge_tool.py, backend/utils/table_engine]
+    orm_tables: [knowledge_table_assets]
+    runtime_surfaces: [backend/api/knowledge.py, backend/skills/table-analysis, backend/skills/build-logical-dataset]
+    target_owner: puddingknowledge
+    migration: "Platform Structured Asset Catalog and table query application service."
+  - id: database-query
+    source_paths: [backend/analytics/nl2sql, backend/tools/database, backend/tools/database_knowledge_tool.py, backend/vanna]
+    orm_tables: [knowledge_database_sources, analytics_query_results]
+    runtime_surfaces: [backend/api/knowledge.py, backend/skills/database-analysis, backend/skills/sql-guardrail-designer]
+    target_owner: puddingknowledge
+    migration: "Two-phase generate/execute contract; Vanna is an infrastructure provider, never a public domain object."
+  - id: semantic-assets
+    source_paths: [backend/analytics/semantic_assets, backend/analytics/semantic_authoring, backend/knowledge/semantic_dimension_jobs.py]
+    orm_tables: [semantic_dimension_build_jobs, semantic_dimension_build_events]
+    runtime_surfaces: [backend/api/semantic_assets.py, backend/api/knowledge.py, backend/skills/semantic-steward, backend/skills/build-semantic-dimension]
+    target_owner: puddingknowledge
+    migration: "Publish versioned machine-readable and Markdown semantic assets; remove Session/Run as primary identity."
+  - id: connectors-and-capture
+    source_paths: [backend/knowledge/connectors, backend/knowledge/read_later.py, backend/api/feishu_connector.py, backend/api/read_later.py]
+    orm_tables: [feishu_app_credentials, feishu_user_grants, feishu_oauth_sessions, read_later_items]
+    runtime_surfaces: [frontend/src/app/knowledge/page.tsx, backend/skills/github-monitor]
+    target_owner: puddingknowledge
+    migration: "Platform Connector/Ingestion; only stable IDs and secret references cross the boundary."
+  - id: harness-wiring
+    source_paths: [backend/graph/agent.py, backend/graph/deepagents_manager.py, backend/graph/middlewares/tool_intent_router.py, backend/graph/virtual_paths.py, backend/tools/deep_research_tool.py]
+    orm_tables: [worker_access_logs, task_notifications]
+    runtime_surfaces: [backend/graph, frontend/src/components/layout/Sidebar.tsx, packages/puddingclaw-deploy-cli]
+    target_owner: puddingharness
+    table_ownership: {worker_access_logs: puddingharness, task_notifications: split}
+    migration: "WorkerAccessLog remains Harness-owned. TaskNotification facts move to Platform append-only events while Harness owns inbox/read acknowledgement state; current legacy writer/consumer remains unchanged until a later cutover."
+  - id: distribution-and-infra
+    source_paths: [electron, packages/puddingclaw-deploy-cli, docker-compose.infra.yml, scripts/start-local-infra.sh]
+    orm_tables: []
+    runtime_surfaces: [electron/main.js, packages/puddingclaw-deploy-cli/src]
+    target_owner: split
+    migration: "Platform owns knowledge infrastructure; Harness retains generic runtime and a versioned external-platform install recipe."
+required_skill_inventory:
+  knowledge_coupled:
+    - knowledge-search
+    - llm-wiki
+    - database-analysis
+    - table-analysis
+    - build-logical-dataset
+    - build-semantic-dimension
+    - semantic-steward
+    - sql-guardrail-designer
+    - pdf
+    - github-monitor
+  root_delegate: skills/puddingclaw/SKILL.md
+  inspection_required: [references, scripts, assets, validation, output_paths, tool_names]
+artifact_coverage:
+  orm_and_migrations: [backend/knowledge/models.py, backend/schema_migrations.py, backend/catalog_migration.py]
+  api_and_protocol: [backend/api/knowledge.py, backend/api/mcp.py, backend/api/knowledge_sources.py]
+  frontend_and_distribution: [frontend/src/app/knowledge, frontend/src/app/analytics, electron, packages/puddingclaw-deploy-cli, docker-compose.infra.yml]
+  config_and_credentials: [docs/knowledge-platform/config-credential-ownership.yaml]
+  dependency_guard: [backend/tests/test_knowledge_platform_boundaries.py]
+  contracts: [backend/knowledge_contracts]
+  skills: [docs/knowledge-platform/skills-inventory.yaml]
+  golden_baseline_registry: [docs/knowledge-platform/golden-baseline.yaml]
+  vanna_vendor_baseline: [docs/knowledge-platform/vanna-baseline.yaml, docs/knowledge-platform/vanna-patch-provenance.json, backend/scripts/vanna_vendor_baseline.py, backend/scripts/vanna_vendor_patch_provenance.py, backend/tests/test_phase0a_dependency_inventory.py, backend/tests/test_vanna_entity_filters.py]
+  file_classification: [docs/knowledge-platform/file-classification.yaml, backend/tests/test_knowledge_platform_boundaries.py]
+  source_dependency_inventory: [backend/scripts/phase0a_dependency_inventory.py, backend/tests/test_phase0a_dependency_inventory.py]
+  phase_gate_evidence: [docs/knowledge-platform/phase-gate-evidence.yaml, backend/knowledge_platform/readiness/phase_gates.py]
+  runtime_call_graph: [backend/knowledge_platform/baseline/runtime_graph.py, backend/knowledge_platform/baseline/runtime_registry.py, backend/knowledge_platform/baseline/legacy_runtime_registry.py, backend/knowledge_platform/baseline/phase0a_probes.py, backend/scripts/phase0a_runtime_call_graph.py, backend/scripts/phase0a_runtime_probe_registry.py, backend/scripts/phase0a_runtime_dependency_gate.py, backend/scripts/phase0a_legacy_runtime_probe_registry.py, backend/scripts/phase0a_catalog_migration_observer.py, backend/scripts/phase0a_connectors_capture_observer.py, backend/scripts/phase0a_database_nl2sql_observer.py, backend/scripts/phase0a_document_rag_observer.py, backend/scripts/phase0a_lease_jobs_observer.py, backend/scripts/phase0a_package_export_observer.py, backend/scripts/phase0a_semantic_authoring_observer.py, backend/scripts/phase0a_table_query_observer.py, backend/scripts/phase0a_wiki_query_compile_observer.py, backend/tests/test_knowledge_platform_phase0a_probes.py, backend/tests/test_knowledge_platform_runtime_registry.py, backend/tests/test_knowledge_platform_legacy_runtime_registry.py, docs/knowledge-platform/phase-0a-runtime-call-probes.yaml, docs/knowledge-platform/phase-0a-legacy-runtime-call-probes.yaml, docs/knowledge-platform/runtime-probes/catalog_processing.json, docs/knowledge-platform/runtime-probes/harness_wiring.json, docs/knowledge-platform/runtime-probes/retrieval_evidence.json, docs/knowledge-platform/runtime-probes/semantic_authoring.json, docs/knowledge-platform/runtime-probes/structured_query_boundary.json, docs/knowledge-platform/runtime-probes/wiki_compilation.json, docs/knowledge-platform/runtime-probes/legacy/catalog_migration_rehearsal.json, docs/knowledge-platform/runtime-probes/legacy/connectors_and_capture.json, docs/knowledge-platform/runtime-probes/legacy/database_nl2sql_and_readonly_execute.json, docs/knowledge-platform/runtime-probes/legacy/document_rag.json, docs/knowledge-platform/runtime-probes/legacy/lease_and_jobs.json, docs/knowledge-platform/runtime-probes/legacy/package_export.json, docs/knowledge-platform/runtime-probes/legacy/semantic_assets_and_authoring.json, docs/knowledge-platform/runtime-probes/legacy/table_query.json, docs/knowledge-platform/runtime-probes/legacy/wiki_query_and_compile.json]
+  golden_source_snapshot: [backend/knowledge_platform/baseline/snapshot.py, backend/scripts/phase0a_source_snapshot.py, docs/knowledge-platform/golden-baseline.yaml, docs/knowledge-platform/phase-0a-source-snapshot.json]
+  golden_fixture_manifest: [backend/knowledge_platform/baseline/fixtures.py, backend/knowledge_platform/baseline/normalizer.py, backend/scripts/phase0a_baseline_record.py, backend/scripts/phase0a_catalog_migration_observer.py, backend/scripts/phase0a_connectors_capture_observer.py, backend/scripts/phase0a_database_nl2sql_observer.py, backend/scripts/phase0a_document_rag_observer.py, backend/scripts/phase0a_fixture_manifest.py, backend/scripts/phase0a_lease_jobs_observer.py, backend/scripts/phase0a_package_export_observer.py, backend/scripts/phase0a_semantic_authoring_observer.py, backend/scripts/phase0a_table_query_observer.py, backend/scripts/phase0a_wiki_query_compile_observer.py, backend/tests/test_knowledge_platform_baseline.py, backend/tests/test_knowledge_platform_fixture_manifest.py, docs/knowledge-platform/golden-fixture-manifest.yaml, docs/knowledge-platform/golden-fixtures/catalog_migration_rehearsal.json, docs/knowledge-platform/golden-fixtures/connectors_and_capture.json, docs/knowledge-platform/golden-fixtures/database_nl2sql_and_readonly_execute.json, docs/knowledge-platform/golden-fixtures/document_rag.json, docs/knowledge-platform/golden-fixtures/lease_and_jobs.json, docs/knowledge-platform/golden-fixtures/package_export.json, docs/knowledge-platform/golden-fixtures/semantic_assets_and_authoring.json, docs/knowledge-platform/golden-fixtures/table_query.json, docs/knowledge-platform/golden-fixtures/wiki_query_and_compile.json, docs/knowledge-platform/golden-records/catalog_migration_rehearsal.json, docs/knowledge-platform/golden-records/connectors_and_capture.json, docs/knowledge-platform/golden-records/database_nl2sql_and_readonly_execute.json, docs/knowledge-platform/golden-records/document_rag.json, docs/knowledge-platform/golden-records/lease_and_jobs.json, docs/knowledge-platform/golden-records/package_export.json, docs/knowledge-platform/golden-records/semantic_assets_and_authoring.json, docs/knowledge-platform/golden-records/table_query.json, docs/knowledge-platform/golden-records/wiki_query_and_compile.json]

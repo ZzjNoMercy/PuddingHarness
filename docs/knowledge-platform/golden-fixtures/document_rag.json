@@ -1,0 +1,14 @@
+{
+  "format": "agent-knowledge-platform-golden-fixture/document-rag/v1",
+  "sanitized": true,
+  "scenario": {
+    "relative_path": "imported/operating-policy.md",
+    "virtual_path": "/knowledge/imported/operating-policy.md",
+    "document_id": "doc_golden_rag",
+    "chunk_id": "chunk_retention_policy",
+    "content": "# Operating Policy\n\n## Retention Policy\n\nThe retention policy keeps published evidence for 30 days.\n\n## Escalation\n\nEscalate unresolved incidents to the duty owner.\n",
+    "query": "retention policy published evidence",
+    "missing_query": "completely absent lunar procedure",
+    "top_k": 2
+  }
+}

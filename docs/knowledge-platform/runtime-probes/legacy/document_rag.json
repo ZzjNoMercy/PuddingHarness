@@ -1,0 +1,116 @@
+{
+  "format": "agent-native-knowledge-platform-runtime-call-graph-report/v1",
+  "observation_only": true,
+  "probes": [
+    {
+      "edges": [
+        {
+          "callee_function": "observe",
+          "callee_module": "scripts.phase0a_document_rag_observer",
+          "caller_function": "capture_runtime_call_graph",
+          "caller_module": "knowledge_platform.baseline.runtime_graph"
+        },
+        {
+          "callee_function": "parse_tool_result",
+          "callee_module": "graph.citations",
+          "caller_function": "_stable_tool_result",
+          "caller_module": "scripts.phase0a_document_rag_observer"
+        },
+        {
+          "callee_function": "build_markdown_chunk_manifest",
+          "callee_module": "knowledge.indexer",
+          "caller_function": "observe",
+          "caller_module": "scripts.phase0a_document_rag_observer"
+        },
+        {
+          "callee_function": "get_knowledge_root",
+          "callee_module": "knowledge.paths",
+          "caller_function": "observe",
+          "caller_module": "scripts.phase0a_document_rag_observer"
+        },
+        {
+          "callee_function": "_run",
+          "callee_module": "tools.search_knowledge_tool",
+          "caller_function": "observe",
+          "caller_module": "scripts.phase0a_document_rag_observer"
+        },
+        {
+          "callee_function": "get_current_trace_collector",
+          "callee_module": "graph.trace_collector",
+          "caller_function": "_emit_rag_span",
+          "caller_module": "tools.search_knowledge_tool"
+        },
+        {
+          "callee_function": "encode_tool_result",
+          "callee_module": "graph.citations",
+          "caller_function": "_run",
+          "caller_module": "tools.search_knowledge_tool"
+        },
+        {
+          "callee_function": "normalize_source",
+          "callee_module": "graph.citations",
+          "caller_function": "_run",
+          "caller_module": "tools.search_knowledge_tool"
+        },
+        {
+          "callee_function": "<lambda>",
+          "callee_module": "scripts.phase0a_document_rag_observer",
+          "caller_function": "_run",
+          "caller_module": "tools.search_knowledge_tool"
+        },
+        {
+          "callee_function": "as_retriever",
+          "callee_module": "scripts.phase0a_document_rag_observer",
+          "caller_function": "_run",
+          "caller_module": "tools.search_knowledge_tool"
+        },
+        {
+          "callee_function": "get_content",
+          "callee_module": "scripts.phase0a_document_rag_observer",
+          "caller_function": "_run",
+          "caller_module": "tools.search_knowledge_tool"
+        },
+        {
+          "callee_function": "retrieve",
+          "callee_module": "scripts.phase0a_document_rag_observer",
+          "caller_function": "_run",
+          "caller_module": "tools.search_knowledge_tool"
+        }
+      ],
+      "format": "agent-knowledge-platform-runtime-call-graph/v1",
+      "graph_digest": "sha256:eb7b13d2c1c61e9f79e6550a215871f0429008e14da77d3a8b8951cf9a2c9d52",
+      "loaded_modules": [
+        "graph",
+        "graph.citations",
+        "graph.prompt_cache",
+        "graph.trace_collector",
+        "knowledge",
+        "knowledge.indexer",
+        "knowledge.paths",
+        "knowledge_platform",
+        "knowledge_platform.baseline",
+        "knowledge_platform.baseline.fixtures",
+        "knowledge_platform.baseline.normalizer",
+        "knowledge_platform.baseline.runtime_graph",
+        "knowledge_platform.baseline.runtime_registry",
+        "knowledge_platform.baseline.snapshot",
+        "scripts",
+        "scripts.phase0a_document_rag_observer",
+        "tools",
+        "tools.search_knowledge_tool"
+      ],
+      "module_prefixes": [
+        "analytics",
+        "graph",
+        "knowledge",
+        "knowledge_contracts",
+        "knowledge_platform",
+        "scripts",
+        "tools",
+        "vanna"
+      ],
+      "observation_only": true,
+      "probe_reference": "scripts.phase0a_document_rag_observer:observe"
+    }
+  ]
+}

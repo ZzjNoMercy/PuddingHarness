@@ -1,0 +1,19 @@
+format: agent-knowledge-platform-dependency-edges/v1
+spec_revision: v0.7
+mode: deny
+scan_roots:
+  - backend/knowledge_platform
+  - backend/knowledge_contracts
+denied_edges:
+  - source: knowledge_platform
+    targets: [graph, harness, tools, knowledge, analytics, vanna]
+  - source: knowledge_platform.application
+    targets: [langchain_core.tools, langgraph, deepagents]
+  - source: knowledge_contracts
+    targets: [fastapi, pydantic, sqlalchemy, mcp, langchain, langgraph, deepagents, graph, harness, tools, knowledge, analytics, vanna, config]
+  - source: claw_harness
+    targets: [knowledge, analytics, vanna]
+evidence:
+  ast_guard: backend/tests/test_knowledge_platform_boundaries.py
+  required_command: "backend/.venv/bin/pytest -q backend/tests/test_knowledge_platform_boundaries.py"
+  current_exception: "PuddingClaw legacy packages intentionally retain existing reverse edges until Phase 8/10 extraction; this deny list applies to target packages only."

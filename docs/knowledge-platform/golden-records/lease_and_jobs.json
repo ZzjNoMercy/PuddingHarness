@@ -1,0 +1,68 @@
+{
+  "capability_id": "lease_and_jobs",
+  "database_side_effects": {
+    "active_revision_changed": false,
+    "business_rows_written": 8,
+    "terminal_import_status": "failed"
+  },
+  "evidence": {
+    "final_import": {
+      "attempt": 2,
+      "retry_count": 1,
+      "status": "failed"
+    },
+    "maintenance_generations": [
+      1,
+      1,
+      2,
+      3
+    ],
+    "row_counts": {
+      "import_events": 5,
+      "import_jobs": 1,
+      "runtime_control": 1,
+      "semantic_jobs": 1
+    }
+  },
+  "failure_semantics": "lost_lease->terminal_write_rejected; drain->claim_rejected; maintenance->writes_blocked",
+  "filesystem_side_effects": {
+    "business_writes": []
+  },
+  "format": "agent-knowledge-platform-golden-baseline-record/v1",
+  "provider_revision": "legacy-queue-lease-runtime-control-v1",
+  "result": {
+    "blocked_claim_during_drain": true,
+    "heartbeat_owner_a": true,
+    "maintenance_modes": [
+      "draining",
+      "draining",
+      "maintenance",
+      "normal"
+    ],
+    "reclaimed_import": {
+      "attempt": 2,
+      "current_step": "starting",
+      "lease_owner": "worker-b",
+      "status": "running"
+    },
+    "retry_state": {
+      "retry_count": 1,
+      "status": "queued"
+    },
+    "semantic_claim_after_release": {
+      "attempt": 1,
+      "current_step": "load_source_profiles",
+      "lease_owner": "worker-c",
+      "status": "running"
+    },
+    "stale_fence": "rejected",
+    "writes_allowed_in_maintenance": false,
+    "wrong_owner_heartbeat": false
+  },
+  "sanitized_fixture_manifest": {
+    "fixtures": [
+      "docs/knowledge-platform/golden-fixtures/lease_and_jobs.json"
+    ]
+  },
+  "source_revision": "sha256:a1ea984050095d22c6e701a2fdd8d5132b921b1c06c0a583698dac2521741c79"
+}

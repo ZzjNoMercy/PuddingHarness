@@ -1,0 +1,192 @@
+{
+  "format": "agent-native-knowledge-platform-runtime-call-graph-report/v1",
+  "observation_only": true,
+  "probes": [
+    {
+      "edges": [
+        {
+          "callee_function": "__init__",
+          "callee_module": "analytics.semantic_authoring.documents",
+          "caller_function": "repair_technical_frontmatter",
+          "caller_module": "analytics.semantic_authoring.contracts"
+        },
+        {
+          "callee_function": "get_analytics_model_registry",
+          "callee_module": "analytics.models.registry",
+          "caller_function": "_catalog",
+          "caller_module": "analytics.semantic_authoring.discovery"
+        },
+        {
+          "callee_function": "refresh",
+          "callee_module": "analytics.models.registry",
+          "caller_function": "_catalog",
+          "caller_module": "analytics.semantic_authoring.discovery"
+        },
+        {
+          "callee_function": "get_semantic_asset_registry",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "_catalog",
+          "caller_module": "analytics.semantic_authoring.discovery"
+        },
+        {
+          "callee_function": "refresh",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "_catalog",
+          "caller_module": "analytics.semantic_authoring.discovery"
+        },
+        {
+          "callee_function": "kind_from_logical_path",
+          "callee_module": "analytics.semantic_authoring.contracts",
+          "caller_function": "_safe_definition_path",
+          "caller_module": "analytics.semantic_authoring.service"
+        },
+        {
+          "callee_function": "repair_technical_frontmatter",
+          "callee_module": "analytics.semantic_authoring.contracts",
+          "caller_function": "prepare_semantic_markdown",
+          "caller_module": "analytics.semantic_authoring.service"
+        },
+        {
+          "callee_function": "validate_discovery_receipt",
+          "callee_module": "analytics.semantic_authoring.discovery",
+          "caller_function": "prepare_semantic_markdown",
+          "caller_module": "analytics.semantic_authoring.service"
+        },
+        {
+          "callee_function": "parse_markdown_document",
+          "callee_module": "analytics.semantic_authoring.documents",
+          "caller_function": "prepare_semantic_markdown",
+          "caller_module": "analytics.semantic_authoring.service"
+        },
+        {
+          "callee_function": "render_markdown_document",
+          "callee_module": "analytics.semantic_authoring.documents",
+          "caller_function": "prepare_semantic_markdown",
+          "caller_module": "analytics.semantic_authoring.service"
+        },
+        {
+          "callee_function": "validate_markdown_definition",
+          "callee_module": "analytics.semantic_authoring.validation",
+          "caller_function": "prepare_semantic_markdown",
+          "caller_module": "analytics.semantic_authoring.service"
+        },
+        {
+          "callee_function": "get_semantic_asset_registry",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "publish_semantic_markdown",
+          "caller_module": "analytics.semantic_authoring.service"
+        },
+        {
+          "callee_function": "refresh",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "publish_semantic_markdown",
+          "caller_module": "analytics.semantic_authoring.service"
+        },
+        {
+          "callee_function": "validate_discovery_receipt",
+          "callee_module": "analytics.semantic_authoring.discovery",
+          "caller_function": "publish_semantic_markdown",
+          "caller_module": "analytics.semantic_authoring.service"
+        },
+        {
+          "callee_function": "validate_markdown_definition",
+          "callee_module": "analytics.semantic_authoring.validation",
+          "caller_function": "publish_semantic_markdown",
+          "caller_module": "analytics.semantic_authoring.service"
+        },
+        {
+          "callee_function": "kind_from_logical_path",
+          "callee_module": "analytics.semantic_authoring.contracts",
+          "caller_function": "validate_markdown_definition",
+          "caller_module": "analytics.semantic_authoring.validation"
+        },
+        {
+          "callee_function": "parse_markdown_document",
+          "callee_module": "analytics.semantic_authoring.documents",
+          "caller_function": "validate_markdown_definition",
+          "caller_module": "analytics.semantic_authoring.validation"
+        },
+        {
+          "callee_function": "observe",
+          "callee_module": "scripts.phase0a_semantic_authoring_observer",
+          "caller_function": "capture_runtime_call_graph",
+          "caller_module": "knowledge_platform.baseline.runtime_graph"
+        },
+        {
+          "callee_function": "get_asset",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "observe",
+          "caller_module": "scripts.phase0a_semantic_authoring_observer"
+        },
+        {
+          "callee_function": "get_semantic_asset_registry",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "observe",
+          "caller_module": "scripts.phase0a_semantic_authoring_observer"
+        },
+        {
+          "callee_function": "refresh",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "observe",
+          "caller_module": "scripts.phase0a_semantic_authoring_observer"
+        },
+        {
+          "callee_function": "discover_semantic_definitions",
+          "callee_module": "analytics.semantic_authoring.discovery",
+          "caller_function": "observe",
+          "caller_module": "scripts.phase0a_semantic_authoring_observer"
+        },
+        {
+          "callee_function": "prepare_semantic_markdown",
+          "callee_module": "analytics.semantic_authoring.service",
+          "caller_function": "observe",
+          "caller_module": "scripts.phase0a_semantic_authoring_observer"
+        },
+        {
+          "callee_function": "publish_semantic_markdown",
+          "callee_module": "analytics.semantic_authoring.service",
+          "caller_function": "observe",
+          "caller_module": "scripts.phase0a_semantic_authoring_observer"
+        }
+      ],
+      "format": "agent-knowledge-platform-runtime-call-graph/v1",
+      "graph_digest": "sha256:75afe295698b71e23076b1852efd27da71981d5b3780841241ec5451fa96f390",
+      "loaded_modules": [
+        "analytics",
+        "analytics.models",
+        "analytics.models.registry",
+        "analytics.semantic_assets",
+        "analytics.semantic_assets.registry",
+        "analytics.semantic_authoring",
+        "analytics.semantic_authoring.contracts",
+        "analytics.semantic_authoring.discovery",
+        "analytics.semantic_authoring.documents",
+        "analytics.semantic_authoring.service",
+        "analytics.semantic_authoring.validation",
+        "knowledge",
+        "knowledge.paths",
+        "knowledge_platform",
+        "knowledge_platform.baseline",
+        "knowledge_platform.baseline.fixtures",
+        "knowledge_platform.baseline.normalizer",
+        "knowledge_platform.baseline.runtime_graph",
+        "knowledge_platform.baseline.runtime_registry",
+        "knowledge_platform.baseline.snapshot",
+        "scripts",
+        "scripts.phase0a_semantic_authoring_observer"
+      ],
+      "module_prefixes": [
+        "analytics",
+        "graph",
+        "knowledge",
+        "knowledge_contracts",
+        "knowledge_platform",
+        "scripts",
+        "tools",
+        "vanna"
+      ],
+      "observation_only": true,
+      "probe_reference": "scripts.phase0a_semantic_authoring_observer:observe"
+    }
+  ]
+}

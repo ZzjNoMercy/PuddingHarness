@@ -1,0 +1,107 @@
+[project]
+name = "puddingharness-backend"
+version = "0.1.0"
+description = "PuddingHarness agent, MCP, evaluation, and runtime service"
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "PuddingHarness Team" }]
+keywords = ["agent", "mcp", "evaluation", "runtime"]
+
+# Keep the source runtime's general Agent/MCP/Evaluation requirements. The
+# target package deliberately has no specialized product or source-checkout
+# path dependency; those are separate installations.
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "sse-starlette>=3.3.0",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27,<0.29",
+    "pydantic>=2.12.0",
+    "pydantic-settings>=2.13.0",
+    "python-dotenv>=1.0.0",
+    "sqlalchemy[asyncio]>=2.0.48",
+    "aiosqlite>=0.22.0",
+    "deepagents==0.7.11",
+    "langchain>=1.3.18,<2",
+    "langchain-core>=1.6.1,<2",
+    "langchain-community>=0.4.2",
+    "langchain-deepseek>=1.1.0",
+    "langchain-openai>=1.3.3",
+    "langchain-mcp-adapters>=0.3.0",
+    "langgraph>=1.2.6",
+    "langsmith>=0.11.2",
+    "urllib3>=2.0",
+    "openai>=2.28.0",
+    "tiktoken>=0.12.0",
+    "pillow>=12.0.0",
+    "beautifulsoup4>=4.14.0",
+    "html2text>=2025.0.0",
+    "lxml>=6.0.0",
+    "PyYAML>=6.0.0",
+    "filetype>=1.2.0",
+    "aiohttp>=3.13.0",
+    "anyio>=4.12.0",
+    "requests>=2.32.0",
+    "tenacity>=9.0.0",
+    "tqdm>=4.67.0",
+    "xxhash>=3.4.0",
+    "uuid-utils>=0.14.0",
+    "cryptography>=49.0.0",
+    "filelock>=3.29.0",
+    "langchain-experimental>=0.4.1",
+]
+
+[project.optional-dependencies]
+postgres = ["asyncpg>=0.29.0"]
+evaluation = ["swebench==4.1.0"]
+unstructured = ["unstructured[docx,pdf]>=0.18,<0.22"]
+
+[project.scripts]
+puddingharness-api = "puddingharness_cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# The staging script replaces this list with the actual top-level files and
+# packages copied into a particular artifact. It is intentionally not a
+# source-checkout package list.
+[tool.hatch.build.targets.wheel]
+only-include = [
+    "app.py",
+    "backend_lease.py",
+    "api",
+    "capabilities.py",
+    "catalog_backup.py",
+    "cli_runtime.py",
+    "config.py",
+    "connectors",
+    "db.py",
+    "db_maintenance.py",
+    "evaluation",
+    "graph",
+    "harness",
+    "headless_activity.py",
+    "headless_session_lifecycle.py",
+    "higress_config_reader.py",
+    "mcp_clients",
+    "runtime_identity",
+    "tools",
+    "llm",
+    "projects",
+    "services",
+    "utils",
+    "observability.py",
+    "postgres_dependencies.py",
+    "provider_registry.py",
+    "prompts",
+    "puddingharness_cli.py",
+    "runtime_control.py",
+    "schema_migrations.py",
+    "skills",
+    "web_search",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"

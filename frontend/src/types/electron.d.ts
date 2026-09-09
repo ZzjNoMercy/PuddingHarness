@@ -9,10 +9,13 @@ export interface ElectronAPI {
   stopBackend: () => Promise<{ status: string; message: string }>;
   getBackendStatus: () => Promise<{ status: string; error: string | null; url: string }>;
 
-  // Docker infra 管理
+  // Platform supervisor 管理（兼容旧 IPC 名称）
   startInfra: () => Promise<{ status: string; message: string }>;
   stopInfra: () => Promise<{ status: string; message: string }>;
   getInfraStatus: () => Promise<{
+    owner: "knowledge-platform";
+    platform: string;
+    home: string;
     docker: boolean;
     postgres: string;
     milvus: string;

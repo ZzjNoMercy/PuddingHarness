@@ -1,0 +1,140 @@
+{
+  "capability_id": "catalog_migration_rehearsal",
+  "database_side_effects": {
+    "active_revision_changed": false,
+    "business_rows_written": 2
+  },
+  "evidence": {
+    "sqlite_checks": {
+      "foreign_key_violations": 0,
+      "integrity_check": "ok"
+    },
+    "tables": [
+      {
+        "content_digest_match": true,
+        "source_rows": 1,
+        "table": "knowledge_bases",
+        "target_rows": 1
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "knowledge_source_connections",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 1,
+        "table": "knowledge_documents",
+        "target_rows": 1
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "knowledge_source_items",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "knowledge_sync_runs",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "feishu_app_credentials",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "feishu_user_grants",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "feishu_oauth_sessions",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "read_later_items",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "knowledge_database_sources",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "knowledge_table_assets",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "analytics_query_results",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "worker_access_logs",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "knowledge_import_jobs",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "knowledge_import_events",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "semantic_dimension_build_jobs",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "semantic_dimension_build_events",
+        "target_rows": 0
+      },
+      {
+        "content_digest_match": true,
+        "source_rows": 0,
+        "table": "task_notifications",
+        "target_rows": 0
+      }
+    ]
+  },
+  "failure_semantics": "import_failure->transaction_rollback; verify_mismatch->no_switch",
+  "filesystem_side_effects": {
+    "business_writes": []
+  },
+  "format": "agent-knowledge-platform-golden-baseline-record/v1",
+  "provider_revision": "legacy-catalog-migration-v1",
+  "result": {
+    "imported_rows": 2,
+    "schema_version": 4,
+    "verification_ok": true
+  },
+  "sanitized_fixture_manifest": {
+    "fixtures": [
+      "docs/knowledge-platform/golden-fixtures/catalog_migration_rehearsal.json"
+    ]
+  },
+  "source_revision": "sha256:aac85c96f41d3e86550dde5c2218c3b4d7f6ebd823dffd5cdb99a0d59a6a449a"
+}

@@ -1,0 +1,124 @@
+format: agent-knowledge-platform-skills-inventory/v1
+spec_revision: v0.7
+reviewed_at: 2026-09-05
+review_method: "Read each legacy Skill, the portable Platform Skill bundle, and every references/, scripts/, agents/, assets/ and validation surface present in the repository; verified migration seams with boundary tests."
+skills:
+  - id: knowledge-search
+    skill_file: backend/skills/knowledge-search/SKILL.md
+    toolsets: [knowledge_analysis, feishu_bitable]
+    auxiliary_files: []
+    tool_names: [llamaindex_knowledge_query, read_file, feishu_bitable_list_sources, feishu_bitable_describe, feishu_bitable_query]
+    legacy_assumptions: ["/knowledge virtual paths", "llamaindex_knowledge_query", "Claw toolset activation"]
+    target_owner: puddingknowledge
+    migration: "Rewrite as Platform knowledge_search/knowledge_read Workspace/MCP Skill; retain Bitable as a connector capability."
+    status: classified_platform_rewrite_available
+  - id: llm-wiki
+    skill_file: backend/skills/llm-wiki/SKILL.md
+    toolsets: [llm_wiki, gbrain_query]
+    auxiliary_files: []
+    tool_names: [llm_wiki_context, llm_wiki_create_raw, llm_wiki_conversation_documents, llm_wiki_start_ingest, llm_wiki_retire_pages, llm_wiki_query, llm_wiki_lint, llm_wiki_compile]
+    legacy_assumptions: ["Claw chat Session", "gbrain as optional acceleration", "/knowledge physical root"]
+    target_owner: puddingknowledge
+    migration: "Keep query and intake semantics, map to Platform Wiki Query and Processing APIs; Compiler becomes a Platform Worker."
+    status: classified_platform_rewrite_available
+  - id: database-analysis
+    skill_file: backend/skills/database-analysis/SKILL.md
+    toolsets: [database_analysis, semantic_lookup]
+    auxiliary_files: []
+    tool_names: [database_evidence_search, database_sql_validate, database_sql_execute, analytics.nl2sql.agent_sql_replay]
+    legacy_assumptions: ["legacy generation tools", "Validation Receipt", "Agent toolset routing"]
+    target_owner: puddingknowledge
+    migration: "Map to database_nl2sql QueryPlan issuance and database_execute_readonly revalidation; preserve replay as Platform evaluation input."
+    status: classified_platform_rewrite_available
+  - id: table-analysis
+    skill_file: backend/skills/table-analysis/SKILL.md
+    toolsets: [knowledge_analysis, feishu_bitable, logical_dataset]
+    auxiliary_files: []
+    tool_names: [feishu_bitable_describe, feishu_bitable_query]
+    legacy_assumptions: ["registered table assets", "logical_dataset toolset"]
+    target_owner: puddingknowledge
+    migration: "Rewrite to table_query and Knowledge Asset/ Dataset manifest references; keep live Bitable access behind Platform connector authorization."
+    status: classified_platform_rewrite_available
+  - id: build-logical-dataset
+    skill_file: backend/skills/build-logical-dataset/SKILL.md
+    toolsets: [logical_dataset]
+    auxiliary_files: []
+    tool_names: [ensure_attachment_table_asset, list_logical_dataset_candidates, request_logical_dataset_rule, apply_logical_dataset_rule]
+    legacy_assumptions: ["attachment import into Claw Knowledge Base", "PuddingClaw logical dataset asset"]
+    target_owner: puddingknowledge
+    migration: "Move virtual Dataset definition, lineage and rule application to Platform Structured Asset Catalog."
+    status: classified_platform_rewrite_available
+  - id: build-semantic-dimension
+    skill_file: backend/skills/build-semantic-dimension/SKILL.md
+    toolsets: [semantic_dimension_build, semantic_lookup]
+    auxiliary_files:
+      - backend/skills/build-semantic-dimension/references/dimension-builder-contract.md
+      - backend/skills/build-semantic-dimension/scripts/entity_crosswalk_v1.py
+      - backend/skills/build-semantic-dimension/scripts/validate_dimension_package.py
+      - backend/skills/build-semantic-dimension/scripts/vehicle_series_demo.py
+      - backend/skills/build-semantic-dimension/scripts/vehicle_series_full.py
+    tool_names: [inspect_dimension_build_input, request_dimension_build_rule, enqueue_semantic_dimension_build, get_semantic_dimension_build_job, publish_semantic_dimension_build]
+    legacy_assumptions: ["/semantic-assets", "/analytics-models", "background Job catalog", "HITL resume protocol"]
+    target_owner: puddingknowledge
+    migration: "Move builder worker, staging/publish state machine and portable crosswalk to Platform; retain only generic Harness approval adapter."
+    status: classified_platform_rewrite_available
+  - id: semantic-steward
+    skill_file: backend/skills/semantic-steward/SKILL.md
+    toolsets: [semantic_steward, database_analysis, semantic_lookup]
+    auxiliary_files:
+      - backend/skills/semantic-steward/agents/openai.yaml
+      - backend/skills/semantic-steward/references/analytics-model-authoring.md
+      - backend/skills/semantic-steward/references/dialogue-and-publication.md
+      - backend/skills/semantic-steward/references/dimension-authoring.md
+      - backend/skills/semantic-steward/references/frontmatter-effects.md
+      - backend/skills/semantic-steward/references/grain-authoring.md
+      - backend/skills/semantic-steward/references/measure-authoring.md
+      - backend/skills/semantic-steward/references/relation-authoring.md
+    tool_names: [discover_semantic_definitions, prepare_semantic_markdown, publish_semantic_markdown]
+    legacy_assumptions: ["Harness HITL card", "/semantic-assets", "/analytics-models", "session-bound discovery receipt"]
+    target_owner: puddingknowledge
+    migration: "Platform owns semantic authoring and publication; approval remains an external administrative boundary, not a shared ORM contract."
+    status: classified_platform_rewrite_available
+  - id: sql-guardrail-designer
+    skill_file: backend/skills/sql-guardrail-designer/SKILL.md
+    toolsets: []
+    auxiliary_files:
+      - backend/skills/sql-guardrail-designer/references/guardrail-template.md
+      - backend/skills/sql-guardrail-designer/references/rule-types.md
+    tool_names: []
+    legacy_assumptions: ["/sql-guardrails virtual path", "PuddingClaw backend compilation", "chat confirmation"]
+    target_owner: puddingknowledge
+    migration: "Move guardrail authoring, compile and versioning to Platform Admin/Processing API; keep draft/active confirmation semantics."
+    status: classified_platform_rewrite_available
+  - id: pdf
+    skill_file: backend/skills/pdf/SKILL.md
+    toolsets: []
+    auxiliary_files:
+      - backend/skills/pdf/LICENSE.txt
+      - backend/skills/pdf/forms.md
+      - backend/skills/pdf/reference.md
+      - backend/skills/pdf/scripts
+    tool_names: [pdftotext, read_file, read_resource]
+    legacy_assumptions: ["Harness shell profile", "local file permission broker"]
+    target_owner: split
+    migration: "Generic PDF handling remains Harness-adjacent; ingestion/OCR/normalized derivatives move to Platform Processing with license preserved."
+    status: classified
+  - id: github-monitor
+    skill_file: backend/skills/github-monitor/SKILL.md
+    toolsets: []
+    auxiliary_files:
+      - backend/skills/github-monitor/references/repos.yaml
+      - backend/skills/github-monitor/scripts/fetch_github.py
+      - backend/skills/github-monitor/scripts/store_kb.py
+    tool_names: [fetch_url, web_search, explicit_workspace_output, platform_asset_import]
+    legacy_assumptions: ["caller must provide a workspace/output binding"]
+    target_owner: split
+    migration: "Keep monitoring/fetch skeleton in Harness; output through explicit caller Workspace or Platform Asset ingestion adapter, never a hard-coded /knowledge path."
+    status: classified_workspace_boundary_verified
+coverage:
+  required_skill_ids: [knowledge-search, llm-wiki, database-analysis, table-analysis, build-logical-dataset, build-semantic-dimension, semantic-steward, sql-guardrail-designer, pdf, github-monitor]
+  all_required_classified: true
+  unclassified_auxiliary_files: []
+  unresolved_migration_risks:
+    - "Legacy Skill directories remain in PuddingClaw for rollback, while the portable Platform bundle is the canonical new integration."
+    - "Full Platform import/Workspace publication still requires a host binding; this slice only verifies explicit local output and does not activate production ingestion."

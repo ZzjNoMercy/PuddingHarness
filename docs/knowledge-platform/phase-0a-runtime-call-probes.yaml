@@ -1,0 +1,91 @@
+format: agent-native-knowledge-platform-runtime-call-probes/v1
+spec_revision: v0.7
+status: observation-primitive-ready-coverage-not-complete
+principle: "Only executed no-argument probes produce runtime edges; absence of an edge is not proof that the path is unreachable."
+coverage_scope: "platform-contract-observation-only"
+legacy_runtime_coverage: "not-claimed"
+probe_contract:
+  callable_shape: "module:function with no arguments"
+  module_scope: "explicit module prefixes only"
+  output: "path-free observed edges, imported modules in process (not execution coverage), stable graph digest"
+required_probe_families:
+  - knowledge_catalog_and_processing
+  - retrieval_and_evidence
+  - wiki_compilation
+  - structured_query_and_vanna_boundary
+  - semantic_authoring
+  - harness_wiring_boundary
+executed_probes:
+  - id: catalog_processing
+    family: knowledge_catalog_and_processing
+    reference: knowledge_platform.baseline.phase0a_probes:probe_knowledge_catalog_and_processing
+    module_prefixes: [knowledge_platform, knowledge_contracts]
+    scope: "platform-contract-observation-only"
+    output:
+      path: docs/knowledge-platform/runtime-probes/catalog_processing.json
+      bytes: 5823
+      sha256: 30796c65c7168e4ff31ce8eb0175201ea749622738b791f9dcbb7f9038ea993e
+    boundary_review:
+      status: pending
+      reason: "Observed extracted catalog snapshot and in-memory lease contracts; legacy catalog callers and production queue wiring remain unreviewed."
+  - id: retrieval_evidence
+    family: retrieval_and_evidence
+    reference: knowledge_platform.baseline.phase0a_probes:probe_retrieval_and_evidence
+    module_prefixes: [knowledge_platform, knowledge_contracts]
+    scope: "platform-contract-observation-only"
+    output:
+      path: docs/knowledge-platform/runtime-probes/retrieval_evidence.json
+      bytes: 4792
+      sha256: c838d3df03d049d082dd37d48756652895b04e9fea18db02eb86fe074d29d521
+    boundary_review:
+      status: pending
+      reason: "Observed deterministic citation normalization only; legacy retrieval adapters and evidence persistence remain unreviewed."
+  - id: wiki_compilation
+    family: wiki_compilation
+    reference: knowledge_platform.baseline.phase0a_probes:probe_wiki_compilation
+    module_prefixes: [knowledge_platform, knowledge_contracts]
+    scope: "platform-contract-observation-only"
+    output:
+      path: docs/knowledge-platform/runtime-probes/wiki_compilation.json
+      bytes: 7103
+      sha256: aa413ff4b2c6c91855d68d3523aa83d7d2f7550a958ea1a3071d24d31e0444fc
+    boundary_review:
+      status: pending
+      reason: "Observed worker contract with local deterministic ports; production wiki publisher, model, and queue wiring remain unreviewed."
+  - id: structured_query_boundary
+    family: structured_query_and_vanna_boundary
+    reference: knowledge_platform.baseline.phase0a_probes:probe_structured_query_and_vanna_boundary
+    module_prefixes: [knowledge_platform, knowledge_contracts]
+    scope: "platform-contract-observation-only"
+    output:
+      path: docs/knowledge-platform/runtime-probes/structured_query_boundary.json
+      bytes: 4135
+      sha256: 368d38f2090840e1ba3970179528367c4d0ecabf0644aec3c9780b4a00e85146
+    boundary_review:
+      status: pending
+      reason: "Observed protocol envelope filtering and query-plan contract only; Vanna integration and production query execution remain explicitly unverified."
+  - id: semantic_authoring
+    family: semantic_authoring
+    reference: knowledge_platform.baseline.phase0a_probes:probe_semantic_authoring
+    module_prefixes: [knowledge_platform, knowledge_contracts]
+    scope: "platform-contract-observation-only"
+    output:
+      path: docs/knowledge-platform/runtime-probes/semantic_authoring.json
+      bytes: 3333
+      sha256: 82f7e03def9df5f6864a15c4cd54fea9335b2b23de172abbc30a4848ac0edc13
+    boundary_review:
+      status: pending
+      reason: "Observed ORM job and event table contracts only; production authoring lifecycle, transactions, and adapters remain unreviewed."
+  - id: harness_wiring
+    family: harness_wiring_boundary
+    reference: knowledge_platform.baseline.phase0a_probes:probe_harness_wiring_boundary
+    module_prefixes: [knowledge_platform, knowledge_contracts]
+    scope: "platform-contract-observation-only"
+    output:
+      path: docs/knowledge-platform/runtime-probes/harness_wiring.json
+      bytes: 5028
+      sha256: 317d23f60ab33a306b884a834a44599775baaa9c91540ce3cec93a6d747052fc
+    boundary_review:
+      status: pending
+      reason: "Observed capability discovery and invocation boundary with deterministic ports; real harness and legacy agent wiring remain unreviewed."
+completion_rule: "runtime_dependency_graph_verified remains blocked until every required family has an explicit probe, reproducible output, and reviewed boundary interpretation."

@@ -1,0 +1,28 @@
+{
+  "format": "agent-knowledge-platform-golden-fixture/package-export/v1",
+  "sanitized": true,
+  "model": {
+    "path": "analytics-models/golden-analysis/model.md",
+    "content": "---\nformatter: analytics-model\nid: golden-analysis\nname: Golden analysis\nversion: 1.0.0\ndata_assets:\n  tables:\n    - table_asset:tbl_golden\nsemantic_assets: {}\nasset_relations: []\nguardrails: []\ntemplates: {}\n---\n\n# Golden analysis\n"
+  },
+  "data_asset": {
+    "asset_id": "tbl_golden",
+    "file_name": "golden.csv",
+    "virtual_path": "/knowledge/golden.csv",
+    "content": "brand,sales\nalpha,10\nbeta,20\n",
+    "source_type": "csv",
+    "columns": ["brand", "sales"],
+    "rows": 2
+  },
+  "export_scenario": {
+    "data_file_mode": "copy",
+    "required_entry_files": [
+      "analysis-project.yaml",
+      "model/model.md",
+      "data/tbl_golden/golden.csv",
+      "bindings.local.yaml",
+      "package-manifest.json",
+      "tests/validate_project.py"
+    ]
+  }
+}

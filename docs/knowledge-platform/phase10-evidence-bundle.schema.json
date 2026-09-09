@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingai.local/schemas/phase10-evidence-bundle.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "status", "activation_allowed", "execution_allowed", "source_repository", "source_revision", "reports", "report_count", "network_contacted", "source_paths_emitted", "scope", "replay_consistent", "bundle_digest"],
+  "properties": {
+    "format": {"const": "agent-knowledge-platform-evidence-bundle/v1"},
+    "status": {"const": "LOCAL_EVIDENCE_BUNDLE_PASS_NOT_ACTIVATABLE"},
+    "activation_allowed": {"const": false},
+    "execution_allowed": {"const": false},
+    "source_repository": {"const": "PuddingClaw"},
+    "source_revision": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9._:/+@-]+$"},
+    "reports": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["logical_name", "report_digest", "facts"],
+        "properties": {
+          "logical_name": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "report_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "facts": {"type": "object"}
+        }
+      }
+    },
+    "report_count": {"const": 8},
+    "network_contacted": {"const": false},
+    "source_paths_emitted": {"const": false},
+    "scope": {"type": "string", "minLength": 1},
+    "replay_consistent": {"const": true},
+    "bundle_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

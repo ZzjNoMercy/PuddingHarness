@@ -1,0 +1,68 @@
+format: agent-knowledge-platform-golden-baseline/v1
+spec_revision: v0.7
+status: coverage-registry-not-yet-frozen
+principle: "A golden baseline must compare normalized outputs, evidence and side effects against a frozen source snapshot; existing tests are mapped here first and are not silently treated as that snapshot."
+capabilities:
+  - id: document_rag
+    source_surfaces: [backend/knowledge/indexer.py, backend/tools/search_knowledge_tool.py]
+    test_files: [backend/tests/test_knowledge_service.py]
+    command: "backend/.venv/bin/pytest -q backend/tests/test_knowledge_service.py"
+    expected_scope: [retrieval, citations, index-rebuild, multimodal, source-path-safety]
+    status: mapped
+  - id: wiki_query_and_compile
+    source_surfaces: [backend/knowledge/llm_wiki.py, backend/knowledge/llm_wiki_compiler_agent.py]
+    test_files: [backend/tests/test_llm_wiki.py]
+    command: "backend/.venv/bin/pytest -q backend/tests/test_llm_wiki.py"
+    expected_scope: [raw-immutability, markdown-query, lint, publish, retire, gbrain-optional-path]
+    status: mapped
+  - id: table_query
+    source_surfaces: [backend/analytics/table_catalog.py, backend/tools/pandas_knowledge_tool.py]
+    test_files: [backend/tests/test_table_catalog_concat.py, backend/tests/test_table_router.py]
+    command: "backend/.venv/bin/pytest -q backend/tests/test_table_catalog_concat.py backend/tests/test_table_router.py"
+    expected_scope: [schema-strategy, lineage, logical-dataset, table-scope-routing]
+    status: mapped
+  - id: database_nl2sql_and_readonly_execute
+    source_surfaces: [backend/analytics/nl2sql, backend/tools/database]
+    test_files: [backend/tests/test_database_query_result_contract.py, backend/tests/test_sql_guardrails.py]
+    command: "backend/.venv/bin/pytest -q backend/tests/test_database_query_result_contract.py backend/tests/test_sql_guardrails.py"
+    expected_scope: [evidence, sql-validation, table-scope, readonly, pagination, guardrails]
+    status: mapped
+  - id: semantic_assets_and_authoring
+    source_surfaces: [backend/analytics/semantic_assets, backend/analytics/semantic_authoring]
+    test_files: [backend/tests/test_semantic_assets_registry.py, backend/tests/test_semantic_authoring.py]
+    command: "backend/.venv/bin/pytest -q backend/tests/test_semantic_assets_registry.py backend/tests/test_semantic_authoring.py"
+    expected_scope: [asset-registry, discovery, prepare, publish, dependency-validation]
+    status: mapped
+  - id: package_export
+    source_surfaces: [backend/analytics/project_export]
+    test_files: [backend/tests/test_analysis_project_export.py]
+    command: "backend/.venv/bin/pytest -q backend/tests/test_analysis_project_export.py"
+    expected_scope: [snapshot, credentials-redaction, logical-dataset-materialization, symlink-safety]
+    status: mapped
+  - id: connectors_and_capture
+    source_surfaces: [backend/knowledge/connectors, backend/knowledge/read_later.py]
+    test_files: [backend/tests/test_knowledge_sources.py, backend/tests/test_feishu_wiki_client.py, backend/tests/test_read_later.py]
+    command: "backend/.venv/bin/pytest -q backend/tests/test_knowledge_sources.py backend/tests/test_feishu_wiki_client.py backend/tests/test_read_later.py"
+    expected_scope: [source-identity, oauth, incremental-sync, read-later]
+    status: mapped
+  - id: lease_and_jobs
+    source_surfaces: [backend/knowledge/queue_repository.py, backend/runtime_control.py]
+    test_files: [backend/tests/test_queue_lease_protocol.py, backend/tests/test_runtime_control.py]
+    command: "backend/.venv/bin/pytest -q backend/tests/test_queue_lease_protocol.py backend/tests/test_runtime_control.py"
+    expected_scope: [cas-claim, heartbeat, fencing, restart, idempotency]
+    status: mapped
+  - id: catalog_migration_rehearsal
+    source_surfaces: [backend/catalog_migration.py, backend/catalog_backup.py]
+    test_files: [backend/tests/test_catalog_migration.py, backend/tests/test_catalog_backup.py]
+    command: "backend/.venv/bin/pytest -q backend/tests/test_catalog_migration.py backend/tests/test_catalog_backup.py"
+    expected_scope: [sqlite-roundtrip, interrupted-import-rollback, content-digest, atomic-config-switch, backup-restore]
+    status: executed-legacy-rehearsal
+freeze_requirements:
+  - normalized_result_digest
+  - evidence_and_provenance_digest
+  - database_side_effect_digest
+  - filesystem_side_effect_digest
+  - provider_and_index_revision
+  - failure_and_retry_semantics
+  - sanitized_fixture_manifest
+status_reason: "Phase 0A maps current coverage; freeze is blocked until source snapshot, sanitized fixtures and normalized digest harness exist. Legacy Catalog rehearsal is executable but still uses the shared legacy Base."

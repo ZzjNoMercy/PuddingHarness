@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingknowledge.dev/contracts/installation-migration-manifest/v1",
+  "title": "Agent-native Knowledge Platform Installation Migration Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "source",
+    "targets",
+    "object_summaries",
+    "id_resource_mappings",
+    "credential_rebinds",
+    "active_writers",
+    "checkpoint",
+    "rollback_strategy",
+    "state",
+    "rollback_window_open"
+  ],
+  "properties": {
+    "format": { "const": "agent-knowledge-platform-installation-migration/v1" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installation_id", "schema_revision", "catalog_revision"],
+      "properties": {
+        "installation_id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "schema_revision": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "catalog_revision": { "type": "string", "minLength": 1, "maxLength": 160 }
+      }
+    },
+    "targets": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 160 }
+    },
+    "object_summaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["domain", "object_count", "source_digest"],
+        "properties": {
+          "domain": { "enum": ["session_harness", "knowledge_catalog", "connector_jobs"] },
+          "object_count": { "type": "integer", "minimum": 0 },
+          "source_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "id_resource_mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_id", "resource_uri"],
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "resource_uri": { "type": "string", "pattern": "^(knowledge|harness)://[^\\s]+$" }
+        }
+      }
+    },
+    "credential_rebinds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slot", "source_ref_digest", "target_ref", "status"],
+        "properties": {
+          "slot": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "source_ref_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "target_ref": { "type": "string", "pattern": "^credential://[^\\s]+$" },
+          "status": { "enum": ["pending", "rebound", "failed"] }
+        }
+      }
+    },
+    "active_writers": {
+      "type": "object",
+      "required": ["session_harness", "knowledge_catalog", "connector_jobs"],
+      "additionalProperties": false,
+      "properties": {
+        "session_harness": { "enum": ["puddingclaw", "puddingharness", "puddingknowledge"] },
+        "knowledge_catalog": { "enum": ["puddingclaw", "puddingharness", "puddingknowledge"] },
+        "connector_jobs": { "enum": ["puddingclaw", "puddingharness", "puddingknowledge"] }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 160 }
+    },
+    "rollback_strategy": { "enum": ["reverse_delta", "snapshot_restore", "no_write_until_finalized"] },
+    "state": { "enum": ["DISCOVERED", "PREPARED", "CUTOVER", "ROLLED_BACK", "FINALIZED"] },
+    "snapshot_digest": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+    "staging_namespace": { "type": ["string", "null"], "minLength": 1, "maxLength": 160 },
+    "active_installation_revision": { "type": ["string", "null"], "minLength": 1, "maxLength": 160 },
+    "rollback_evidence_digest": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+    "recovery_evidence_digest": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+    "post_cutover_delta_digest": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+    "post_cutover_delta_count": { "type": "integer", "minimum": 0 },
+    "rollback_reconciliation_digest": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+    "rollback_delta_reconciled": { "type": "boolean" },
+    "failure_checkpoint": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
+    "recovery_count": { "type": "integer", "minimum": 0 },
+    "started_at": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "completed_at": { "type": ["string", "null"], "minLength": 1, "maxLength": 160 },
+    "rollback_window_open": { "type": "boolean" }
+  }
+}

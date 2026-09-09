@@ -1,0 +1,192 @@
+format: agent-knowledge-platform-golden-fixture-manifest/v1
+spec_revision: v0.7
+status: capture-required
+principle: "A Golden claim requires a clean-Git, content-addressed source snapshot, sanitized fixture files, and content-addressed result/evidence/side-effect records for every capability."
+source_snapshot:
+  path: docs/knowledge-platform/phase-0a-source-snapshot.json
+  sha256: 560d59ccaa3e79bc1643e9d5ba780fabea62848066432dca5f0d6653e16d8418
+  capture_status: captured-and-byte-verified
+capabilities:
+  - id: document_rag
+    fixture_files:
+      - path: docs/knowledge-platform/golden-fixtures/document_rag.json
+        bytes: 629
+        sha256: 6f6d87efd75d3d67ac98ea26f66df8d4168426dd6a253b23cbdbbe359b75f417
+        sanitized: true
+    baseline:
+      source_revision: sha256:0b07be09ae0b02a2b9eb1866bf5041f32a68ffc55f9d5e52807c85e6eb632c0c
+      normalized_result_digest: sha256:30c44a186f4174242277e258a17b1214d9621e202cc6f744e689d17cc7e924ac
+      evidence_digest: sha256:401205f751f778496041b0436aaefb2b5903fb17bdbbe2a396efe4810c22bedb
+      database_side_effect_digest: sha256:3f9650362105520662af8baa77514e9b95858ab1c3f8903d65da9ea4951a2cfb
+      filesystem_side_effect_digest: sha256:26bff36f7e86e8fc56375d089beeb2f12b866b056abdac33bbc306ad53b62234
+      provider_revision: legacy-document-rag-query-v1
+      failure_semantics: "no_match->empty_sources; valid_query->citation_envelope"
+      sanitized_fixture_manifest_digest: sha256:72fa654347d47dc8aad992b2fb9d4adaa1df4a2d66f5da245e162e0d02efa17e
+    baseline_record_file:
+      path: docs/knowledge-platform/golden-records/document_rag.json
+      bytes: 4409
+      sha256: 70d06087bb9240419c3994380ecca32837ca705700237bbfe4b14b7da9cfb52
+  - id: wiki_query_and_compile
+    fixture_files:
+      - path: docs/knowledge-platform/golden-fixtures/wiki_query_and_compile.json
+        bytes: 630
+        sha256: efa2ff2360f40870364ce969eb7612550322d5db01044e536a6e2e43c095d061
+        sanitized: true
+    baseline:
+      source_revision: sha256:f370d7d3c1b4f34340832338fc194a5fb1141135df2598f1a828c1e258b1a11d
+      normalized_result_digest: sha256:9cec1fea442a8f7cbdc56eb0b73223a6a000355bbc9ee6d9d68653b1975f0cb0
+      evidence_digest: sha256:1f0c956e15709cb6c46fa5d47add2f7cb42bf3bf943161588a737ba397920b80
+      database_side_effect_digest: sha256:a511e17e706d236c1b2398221664f4e7016bfef933b35c3b021d412d7839b3ca
+      filesystem_side_effect_digest: sha256:855385314856bcca1afd4cc7dad5e50622b8d2cbdd3fc66df91c006a72d8a28b
+      provider_revision: legacy-llm-wiki-query-publish-v1
+      failure_semantics: "missing_query->knowledge_gap; bundle_mismatch->publish_rejected; valid_raw->published_and_queryable"
+      sanitized_fixture_manifest_digest: sha256:c59694d0170ab0127f19268eb25cef3fddc2f7dd67b60cbea6d3f9da8655bb9d
+    baseline_record_file:
+      path: docs/knowledge-platform/golden-records/wiki_query_and_compile.json
+      bytes: 9907
+      sha256: e9ecac32bc3a9b08ea1043aa7800c79966fce680e75bbb7dcb468dc78cb17ed8
+  - id: table_query
+    fixture_files:
+      - path: docs/knowledge-platform/golden-fixtures/table_query.json
+        bytes: 442
+        sha256: 5780bcb7b050c1e4e18cbe5522c38b2cc8e350a2ff68ba0cd289d26687b197da
+        sanitized: true
+    baseline:
+      source_revision: sha256:e23c7ca45504512fa6c5f5bdca020327431de9804e0fdba75f6f4c1beaf5c8b6
+      normalized_result_digest: sha256:528e3e093fa121124f30580972a8a3be31b887762f32ae86e7f927cf2a700c4e
+      evidence_digest: sha256:0f3076d244754436cecd7319228463f324920fefac91a2a2db4a54d18975c7ad
+      database_side_effect_digest: sha256:ac577b265df8013a74dc1f37605c08e5337fdbe1a7cde9e68213975b8b0a8ad1
+      filesystem_side_effect_digest: sha256:047d29829c79b4606e39c33ec786b0be6aa0849d262a137fa61fbc328e427d22
+      provider_revision: legacy-pandas-table-query-v1
+      failure_semantics: "no_asset->stable_no_match; unsafe_code->execution_rejected; valid_code->answer_returned"
+      sanitized_fixture_manifest_digest: sha256:b6faab39b46c233c3cfbb4c3254f7ada1351d5b76fc0539d506c4e995c347bd0
+    baseline_record_file:
+      path: docs/knowledge-platform/golden-records/table_query.json
+      bytes: 15979
+      sha256: c7186fa751242016a226e98440a798a1495e2ccca3a0c0e4cc7e35199538ca9d
+  - id: database_nl2sql_and_readonly_execute
+    fixture_files:
+      - path: docs/knowledge-platform/golden-fixtures/database_nl2sql_and_readonly_execute.json
+        bytes: 761
+        sha256: e43bd141079aed924ba1aa0cceac8dfdaf2975445f2ef221d4ad4fc65d1b9e71
+        sanitized: true
+    baseline:
+      source_revision: sha256:99af863efce00a9ffb7484ec5f81b72dd9c47b42b734aaa40e81e15c0538ef56
+      normalized_result_digest: sha256:20456f12c7d2757f3cf51bd36c53e906a56453c7bc9811b0f80111be47d69d84
+      evidence_digest: sha256:23420250a7c67cea17551af75dc5c10de516def43f4ec78181d52b1e9139d5be
+      database_side_effect_digest: sha256:81573f992325081fcfebec1302d861e3367e05e4a5490bd1f578f110a519f420
+      filesystem_side_effect_digest: sha256:2775342cc8a4a0afe0230448f2a4e4110ffd99f5bf9bcfe6406d9e0b3eb154b0
+      provider_revision: legacy-nl2sql-readonly-v1
+      failure_semantics: "unregistered_table->validation_rejected; write_statement->validation_rejected; valid_sql->complete_rows"
+      sanitized_fixture_manifest_digest: sha256:830d624d9257a0c73230a8b8968cc34d6a159b719278d22dab9e090d2953c66f
+    baseline_record_file:
+      path: docs/knowledge-platform/golden-records/database_nl2sql_and_readonly_execute.json
+      bytes: 7510
+      sha256: 2806076a64e91db71d1423da2b01fc02f8aeaaeb16b6567efb173d0e6d59ad3f
+  - id: semantic_assets_and_authoring
+    fixture_files:
+      - path: docs/knowledge-platform/golden-fixtures/semantic_assets_and_authoring.json
+        bytes: 1716
+        sha256: 3c00612974173a794458712b82643343010413ea03a46c37450c0dd991ebb518
+        sanitized: true
+    baseline:
+      source_revision: sha256:1161062ea7d8781fe823cb63384148833c8aefd19afe37821088d9536f242e01
+      normalized_result_digest: sha256:3af007d1b1aabd0b37420f15a8f401cdeb2ba1d377c225f488af5d7329e4bd89
+      evidence_digest: sha256:716decfa73d1df9c71bbca3749a651c5d50cab62a075a43d8b1659f9d3d1fc09
+      database_side_effect_digest: sha256:ed30769d4ca976ff1916b8ccab36273859cd7344ad8a474f4196daac2de3c04c
+      filesystem_side_effect_digest: sha256:1dfec8ece766b5717f4646fb2c92ca67c9c80d56e45fa5de9946935604eb831c
+      provider_revision: legacy-semantic-authoring-v1
+      failure_semantics: "invalid_candidate->publish_rejected; baseline_changed->publish_rejected; valid_candidate->digest_bound_publish"
+      sanitized_fixture_manifest_digest: sha256:1a3d395ba2f4360ed90efb8fb90f4af0a942368bf3d34beb504a1912c73d41e5
+    baseline_record_file:
+      path: docs/knowledge-platform/golden-records/semantic_assets_and_authoring.json
+      bytes: 1665
+      sha256: 9eb113c6e8ea8d585221e7c49812cf251b45e33e5cf03b7cc29a3e309a8ffc60
+  - id: package_export
+    fixture_files:
+      - path: docs/knowledge-platform/golden-fixtures/package_export.json
+        bytes: 971
+        sha256: b184d39f1505c192f70b14422e489cfbbabd2a9666c8e43db564184ddb8c592d
+        sanitized: true
+    baseline:
+      source_revision: sha256:6989911bc9e42ca139077b7a8e2dc3087ab228b6157468f4c8922a2176610ea0
+      normalized_result_digest: sha256:96458494b275caf4d7f30c5c3d411333b27df1c709891e0dbab2cedb71ac5127
+      evidence_digest: sha256:a911981b390ffff1138166391438ab9f25608940d2a7d1fe0f8583235a19cc42
+      database_side_effect_digest: sha256:af1f71bb3cd73bad5e4be3d5123acf99a1862b945349a758108edbe9ba2ab18f
+      filesystem_side_effect_digest: sha256:20d68511c09578df32e4ae7db1d65bbecd69016b283a29bcc9fc697b428a8372
+      provider_revision: legacy-analysis-project-export-v1
+      failure_semantics: "missing_dependency->export_rejected; unsafe_path->export_rejected"
+      sanitized_fixture_manifest_digest: sha256:8aad47a9230c3d9ec389c25ae8acaef9a43684dfa0f6e7fd1bb64889585b09d0
+    baseline_record_file:
+      path: docs/knowledge-platform/golden-records/package_export.json
+      bytes: 5727
+      sha256: 3acedfd2540713c604a0a58709a07647c9687b25a67fabb1994e19a2348d6d91
+  - id: connectors_and_capture
+    fixture_files:
+      - path: docs/knowledge-platform/golden-fixtures/connectors_and_capture.json
+        bytes: 1446
+        sha256: 3fd8eff0059ae79705b73e20451368c6c51a2f60555da97c46d2a13f2804a4c5
+        sanitized: true
+    baseline:
+      source_revision: sha256:e4706fabb4867af0f66e78d6f0c81ef09b51449594f31bd124e7cb8dee2532d4
+      normalized_result_digest: sha256:36bb152938128b4921c4cba48d853942b4a09e535baafe988cea5d52acca088f
+      evidence_digest: sha256:6b0ef1a916b1d1f384b26865c1ab557d5d78888610439237fa3aff9cb0180a29
+      database_side_effect_digest: sha256:497cb31b1a9e48eb0b4723585c456697e45b3d31798f3569f47dbcc0d3da9ced
+      filesystem_side_effect_digest: sha256:5b16a5606cfcb3ef908f704f817a731966c06fe8cfd002f0295818f8dfe2454b
+      provider_revision: legacy-connectors-and-capture-v1
+      failure_semantics: "wrong_principal->oauth_rejected; retry->same_document; same_revision->incremental_unchanged; unsafe_api_base->rejected"
+      sanitized_fixture_manifest_digest: sha256:bad92b4c255ff7ddea42251b2c96716d6b5a1118f071c81b4ee4a43ebc4b1b75
+    baseline_record_file:
+      path: docs/knowledge-platform/golden-records/connectors_and_capture.json
+      bytes: 5242
+      sha256: e39cff4b4c1fa7402e50da3f97d4160455df8dbd5e762f1070ced34fa4f46039
+  - id: lease_and_jobs
+    fixture_files:
+      - path: docs/knowledge-platform/golden-fixtures/lease_and_jobs.json
+        bytes: 1458
+        sha256: 61c5926ddb16db701976c3f13f578c029c54d3f4f639aa1ac900813a2bf5bd56
+        sanitized: true
+    baseline:
+      source_revision: sha256:a1ea984050095d22c6e701a2fdd8d5132b921b1c06c0a583698dac2521741c79
+      normalized_result_digest: sha256:19caa8324322fd5c2f1ff047221937b0e6d6e2bd55baa86a9a0e59823d0dc20c
+      evidence_digest: sha256:f5db73d39bbfbffcd75de47fff7d01bfaefbde47367491af1c119480baf90e70
+      database_side_effect_digest: sha256:887b5e1ff48a2991ba8d81d83db02295fa8171139e0a338ae397680d1533da4e
+      filesystem_side_effect_digest: sha256:aea7991edf0c9dff1bbe61fcf11d3df84ba764d023b8d77fd29e35d74834a405
+      provider_revision: legacy-queue-lease-runtime-control-v1
+      failure_semantics: "lost_lease->terminal_write_rejected; drain->claim_rejected; maintenance->writes_blocked"
+      sanitized_fixture_manifest_digest: sha256:e665d80858d3caf6f378c9b6a93425c453f150d67e865205b3983f041b3a6ba2
+    baseline_record_file:
+      path: docs/knowledge-platform/golden-records/lease_and_jobs.json
+      bytes: 1738
+      sha256: 276e5ae0de72e3ed0879a76e1528dca55f5c067d06aa37078dd7520daedb06e4
+  - id: catalog_migration_rehearsal
+    fixture_files:
+      - path: docs/knowledge-platform/golden-fixtures/catalog_migration_rehearsal.json
+        bytes: 1343
+        sha256: 2f9066e2550460893774f0a4efbc4edc70235a848e8abd80078ed7740c14746f
+        sanitized: true
+    baseline:
+      source_revision: sha256:aac85c96f41d3e86550dde5c2218c3b4d7f6ebd823dffd5cdb99a0d59a6a449a
+      normalized_result_digest: sha256:9d9791248787a1e0db75f31ad3ced357556ecadacf1d9b667aedc8b5554e44d7
+      evidence_digest: sha256:32980aa717975fa5cdefe065675111f42056e2d7446f797578b56961afdca2f6
+      database_side_effect_digest: sha256:caefc70677731a6362b48dfac186ca8bad21c626186ca53411d32ab425af7891
+      filesystem_side_effect_digest: sha256:aea7991edf0c9dff1bbe61fcf11d3df84ba764d023b8d77fd29e35d74834a405
+      provider_revision: legacy-catalog-migration-v1
+      failure_semantics: "import_failure->transaction_rollback; verify_mismatch->no_switch"
+      sanitized_fixture_manifest_digest: sha256:933ec5ebcf8ae86578630ef139b87f9ccac02ac9145e4d66f708cca80d5147b6
+    baseline_record_file:
+      path: docs/knowledge-platform/golden-records/catalog_migration_rehearsal.json
+      bytes: 3579
+      sha256: de5cef9789c787bc620120542c37028f8236642df38db1c9c7c539604e640ad2
+freeze_requirements:
+  - source_snapshot_sha256
+  - sanitized_fixture_file_digests
+  - normalized_result_digest
+  - evidence_digest
+  - database_side_effect_digest
+  - filesystem_side_effect_digest
+  - provider_revision
+  - failure_semantics
+  - sanitized_fixture_manifest_digest
+  - baseline_record_file
+status_reason: "All nine sanitized legacy capability fixtures and records are captured and replayable; clean-Git freeze provenance is not yet available, so the manifest remains capture-required rather than frozen."

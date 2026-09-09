@@ -1,0 +1,12 @@
+{
+  "format": "agent-knowledge-platform-golden-fixture/table-query/v1",
+  "sanitized": true,
+  "scenario": {
+    "file_name": "monthly_sales.csv",
+    "virtual_path": "/knowledge/imported/monthly_sales.csv",
+    "content": "品牌,月份,销量\n比亚迪,2024-01,10\n比亚迪,2024-02,20\n蔚来,2024-01,5\n",
+    "query": "按品牌汇总销量，并按销量降序展示",
+    "file_hint": "monthly_sales.csv",
+    "preview_rows": 3
+  }
+}

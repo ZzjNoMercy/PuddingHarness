@@ -1,0 +1,186 @@
+{
+  "format": "agent-native-knowledge-platform-runtime-call-graph-report/v1",
+  "observation_only": true,
+  "probes": [
+    {
+      "edges": [
+        {
+          "callee_function": "content_hash",
+          "callee_module": "analytics.semantic_runtime.schemas",
+          "caller_function": "render_pandas_semantic_context",
+          "caller_module": "analytics.semantic_runtime.adapters"
+        },
+        {
+          "callee_function": "get_analytics_model_registry",
+          "callee_module": "analytics.models.registry",
+          "caller_function": "compile_semantic_query_context",
+          "caller_module": "analytics.semantic_runtime.compiler"
+        },
+        {
+          "callee_function": "semantic_resolution_to_trace",
+          "callee_module": "analytics.semantic_assets.resolver",
+          "caller_function": "compile_semantic_query_context",
+          "caller_module": "analytics.semantic_runtime.compiler"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "analytics.semantic_runtime.schemas",
+          "caller_function": "compile_semantic_query_context",
+          "caller_module": "analytics.semantic_runtime.compiler"
+        },
+        {
+          "callee_function": "get_knowledge_root",
+          "callee_module": "knowledge.paths",
+          "caller_function": "__init__",
+          "caller_module": "analytics.table_catalog"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "knowledge.service",
+          "caller_function": "ensure_catalog_populated",
+          "caller_module": "analytics.table_catalog"
+        },
+        {
+          "callee_function": "ensure_default_knowledge_base",
+          "callee_module": "knowledge.service",
+          "caller_function": "ensure_catalog_populated",
+          "caller_module": "analytics.table_catalog"
+        },
+        {
+          "callee_function": "get_knowledge_originals_dir",
+          "callee_module": "knowledge.paths",
+          "caller_function": "__init__",
+          "caller_module": "knowledge.service"
+        },
+        {
+          "callee_function": "get_knowledge_root",
+          "callee_module": "knowledge.paths",
+          "caller_function": "__init__",
+          "caller_module": "knowledge.service"
+        },
+        {
+          "callee_function": "observe",
+          "callee_module": "scripts.phase0a_table_query_observer",
+          "caller_function": "capture_runtime_call_graph",
+          "caller_module": "knowledge_platform.baseline.runtime_graph"
+        },
+        {
+          "callee_function": "normalized_digest",
+          "callee_module": "knowledge_platform.baseline.normalizer",
+          "caller_function": "_database_snapshot",
+          "caller_module": "scripts.phase0a_table_query_observer"
+        },
+        {
+          "callee_function": "query_structured",
+          "callee_module": "tools.pandas_knowledge_tool",
+          "caller_function": "_query_inside_running_loop",
+          "caller_module": "scripts.phase0a_table_query_observer"
+        },
+        {
+          "callee_function": "query_structured",
+          "callee_module": "tools.pandas_knowledge_tool",
+          "caller_function": "observe",
+          "caller_module": "scripts.phase0a_table_query_observer"
+        },
+        {
+          "callee_function": "get_knowledge_root",
+          "callee_module": "knowledge.paths",
+          "caller_function": "_list_table_assets",
+          "caller_module": "tools.pandas_knowledge_tool"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "analytics.table_catalog",
+          "caller_function": "_load",
+          "caller_module": "tools.pandas_knowledge_tool"
+        },
+        {
+          "callee_function": "ensure_catalog_populated",
+          "callee_module": "analytics.table_catalog",
+          "caller_function": "_load",
+          "caller_module": "tools.pandas_knowledge_tool"
+        },
+        {
+          "callee_function": "<lambda>",
+          "callee_module": "scripts.phase0a_table_query_observer",
+          "caller_function": "_load",
+          "caller_module": "tools.pandas_knowledge_tool"
+        },
+        {
+          "callee_function": "render_pandas_semantic_context",
+          "callee_module": "analytics.semantic_runtime.adapters",
+          "caller_function": "query_structured",
+          "caller_module": "tools.pandas_knowledge_tool"
+        },
+        {
+          "callee_function": "compile_semantic_query_context",
+          "callee_module": "analytics.semantic_runtime.compiler",
+          "caller_function": "query_structured",
+          "caller_module": "tools.pandas_knowledge_tool"
+        },
+        {
+          "callee_function": "to_trace",
+          "callee_module": "analytics.semantic_runtime.schemas",
+          "caller_function": "query_structured",
+          "caller_module": "tools.pandas_knowledge_tool"
+        }
+      ],
+      "format": "agent-knowledge-platform-runtime-call-graph/v1",
+      "graph_digest": "sha256:57e26139cb5b60d7b971690c45210e36383d1839ce45dbdef42cda11f0d6c9a3",
+      "loaded_modules": [
+        "analytics",
+        "analytics.models",
+        "analytics.models.registry",
+        "analytics.semantic_assets",
+        "analytics.semantic_assets.registry",
+        "analytics.semantic_assets.resolver",
+        "analytics.semantic_runtime",
+        "analytics.semantic_runtime.adapters",
+        "analytics.semantic_runtime.compiler",
+        "analytics.semantic_runtime.schemas",
+        "analytics.table_catalog",
+        "knowledge",
+        "knowledge.indexer",
+        "knowledge.mineru_client",
+        "knowledge.models",
+        "knowledge.parsers",
+        "knowledge.parsers.cloud_common",
+        "knowledge.parsers.contracts",
+        "knowledge.parsers.dependency_installer",
+        "knowledge.parsers.llama_parse_cloud",
+        "knowledge.parsers.llamaindex_reader",
+        "knowledge.parsers.mineru_cloud",
+        "knowledge.parsers.mineru_local",
+        "knowledge.parsers.native_file",
+        "knowledge.parsers.registry",
+        "knowledge.parsers.unstructured_local",
+        "knowledge.paths",
+        "knowledge.queue_repository",
+        "knowledge.service",
+        "knowledge_platform",
+        "knowledge_platform.baseline",
+        "knowledge_platform.baseline.fixtures",
+        "knowledge_platform.baseline.normalizer",
+        "knowledge_platform.baseline.runtime_graph",
+        "knowledge_platform.baseline.runtime_registry",
+        "knowledge_platform.baseline.snapshot",
+        "scripts",
+        "scripts.phase0a_table_query_observer",
+        "tools",
+        "tools.pandas_knowledge_tool"
+      ],
+      "module_prefixes": [
+        "analytics",
+        "graph",
+        "knowledge",
+        "knowledge_contracts",
+        "knowledge_platform",
+        "scripts",
+        "tools",
+        "vanna"
+      ],
+      "observation_only": true,
+      "probe_reference": "scripts.phase0a_table_query_observer:observe"
+    }
+  ]
+}

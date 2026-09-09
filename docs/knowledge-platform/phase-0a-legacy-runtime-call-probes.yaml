@@ -1,0 +1,151 @@
+format: agent-native-knowledge-platform-legacy-runtime-call-probes/v1
+spec_revision: v0.7
+status: local-observer-coverage-captured-boundary-review-pending
+principle: "Observed legacy edges are evidence for the exercised sanitized observer path only; absence of an edge is not proof that an unexercised production path is unreachable."
+coverage_scope: "sanitized-legacy-observer-boundary-only"
+legacy_runtime_coverage: "partial-observer-only-not-claimed-complete"
+provider_boundary: "fixed-local-fixtures-and-test-only-adapters; no-production-credentials-or-network"
+probe_contract:
+  callable_shape: "module:function with no arguments"
+  module_scope: [analytics, graph, knowledge, knowledge_contracts, knowledge_platform, scripts, tools, vanna]
+  output: "path-free observed edges plus imported-module diagnostic; only edges are execution evidence"
+required_capabilities:
+  - document_rag
+  - wiki_query_and_compile
+  - table_query
+  - database_nl2sql_and_readonly_execute
+  - semantic_assets_and_authoring
+  - package_export
+  - connectors_and_capture
+  - lease_and_jobs
+  - catalog_migration_rehearsal
+executed_probes:
+  - id: document_rag
+    capability_id: document_rag
+    reference: scripts.phase0a_document_rag_observer:observe
+    required_callee_modules: [graph.citations, knowledge.indexer, tools.search_knowledge_tool]
+    output:
+      path: docs/knowledge-platform/runtime-probes/legacy/document_rag.json
+      bytes: 4048
+      sha256: 75dbbefc675ee5afc84298e6ef546f1e99a7416f07c6b23a184e8b3761f29511
+    replay:
+      runs: 2
+      byte_equal: true
+    boundary_review:
+      status: pending
+      reason: "Covers the legacy Markdown chunker, local query tool, and citation envelope through a fixed retriever; production index/embedding service and every caller remain unreviewed."
+  - id: wiki_query_and_compile
+    capability_id: wiki_query_and_compile
+    reference: scripts.phase0a_wiki_query_compile_observer:observe
+    required_callee_modules: [knowledge.brain_schema, knowledge.llm_wiki]
+    output:
+      path: docs/knowledge-platform/runtime-probes/legacy/wiki_query_and_compile.json
+      bytes: 5515
+      sha256: fa01e92c41ad86169f54bd8502cdb12e2fe05e06142fd50ac0fb3e97eccf98d1
+    replay:
+      runs: 2
+      byte_equal: true
+    boundary_review:
+      status: pending
+      reason: "Covers the legacy Wiki workspace/compiler/query observer with deterministic local model/provider boundaries; production queue, model, publisher, and graph callers remain unreviewed."
+  - id: table_query
+    capability_id: table_query
+    reference: scripts.phase0a_table_query_observer:observe
+    required_callee_modules: [analytics.table_catalog, tools.pandas_knowledge_tool]
+    output:
+      path: docs/knowledge-platform/runtime-probes/legacy/table_query.json
+      bytes: 7003
+      sha256: 30fdf4b784ff3363b206385bcc1634d92e066bf561099e17335575056e186294
+    replay:
+      runs: 2
+      byte_equal: true
+    boundary_review:
+      status: pending
+      reason: "Covers the legacy PandasKnowledgeQueryTool, Catalog fill, profile, runner, and running-loop branch against fixture storage; production callers and all asset formats remain unreviewed."
+  - id: database_nl2sql_and_readonly_execute
+    capability_id: database_nl2sql_and_readonly_execute
+    reference: scripts.phase0a_database_nl2sql_observer:observe
+    required_callee_modules: [analytics.nl2sql.service, analytics.nl2sql.sql_runner, knowledge.database_sources]
+    output:
+      path: docs/knowledge-platform/runtime-probes/legacy/database_nl2sql_and_readonly_execute.json
+      bytes: 17086
+      sha256: 978efd57ebe0343d46aa2a51ccf6d9fc3fb198285a57a9da1f952ee58ffa5b99
+    replay:
+      runs: 2
+      byte_equal: true
+    boundary_review:
+      status: pending
+      reason: "Covers the legacy NL2SQL service, sqlglot validation, read-only execution, and fixed Vanna boundary on a test-only SQLite adapter; production PostgreSQL/MySQL, Vanna/Milvus, and all ToolRuntime callers remain unreviewed."
+  - id: semantic_assets_and_authoring
+    capability_id: semantic_assets_and_authoring
+    reference: scripts.phase0a_semantic_authoring_observer:observe
+    required_callee_modules: [analytics.semantic_authoring.service, analytics.semantic_assets.registry]
+    output:
+      path: docs/knowledge-platform/runtime-probes/legacy/semantic_assets_and_authoring.json
+      bytes: 7843
+      sha256: 53c7726af65d4efd7e9c45dc5dfda9a6bc556eced154ce25fd86ad77212c67a3
+    replay:
+      runs: 2
+      byte_equal: true
+    boundary_review:
+      status: pending
+      reason: "Covers legacy semantic discovery/prepare/publish and registry observer paths with isolated files; production DB transactions, worker resume, and graph/API callers remain unreviewed."
+  - id: package_export
+    capability_id: package_export
+    reference: scripts.phase0a_package_export_observer:observe
+    required_callee_modules: [analytics.project_export.service]
+    output:
+      path: docs/knowledge-platform/runtime-probes/legacy/package_export.json
+      bytes: 5594
+      sha256: f2e8a141bee6fbd956e4d31e903eb4ca55f0c81fbdc576104d992ca1fd32c614
+    replay:
+      runs: 2
+      byte_equal: true
+    boundary_review:
+      status: pending
+      reason: "Covers the legacy package export observer and catalog snapshot on isolated SQLite/files; installation, deployment, and external import callers remain unreviewed."
+  - id: connectors_and_capture
+    capability_id: connectors_and_capture
+    reference: scripts.phase0a_connectors_capture_observer:observe
+    required_callee_modules: [knowledge.read_later, knowledge.connectors.feishu_sync, tools.fetch_url_tool]
+    output:
+      path: docs/knowledge-platform/runtime-probes/legacy/connectors_and_capture.json
+      bytes: 14561
+      sha256: 4f5238b93eb176983e3ede1644b2e8fd18d63ef557cdd4c484116d5b77745f1e
+    replay:
+      runs: 2
+      byte_equal: true
+    boundary_review:
+      status: pending
+      reason: "Covers legacy Read Later capture/retry, OAuth PKCE, and Feishu sync observer paths behind fixed provider APIs; production OAuth app, network, scheduler, and connector callers remain unreviewed."
+  - id: lease_and_jobs
+    capability_id: lease_and_jobs
+    reference: scripts.phase0a_lease_jobs_observer:observe
+    module_scope: [analytics, catalog_migration, graph, knowledge, knowledge_contracts, knowledge_platform, runtime_control, scripts, tools, vanna]
+    required_callee_modules: [knowledge.import_jobs, knowledge.queue_repository, runtime_control]
+    output:
+      path: docs/knowledge-platform/runtime-probes/legacy/lease_and_jobs.json
+      bytes: 9501
+      sha256: 7ed869622e4039f19bdc3010c096ed04b913c92bff4a7cdc4dbb120e05abb4e1
+    replay:
+      runs: 2
+      byte_equal: true
+    boundary_review:
+      status: pending
+      reason: "Covers legacy queue claim/heartbeat/owner fencing, retry/reclaim, drain, and maintenance observer paths on temporary SQLite; production workers, deployment supervisors, and cross-process races remain unreviewed."
+  - id: catalog_migration_rehearsal
+    capability_id: catalog_migration_rehearsal
+    reference: scripts.phase0a_catalog_migration_observer:observe
+    module_scope: [analytics, catalog_migration, graph, knowledge, knowledge_contracts, knowledge_platform, runtime_control, scripts, tools, vanna]
+    required_callee_modules: [catalog_migration]
+    output:
+      path: docs/knowledge-platform/runtime-probes/legacy/catalog_migration_rehearsal.json
+      bytes: 2699
+      sha256: 30e15893009f6ee7c0316ca07b890d713a1c4a3827fb8882f1f95875e4736a3b
+    replay:
+      runs: 2
+      byte_equal: true
+    boundary_review:
+      status: pending
+      reason: "Covers the legacy catalog migration observer on a sanitized temporary database; the production 18-table copy, live database snapshot, and rollback window remain unreviewed."
+completion_rule: "This supplemental registry remains incomplete until legacy caller inventory, production boundaries, and each observer's boundary interpretation are independently reviewed; local observer replay alone cannot mark runtime_dependency_graph_verified."

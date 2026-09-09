@@ -1,0 +1,17 @@
+{
+  "format": "agent-knowledge-platform-golden-fixture/wiki-query-compile/v1",
+  "sanitized": true,
+  "scenario": {
+    "source_id": "kb_golden_wiki",
+    "asset_id": "retrieval-note",
+    "title": "Hybrid retrieval note",
+    "source_path": "/knowledge/imported/hybrid-retrieval.md",
+    "raw_content": "# Hybrid retrieval\n\nHybrid retrieval combines keyword evidence with semantic evidence.\n",
+    "page_slug": "concepts/hybrid-retrieval",
+    "page_title": "Hybrid Retrieval",
+    "page_type": "concept",
+    "query": "semantic evidence retrieval",
+    "missing_query": "完全不存在的火星术语",
+    "limit": 3
+  }
+}

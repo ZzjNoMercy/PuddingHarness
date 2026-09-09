@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingknowledge.dev/contracts/phase10-dependency-lock-preflight/v1",
+  "title": "Agent-native Knowledge Platform Phase 10 dependency lock preflight",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "status",
+    "activation_allowed",
+    "execution_allowed",
+    "source_project",
+    "source_project_version",
+    "declared_dependencies",
+    "declared_dependency_count",
+    "locked_packages",
+    "locked_package_count",
+    "missing_declared_from_uv_lock",
+    "requirements_packages",
+    "requirements_package_count",
+    "missing_requirements_from_uv_lock",
+    "source_lock_digest",
+    "requirements_digest",
+    "target_lockfiles",
+    "target_lockfiles_present",
+    "mixed_project_dependency_graph",
+    "replay_consistent",
+    "network_contacted",
+    "lock_regenerated",
+    "independent_repository_verified",
+    "scope",
+    "report_digest"
+  ],
+  "properties": {
+    "format": { "const": "agent-knowledge-platform-phase10-dependency-lock-preflight/v1" },
+    "status": { "const": "PHASE10_DEPENDENCY_LOCK_PREFLIGHT_BLOCKED" },
+    "activation_allowed": { "const": false },
+    "execution_allowed": { "const": false },
+    "source_project": { "const": "puddingclaw-backend" },
+    "source_project_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "declared_dependencies": { "type": "array", "items": { "$ref": "#/$defs/name" } },
+    "declared_dependency_count": { "type": "integer", "minimum": 1 },
+    "locked_packages": { "type": "array", "items": { "$ref": "#/$defs/name" } },
+    "locked_package_count": { "type": "integer", "minimum": 1 },
+    "missing_declared_from_uv_lock": { "type": "array", "items": { "$ref": "#/$defs/name" } },
+    "requirements_packages": { "type": "array", "items": { "$ref": "#/$defs/name" } },
+    "requirements_package_count": { "type": "integer", "minimum": 1 },
+    "missing_requirements_from_uv_lock": { "type": "array", "items": { "$ref": "#/$defs/name" } },
+    "source_lock_digest": { "$ref": "#/$defs/digest" },
+    "requirements_digest": { "$ref": "#/$defs/digest" },
+    "target_lockfiles": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "present"],
+        "properties": {
+          "path": { "enum": ["puddingknowledge/uv.lock", "puddingharness/uv.lock"] },
+          "present": { "type": "boolean" }
+        }
+      }
+    },
+    "target_lockfiles_present": { "type": "boolean" },
+    "mixed_project_dependency_graph": { "type": "boolean" },
+    "replay_consistent": { "const": true },
+    "network_contacted": { "const": false },
+    "lock_regenerated": { "const": false },
+    "independent_repository_verified": { "const": false },
+    "scope": { "type": "string", "const": "same-checkout declaration/lock consistency only; target dependency split and independent lock generation are pending" },
+    "report_digest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,127}$" },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

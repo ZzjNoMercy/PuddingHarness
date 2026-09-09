@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingai.local/schemas/platform-runtime-boundary-review-queue.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "status", "activation", "execution_allowed", "policy", "registry", "replay", "summary", "items"],
+  "properties": {
+    "format": {"const": "agent-native-knowledge-platform-platform-runtime-boundary-review-queue/v1"},
+    "status": {"const": "PHASE0A_PLATFORM_RUNTIME_BOUNDARY_REVIEW_QUEUE_READY_NOT_FROZEN"},
+    "activation": {"const": "not-activated"},
+    "execution_allowed": {"const": false},
+    "policy": {"type": "string", "minLength": 1},
+    "registry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sha256", "status", "coverage_scope", "platform_runtime_coverage"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "status": {"type": "string", "minLength": 1},
+        "coverage_scope": {"const": "platform-contract-observation-only"},
+        "platform_runtime_coverage": {"type": "string", "minLength": 1}
+      }
+    },
+    "replay": {
+      "type": "object", "additionalProperties": false,
+      "required": ["digest", "replayed_probe_count", "replayed_probe_ids", "status"],
+      "properties": {
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "replayed_probe_count": {"type": "integer", "minimum": 1},
+        "replayed_probe_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "status": {"const": "matched"}
+      }
+    },
+    "summary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["all_replayed", "approval_required", "pending_review_count", "replayed_probe_count", "review_item_count"],
+      "properties": {
+        "all_replayed": {"const": true},
+        "approval_required": {"const": true},
+        "pending_review_count": {"type": "integer", "minimum": 0},
+        "replayed_probe_count": {"type": "integer", "minimum": 1},
+        "review_item_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["byte_equal", "family", "graph_digest", "loaded_module_count", "observed_edge_count", "output_sha256", "probe_id", "probe_reference", "reason", "replay_runs", "review_id", "review_status"],
+        "properties": {
+          "byte_equal": {"const": true},
+          "family": {"type": "string", "minLength": 1},
+          "graph_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "loaded_module_count": {"type": "integer", "minimum": 1},
+          "observed_edge_count": {"type": "integer", "minimum": 1},
+          "output_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "probe_id": {"type": "string", "minLength": 1},
+          "probe_reference": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*$"},
+          "reason": {"type": "string", "minLength": 1},
+          "replay_runs": {"type": "integer", "minimum": 1},
+          "review_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "review_status": {"const": "pending"}
+        }
+      }
+    }
+  }
+}

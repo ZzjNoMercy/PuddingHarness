@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingknowledge.dev/contracts/platform-restore/v1",
+  "title": "Agent-native Knowledge Platform local restore result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "format",
+    "status",
+    "owner",
+    "source_manifest_digest",
+    "restored_file_count",
+    "target_home",
+    "validation",
+    "execution_allowed",
+    "activation_allowed",
+    "process_started",
+    "production_endpoint",
+    "source_data_mutation",
+    "legacy_claw_mutation",
+    "side_effects"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "format": { "const": "agent-knowledge-platform-restore/v1" },
+    "status": { "const": "restored_local_not_running" },
+    "owner": { "const": "puddingknowledge" },
+    "source_manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "restored_file_count": { "type": "integer", "minimum": 1 },
+    "target_home": { "type": "string", "pattern": "^/[^\\\\]*$" },
+    "validation": { "const": "valid" },
+    "execution_allowed": { "const": true },
+    "activation_allowed": { "const": false },
+    "process_started": { "const": false },
+    "production_endpoint": { "const": false },
+    "source_data_mutation": { "const": false },
+    "legacy_claw_mutation": { "const": false },
+    "side_effects": { "const": ["created_new_local_target_directory"] }
+  }
+}

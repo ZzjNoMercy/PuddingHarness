@@ -1,0 +1,119 @@
+{
+  "format": "agent-native-knowledge-platform-runtime-call-graph-report/v1",
+  "observation_only": true,
+  "probes": [
+    {
+      "edges": [
+        {
+          "callee_function": "freeze_mapping",
+          "callee_module": "knowledge_contracts._immutables",
+          "caller_function": "__post_init__",
+          "caller_module": "knowledge_contracts.delegation"
+        },
+        {
+          "callee_function": "discover",
+          "callee_module": "knowledge_platform.baseline.phase0a_probes",
+          "caller_function": "build",
+          "caller_module": "knowledge_platform.agent.surface"
+        },
+        {
+          "callee_function": "is_valid_knowledge_uri",
+          "callee_module": "knowledge_contracts.query",
+          "caller_function": "invoke",
+          "caller_module": "knowledge_platform.agent.surface"
+        },
+        {
+          "callee_function": "invoke",
+          "callee_module": "knowledge_platform.baseline.phase0a_probes",
+          "caller_function": "invoke",
+          "caller_module": "knowledge_platform.agent.surface"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "knowledge_contracts.delegation",
+          "caller_function": "discover",
+          "caller_module": "knowledge_platform.baseline.phase0a_probes"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "knowledge_contracts.query",
+          "caller_function": "probe_harness_wiring_boundary",
+          "caller_module": "knowledge_platform.baseline.phase0a_probes"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "knowledge_platform.agent.surface",
+          "caller_function": "probe_harness_wiring_boundary",
+          "caller_module": "knowledge_platform.baseline.phase0a_probes"
+        },
+        {
+          "callee_function": "probe_harness_wiring_boundary",
+          "callee_module": "knowledge_platform.baseline.phase0a_probes",
+          "caller_function": "capture_runtime_call_graph",
+          "caller_module": "knowledge_platform.baseline.runtime_graph"
+        }
+      ],
+      "format": "agent-knowledge-platform-runtime-call-graph/v1",
+      "graph_digest": "sha256:c551c6ec6a16b3e7508376156495ddbe64aa7e7e5d68a68d6b865b7bbe84b14b",
+      "loaded_modules": [
+        "knowledge_contracts",
+        "knowledge_contracts._immutables",
+        "knowledge_contracts.artifacts",
+        "knowledge_contracts.delegation",
+        "knowledge_contracts.events",
+        "knowledge_contracts.lease",
+        "knowledge_contracts.protocol",
+        "knowledge_contracts.query",
+        "knowledge_platform",
+        "knowledge_platform.agent",
+        "knowledge_platform.agent.ports",
+        "knowledge_platform.agent.surface",
+        "knowledge_platform.baseline",
+        "knowledge_platform.baseline.fixtures",
+        "knowledge_platform.baseline.normalizer",
+        "knowledge_platform.baseline.phase0a_probes",
+        "knowledge_platform.baseline.runtime_graph",
+        "knowledge_platform.baseline.runtime_registry",
+        "knowledge_platform.baseline.snapshot",
+        "knowledge_platform.catalog",
+        "knowledge_platform.catalog.authoring_job_rehearsal",
+        "knowledge_platform.catalog.connector_rehearsal",
+        "knowledge_platform.catalog.credential_rehearsal",
+        "knowledge_platform.catalog.database_source_rehearsal",
+        "knowledge_platform.catalog.harness_migrations",
+        "knowledge_platform.catalog.harness_models",
+        "knowledge_platform.catalog.metadata",
+        "knowledge_platform.catalog.migration_orchestrator",
+        "knowledge_platform.catalog.migrations",
+        "knowledge_platform.catalog.models",
+        "knowledge_platform.catalog.notification_event_rehearsal",
+        "knowledge_platform.catalog.processing_job_rehearsal",
+        "knowledge_platform.catalog.query_result_rehearsal",
+        "knowledge_platform.catalog.read_later_rehearsal",
+        "knowledge_platform.catalog.rehearsal",
+        "knowledge_platform.catalog.rehearsal_runner",
+        "knowledge_platform.catalog.sqlite_authoring",
+        "knowledge_platform.catalog.sqlite_semantic_authoring",
+        "knowledge_platform.catalog.table_asset_rehearsal",
+        "knowledge_platform.catalog.vault_rebind_rehearsal",
+        "knowledge_platform.evidence",
+        "knowledge_platform.evidence.normalizer",
+        "knowledge_platform.evidence.ports",
+        "knowledge_platform.jobs",
+        "knowledge_platform.jobs.in_memory_lease",
+        "knowledge_platform.jobs.lease_port",
+        "knowledge_platform.wiki",
+        "knowledge_platform.wiki.compiler",
+        "knowledge_platform.wiki.local",
+        "knowledge_platform.wiki.ports",
+        "knowledge_platform.wiki.sqlite_jobs"
+      ],
+      "module_prefixes": [
+        "knowledge_contracts",
+        "knowledge_platform"
+      ],
+      "observation_only": true,
+      "probe_reference": "knowledge_platform.baseline.phase0a_probes:probe_harness_wiring_boundary"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "format": "agent-knowledge-platform-golden-fixture/lease-and-jobs/v1",
+  "sanitized": true,
+  "database": {
+    "knowledge_base": {
+      "id": "kb-golden-lease",
+      "name": "Golden lease fixture",
+      "description": "Deterministic local queue protocol input"
+    },
+    "import_job": {
+      "id": "job-golden-lease",
+      "knowledge_base_id": "kb-golden-lease",
+      "status": "queued",
+      "file_name": "golden.md",
+      "file_type": "markdown",
+      "file_size": 12,
+      "source_path": "fixture/golden.md",
+      "source_sha256": "fixture-sha256",
+      "publish_targets": [],
+      "current_step": "queued",
+      "progress": 0,
+      "retry_count": 0,
+      "job_metadata": {}
+    },
+    "semantic_job": {
+      "id": "job-golden-semantic",
+      "session_id": "session-golden",
+      "query_id": "query-golden",
+      "dimension_id": "dimension-golden",
+      "adapter": "mock",
+      "requested_scope": {"source": "fixture"},
+      "input_snapshot": {"version": 1},
+      "status": "queued",
+      "current_step": "queued",
+      "progress": 0,
+      "staging_path": "",
+      "published_reference_path": "",
+      "result_summary": {},
+      "retry_count": 0,
+      "attempt": 0
+    }
+  },
+  "protocol_scenario": [
+    "claim_import_by_worker_a",
+    "heartbeat_owner_a",
+    "fence_owner_a",
+    "terminal_failure_and_retry",
+    "reclaim_by_worker_b",
+    "maintenance_drain_and_release",
+    "claim_semantic_after_release"
+  ]
+}

@@ -1,0 +1,428 @@
+{
+  "format": "agent-native-knowledge-platform-runtime-call-graph-report/v1",
+  "observation_only": true,
+  "probes": [
+    {
+      "edges": [
+        {
+          "callee_function": "get_asset",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "_declaration_bearing_assets",
+          "caller_module": "analytics.nl2sql.guardrails"
+        },
+        {
+          "callee_function": "get_semantic_asset_registry",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "_declaration_bearing_assets",
+          "caller_module": "analytics.nl2sql.guardrails"
+        },
+        {
+          "callee_function": "list_assets",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "_declaration_bearing_assets",
+          "caller_module": "analytics.nl2sql.guardrails"
+        },
+        {
+          "callee_function": "detector_failed",
+          "callee_module": "analytics.nl2sql.guardrail_runtime",
+          "caller_function": "_detect_forbid_sql_pattern",
+          "caller_module": "analytics.nl2sql.guardrails"
+        },
+        {
+          "callee_function": "scope_status",
+          "callee_module": "analytics.nl2sql.guardrail_runtime",
+          "caller_function": "scope_matches",
+          "caller_module": "analytics.nl2sql.guardrails"
+        },
+        {
+          "callee_function": "get_related_ddl",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "_collect_vanna_references",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "get_related_documentation",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "_collect_vanna_references",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "get_similar_question_sql",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "_collect_vanna_references",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "get_analytics_model_registry",
+          "callee_module": "analytics.models.registry",
+          "caller_function": "_compile_request_semantic_context",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "compile_semantic_query_context",
+          "callee_module": "analytics.semantic_runtime.compiler",
+          "caller_function": "_compile_request_semantic_context",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "detect_guardrail_conflicts",
+          "callee_module": "analytics.nl2sql.guardrails",
+          "caller_function": "_detect_sql_guardrail_conflicts",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "bindings_from_semantic_trace",
+          "callee_module": "analytics.nl2sql.eav_evidence",
+          "caller_function": "_generate_grounded_sql",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "check_eav_evidence",
+          "callee_module": "analytics.nl2sql.eav_evidence",
+          "caller_function": "_generate_grounded_sql",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "extract_eav_type_names",
+          "callee_module": "analytics.nl2sql.eav_evidence",
+          "caller_function": "_generate_grounded_sql",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "passed",
+          "callee_module": "analytics.nl2sql.eav_evidence",
+          "caller_function": "_generate_grounded_sql",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "collect_applied_semantic_rules",
+          "callee_module": "analytics.nl2sql.guardrails",
+          "caller_function": "_generate_grounded_sql",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "select_derivable_query_plans",
+          "callee_module": "analytics.nl2sql.query_plan",
+          "caller_function": "_generate_grounded_sql",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "extract_sql",
+          "callee_module": "analytics.nl2sql.sql_runner",
+          "caller_function": "_generate_grounded_sql",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "validate_readonly_sql",
+          "callee_module": "analytics.nl2sql.sql_runner",
+          "caller_function": "_generate_grounded_sql",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "summarize_table_route",
+          "callee_module": "analytics.nl2sql.table_router",
+          "caller_function": "_generate_grounded_sql",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "extract_sql",
+          "callee_module": "analytics.nl2sql.sql_runner",
+          "caller_function": "_refine_sql_blocking",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "submit_prompt",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "_refine_sql_blocking",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "extract_eav_type_names",
+          "callee_module": "analytics.nl2sql.eav_evidence",
+          "caller_function": "ensure_parseable",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "generate_sql",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "generate_candidate_blocking",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "attach_persisted_query_result",
+          "callee_module": "analytics.nl2sql.result_store",
+          "caller_function": "query_database_knowledge",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "analytics.nl2sql.schemas",
+          "caller_function": "query_database_knowledge",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "run_readonly_sql",
+          "callee_module": "analytics.nl2sql.sql_runner",
+          "caller_function": "query_database_knowledge",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "build_execution_binding_metadata",
+          "callee_module": "analytics.semantic_runtime.adapters",
+          "caller_function": "query_database_knowledge",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "render_sql_semantic_context",
+          "callee_module": "analytics.semantic_runtime.adapters",
+          "caller_function": "query_database_knowledge",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "to_trace",
+          "callee_module": "analytics.semantic_runtime.schemas",
+          "caller_function": "query_database_knowledge",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "<lambda>",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "query_database_knowledge",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "_async_value",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "query_database_knowledge",
+          "caller_module": "analytics.nl2sql.service"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "analytics.nl2sql.schemas",
+          "caller_function": "run_readonly_sql",
+          "caller_module": "analytics.nl2sql.sql_runner"
+        },
+        {
+          "callee_function": "<lambda>",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "run_readonly_sql",
+          "caller_module": "analytics.nl2sql.sql_runner"
+        },
+        {
+          "callee_function": "__aenter__",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "run_readonly_sql",
+          "caller_module": "analytics.nl2sql.sql_runner"
+        },
+        {
+          "callee_function": "__aexit__",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "run_readonly_sql",
+          "caller_module": "analytics.nl2sql.sql_runner"
+        },
+        {
+          "callee_function": "begin",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "run_readonly_sql",
+          "caller_module": "analytics.nl2sql.sql_runner"
+        },
+        {
+          "callee_function": "connect",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "run_readonly_sql",
+          "caller_module": "analytics.nl2sql.sql_runner"
+        },
+        {
+          "callee_function": "create_fixture_engine",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "run_readonly_sql",
+          "caller_module": "analytics.nl2sql.sql_runner"
+        },
+        {
+          "callee_function": "dispose",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "run_readonly_sql",
+          "caller_module": "analytics.nl2sql.sql_runner"
+        },
+        {
+          "callee_function": "execute",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "run_readonly_sql",
+          "caller_module": "analytics.nl2sql.sql_runner"
+        },
+        {
+          "callee_function": "get_asset",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "_resolve_measure_references",
+          "caller_module": "analytics.semantic_assets.resolver"
+        },
+        {
+          "callee_function": "get_asset",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "resolve_semantic_assets",
+          "caller_module": "analytics.semantic_assets.resolver"
+        },
+        {
+          "callee_function": "get_semantic_asset_registry",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "resolve_semantic_assets",
+          "caller_module": "analytics.semantic_assets.resolver"
+        },
+        {
+          "callee_function": "list_assets",
+          "callee_module": "analytics.semantic_assets.registry",
+          "caller_function": "resolve_semantic_assets",
+          "caller_module": "analytics.semantic_assets.resolver"
+        },
+        {
+          "callee_function": "format_semantic_assets_for_prompt",
+          "callee_module": "analytics.semantic_assets.resolver",
+          "caller_function": "render_sql_semantic_context",
+          "caller_module": "analytics.semantic_runtime.adapters"
+        },
+        {
+          "callee_function": "resolve_semantic_assets",
+          "callee_module": "analytics.semantic_assets.resolver",
+          "caller_function": "compile_semantic_query_context",
+          "caller_module": "analytics.semantic_runtime.compiler"
+        },
+        {
+          "callee_function": "semantic_resolution_to_trace",
+          "callee_module": "analytics.semantic_assets.resolver",
+          "caller_function": "compile_semantic_query_context",
+          "caller_module": "analytics.semantic_runtime.compiler"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "analytics.semantic_runtime.schemas",
+          "caller_function": "compile_semantic_query_context",
+          "caller_module": "analytics.semantic_runtime.compiler"
+        },
+        {
+          "callee_function": "observe",
+          "callee_module": "scripts.phase0a_database_nl2sql_observer",
+          "caller_function": "capture_runtime_call_graph",
+          "caller_module": "knowledge_platform.baseline.runtime_graph"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "analytics.nl2sql.schemas",
+          "caller_function": "_observe_async",
+          "caller_module": "scripts.phase0a_database_nl2sql_observer"
+        },
+        {
+          "callee_function": "query_database_knowledge",
+          "callee_module": "analytics.nl2sql.service",
+          "caller_function": "_observe_async",
+          "caller_module": "scripts.phase0a_database_nl2sql_observer"
+        },
+        {
+          "callee_function": "__init__",
+          "callee_module": "analytics.nl2sql.schemas",
+          "caller_function": "_route",
+          "caller_module": "scripts.phase0a_database_nl2sql_observer"
+        },
+        {
+          "callee_function": "_sanitize_payload",
+          "callee_module": "knowledge.database_sources",
+          "caller_function": "_source_registry_boundary",
+          "caller_module": "scripts.phase0a_database_nl2sql_observer"
+        },
+        {
+          "callee_function": "normalized_digest",
+          "callee_module": "knowledge_platform.baseline.normalizer",
+          "caller_function": "_source_snapshot",
+          "caller_module": "scripts.phase0a_database_nl2sql_observer"
+        },
+        {
+          "callee_function": "validate_readonly_sql",
+          "callee_module": "analytics.nl2sql.sql_runner",
+          "caller_function": "_validation_case",
+          "caller_module": "scripts.phase0a_database_nl2sql_observer"
+        }
+      ],
+      "format": "agent-knowledge-platform-runtime-call-graph/v1",
+      "graph_digest": "sha256:234484cbb9e93aed05b60de59c2340d8155c327a32a4161e4a6a675ae579b4fe",
+      "loaded_modules": [
+        "analytics",
+        "analytics.models",
+        "analytics.models.registry",
+        "analytics.nl2sql",
+        "analytics.nl2sql.eav_evidence",
+        "analytics.nl2sql.guardrail_runtime",
+        "analytics.nl2sql.guardrails",
+        "analytics.nl2sql.improve",
+        "analytics.nl2sql.improve.clients",
+        "analytics.nl2sql.improve.clients.embedding_providers",
+        "analytics.nl2sql.improve.clients.vanna_client",
+        "analytics.nl2sql.profile_catalog",
+        "analytics.nl2sql.query_plan",
+        "analytics.nl2sql.result_store",
+        "analytics.nl2sql.runtime",
+        "analytics.nl2sql.schemas",
+        "analytics.nl2sql.service",
+        "analytics.nl2sql.sql_enum_extract",
+        "analytics.nl2sql.sql_runner",
+        "analytics.nl2sql.table_router",
+        "analytics.semantic_assets",
+        "analytics.semantic_assets.registry",
+        "analytics.semantic_assets.resolver",
+        "analytics.semantic_runtime",
+        "analytics.semantic_runtime.adapters",
+        "analytics.semantic_runtime.compiler",
+        "analytics.semantic_runtime.schemas",
+        "knowledge",
+        "knowledge.database_sources",
+        "knowledge.indexer",
+        "knowledge.mineru_client",
+        "knowledge.models",
+        "knowledge.parsers",
+        "knowledge.parsers.cloud_common",
+        "knowledge.parsers.contracts",
+        "knowledge.parsers.dependency_installer",
+        "knowledge.parsers.llama_parse_cloud",
+        "knowledge.parsers.llamaindex_reader",
+        "knowledge.parsers.mineru_cloud",
+        "knowledge.parsers.mineru_local",
+        "knowledge.parsers.native_file",
+        "knowledge.parsers.registry",
+        "knowledge.parsers.unstructured_local",
+        "knowledge.paths",
+        "knowledge.queue_repository",
+        "knowledge.service",
+        "knowledge_platform",
+        "knowledge_platform.baseline",
+        "knowledge_platform.baseline.fixtures",
+        "knowledge_platform.baseline.normalizer",
+        "knowledge_platform.baseline.runtime_graph",
+        "knowledge_platform.baseline.runtime_registry",
+        "knowledge_platform.baseline.snapshot",
+        "scripts",
+        "scripts.phase0a_database_nl2sql_observer",
+        "vanna",
+        "vanna.base",
+        "vanna.base.base",
+        "vanna.exceptions",
+        "vanna.milvus",
+        "vanna.milvus.milvus_vector",
+        "vanna.openai",
+        "vanna.openai.openai_chat",
+        "vanna.openai.openai_embeddings",
+        "vanna.types",
+        "vanna.utils"
+      ],
+      "module_prefixes": [
+        "analytics",
+        "graph",
+        "knowledge",
+        "knowledge_contracts",
+        "knowledge_platform",
+        "scripts",
+        "tools",
+        "vanna"
+      ],
+      "observation_only": true,
+      "probe_reference": "scripts.phase0a_database_nl2sql_observer:observe"
+    }
+  ]
+}

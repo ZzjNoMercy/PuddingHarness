@@ -1,0 +1,173 @@
+{
+  "capability_id": "package_export",
+  "database_side_effects": {
+    "business_rows_written": 0,
+    "catalog_after_digest": "sha256:9666c0cab4b3e947aa6a4e4b4b3f20e2a16bc9f8e3f1f02262e1c6b92323277e",
+    "catalog_before_digest": "sha256:9666c0cab4b3e947aa6a4e4b4b3f20e2a16bc9f8e3f1f02262e1c6b92323277e",
+    "catalog_state_unchanged": true
+  },
+  "evidence": {
+    "catalog_snapshot_row_counts": [
+      {
+        "rows": 0,
+        "table": "analytics_query_results"
+      },
+      {
+        "rows": 0,
+        "table": "core_runtime_control"
+      },
+      {
+        "rows": 0,
+        "table": "feishu_app_credentials"
+      },
+      {
+        "rows": 0,
+        "table": "feishu_oauth_sessions"
+      },
+      {
+        "rows": 0,
+        "table": "feishu_user_grants"
+      },
+      {
+        "rows": 1,
+        "table": "knowledge_bases"
+      },
+      {
+        "rows": 0,
+        "table": "knowledge_database_sources"
+      },
+      {
+        "rows": 0,
+        "table": "knowledge_documents"
+      },
+      {
+        "rows": 0,
+        "table": "knowledge_import_events"
+      },
+      {
+        "rows": 0,
+        "table": "knowledge_import_jobs"
+      },
+      {
+        "rows": 0,
+        "table": "knowledge_source_connections"
+      },
+      {
+        "rows": 0,
+        "table": "knowledge_source_items"
+      },
+      {
+        "rows": 0,
+        "table": "knowledge_sync_runs"
+      },
+      {
+        "rows": 1,
+        "table": "knowledge_table_assets"
+      },
+      {
+        "rows": 0,
+        "table": "read_later_items"
+      },
+      {
+        "rows": 0,
+        "table": "semantic_dimension_build_events"
+      },
+      {
+        "rows": 0,
+        "table": "semantic_dimension_build_jobs"
+      },
+      {
+        "rows": 0,
+        "table": "task_notifications"
+      },
+      {
+        "rows": 0,
+        "table": "worker_access_logs"
+      }
+    ],
+    "catalog_snapshot_tables": [
+      "analytics_query_results",
+      "core_runtime_control",
+      "feishu_app_credentials",
+      "feishu_oauth_sessions",
+      "feishu_user_grants",
+      "knowledge_bases",
+      "knowledge_database_sources",
+      "knowledge_documents",
+      "knowledge_import_events",
+      "knowledge_import_jobs",
+      "knowledge_source_connections",
+      "knowledge_source_items",
+      "knowledge_sync_runs",
+      "knowledge_table_assets",
+      "read_later_items",
+      "semantic_dimension_build_events",
+      "semantic_dimension_build_jobs",
+      "task_notifications",
+      "worker_access_logs"
+    ],
+    "config_binding_count": 0,
+    "entry_digests": {
+      ".gitignore": "d50fd0481df2eb80c51403d382bd6c4921c61b23ad787a114c944ed240a74e96",
+      "AGENTS.md": "288bc4ba6e58bbc609797e9f7841df4aa4db913aa0ec44ce9827b3eb5db630d5",
+      "README.md": "33f95bc7fe5389e02a009d44d7c6f8f3a44973417bcde90fe9b45fb64b929609",
+      "analysis-project.yaml": "145050e2536cf1194f84497bd039be86171d4b3377c9dca32f4f86fd106f0b63",
+      "bindings.example.yaml": "0b1ec6abdd0f6908699350955ae3c1db45ae9b855955c9c00f76d7d1d553c312",
+      "bindings.local.yaml": "0b1ec6abdd0f6908699350955ae3c1db45ae9b855955c9c00f76d7d1d553c312",
+      "data/tbl_golden/golden.csv": "71dafdcb1198bcfe1e30d82430fce3c611141aec9bfb107a1807c352838f0c23",
+      "guardrails/compiled/rules.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "guardrails/compiled/rules.lock.json": "ab3324708a28f02c4370da584cbf7ce6f779cba9ed3d04e4f94808cde1a01fef",
+      "guardrails/context.example.json": "89fed6cd0daa77eb566228af60e4c88790e8918fc15b058d7582113ee26eb49c",
+      "guardrails/runtime/guardrail_runtime.py": "21d8bb52e7ba7e324250d9edd995058af84fdccecc6b87e890636d433e968d93",
+      "guardrails/runtime/validate_sql.py": "d86ff39ae692d6361498e3507322cb0bc94f6a02b0b952ac062f5f0e28a36e1d",
+      "model/model.md": "10093bfe020d85cba735b3e652b9ea4cd36940ac8245508c6e1d4981ed204622",
+      "package-manifest.json": "b1bc2b713e95451937ef77291a31b06b07e92f02688e181deb8ac7891103cc52",
+      "profiles/tbl_golden.profile.json": "e41b88177df6e8fda8308c6e26dfcee74e531c5965160e4bef111f9b2378edd1",
+      "tests/validate_project.py": "45d987318cf60bbb95b037d27fc82525eb40401ddcf265a93529e0ae82c0b3c9"
+    },
+    "entry_paths": [
+      ".gitignore",
+      "AGENTS.md",
+      "README.md",
+      "analysis-project.yaml",
+      "bindings.example.yaml",
+      "bindings.local.yaml",
+      "data/tbl_golden/golden.csv",
+      "guardrails/compiled/rules.json",
+      "guardrails/compiled/rules.lock.json",
+      "guardrails/context.example.json",
+      "guardrails/runtime/guardrail_runtime.py",
+      "guardrails/runtime/validate_sql.py",
+      "model/model.md",
+      "package-manifest.json",
+      "profiles/tbl_golden.profile.json",
+      "tests/validate_project.py"
+    ],
+    "package_manifest_checksums_match": true,
+    "package_manifest_format": "analysis-project-package-manifest/v1",
+    "portable_binding": "spreadsheet",
+    "raw_config_value_count": 0
+  },
+  "failure_semantics": "missing_dependency->export_rejected; unsafe_path->export_rejected",
+  "filesystem_side_effects": {
+    "business_writes": [],
+    "export_artifact_disposed": true
+  },
+  "format": "agent-knowledge-platform-golden-baseline-record/v1",
+  "provider_revision": "legacy-analysis-project-export-v1",
+  "result": {
+    "copied_bytes": 29,
+    "copied_file_count": 1,
+    "data_file_mode": "copy",
+    "entry_count": 16,
+    "package_name": "golden-analysis",
+    "ready": true,
+    "required_entries_present": true
+  },
+  "sanitized_fixture_manifest": {
+    "fixtures": [
+      "docs/knowledge-platform/golden-fixtures/package_export.json"
+    ]
+  },
+  "source_revision": "sha256:6989911bc9e42ca139077b7a8e2dc3087ab228b6157468f4c8922a2176610ea0"
+}

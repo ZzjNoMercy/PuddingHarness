@@ -1,0 +1,41 @@
+{
+  "capability_id": "semantic_assets_and_authoring",
+  "database_side_effects": {
+    "active_revision_probe": "not_applicable",
+    "business_rows_written": 0
+  },
+  "evidence": {
+    "candidate_digest": "sha256:16f3366602ffc2fc6d704feb4a1b6a12b0aff6383ab26f7f95f1fce0f2b4ced0",
+    "discovery_catalog_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "kind": "measure",
+    "published_content_has_formatter": true,
+    "published_content_has_measure_type": true,
+    "registry_definition_digest": "sha256:16f3366602ffc2fc6d704feb4a1b6a12b0aff6383ab26f7f95f1fce0f2b4ced0"
+  },
+  "failure_semantics": "invalid_candidate->publish_rejected; baseline_changed->publish_rejected; valid_candidate->digest_bound_publish",
+  "filesystem_side_effects": {
+    "authoring_state_file_count": 3,
+    "business_writes": [
+      "semantic-assets/measures/golden-measure/measure.md"
+    ],
+    "published_definition_file_count": 1
+  },
+  "format": "agent-knowledge-platform-golden-baseline-record/v1",
+  "provider_revision": "legacy-semantic-authoring-v1",
+  "result": {
+    "discovery_complete": true,
+    "discovery_matches": 0,
+    "plan_status": "prepared",
+    "plan_valid": true,
+    "published_digest": "sha256:16f3366602ffc2fc6d704feb4a1b6a12b0aff6383ab26f7f95f1fce0f2b4ced0",
+    "published_ok": true,
+    "registry_asset_id": "measure:golden-measure",
+    "registry_catalog_count": 1
+  },
+  "sanitized_fixture_manifest": {
+    "fixtures": [
+      "docs/knowledge-platform/golden-fixtures/semantic_assets_and_authoring.json"
+    ]
+  },
+  "source_revision": "sha256:1161062ea7d8781fe823cb63384148833c8aefd19afe37821088d9536f242e01"
+}

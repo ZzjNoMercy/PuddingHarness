@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingai.local/schemas/phase9-local-distribution-matrix-shadow.schema.json",
+  "title": "Phase 9 local distribution matrix shadow",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "status",
+    "activation_allowed",
+    "release_execution_allowed",
+    "source_repository",
+    "check_count",
+    "pass_count",
+    "checks",
+    "source_paths_emitted",
+    "network_contacted",
+    "files_moved",
+    "files_deleted",
+    "independent_repositories_created",
+    "semantic_equivalence_proven",
+    "scope"
+  ],
+  "properties": {
+    "format": { "const": "agent-knowledge-platform-phase9-local-distribution-matrix-shadow/v1" },
+    "status": {
+      "enum": [
+        "PHASE9_LOCAL_DISTRIBUTION_MATRIX_PASS_NOT_ACTIVATABLE",
+        "PHASE9_LOCAL_DISTRIBUTION_MATRIX_BLOCKED"
+      ]
+    },
+    "activation_allowed": { "const": false },
+    "release_execution_allowed": { "const": false },
+    "source_repository": { "const": "PuddingClaw" },
+    "check_count": { "type": "integer", "minimum": 1 },
+    "pass_count": { "type": "integer", "minimum": 0 },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check_id", "status"],
+        "properties": {
+          "check_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+          "status": { "enum": ["verified", "blocked"] },
+          "surface_count": { "type": "integer", "minimum": 0 },
+          "file_count": { "type": "integer", "minimum": 0 },
+          "missing_anchor_count": { "type": "integer", "minimum": 0 },
+          "unclassified_count": { "type": "integer", "minimum": 0 },
+          "ambiguous_count": { "type": "integer", "minimum": 0 },
+          "probe_count": { "type": "integer", "minimum": 0 },
+          "verified_probe_count": { "type": "integer", "minimum": 0 },
+          "manual_review_required": { "const": true },
+          "marker_count": { "type": "integer", "minimum": 0 },
+          "marker_total": { "type": "integer", "minimum": 0 },
+          "compose_marker_count": { "type": "integer", "minimum": 0 },
+          "compose_marker_total": { "type": "integer", "minimum": 0 },
+          "supervisor_marker_count": { "type": "integer", "minimum": 0 },
+          "supervisor_marker_total": { "type": "integer", "minimum": 0 },
+          "shell_syntax_returncode": { "type": "integer" },
+          "command_count": { "type": "integer", "minimum": 0 },
+          "archive_count": { "type": "integer", "minimum": 0 },
+          "all_commands_passed": { "type": "boolean" },
+          "replay_consistent": { "type": "boolean" },
+          "staged_tree_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "error_type": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$" }
+        }
+      }
+    },
+    "source_paths_emitted": { "const": false },
+    "network_contacted": { "const": false },
+    "files_moved": { "const": false },
+    "files_deleted": { "const": false },
+    "independent_repositories_created": { "const": false },
+    "semantic_equivalence_proven": { "const": false },
+    "scope": { "type": "string", "minLength": 1, "maxLength": 300 }
+  }
+}

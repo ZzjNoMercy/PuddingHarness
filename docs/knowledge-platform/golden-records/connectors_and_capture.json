@@ -1,0 +1,156 @@
+{
+  "capability_id": "connectors_and_capture",
+  "database_side_effects": {
+    "business_rows_written": 10,
+    "oauth_session_replay_rejected": true,
+    "raw_values_in_catalog": false
+  },
+  "evidence": {
+    "implementation_dependencies": [
+      {
+        "content_digest": "sha256:94028b45ac4dc684305aaf367217f1a4e227f8b9df10789b271134cec6ff4508",
+        "path": "backend/scripts/phase0a_connectors_capture_observer.py"
+      },
+      {
+        "content_digest": "sha256:4147498b3e16b7dfa308257b6e891257c9fd50abb001a99b21a486504e60ea3c",
+        "path": "backend/knowledge/read_later.py"
+      },
+      {
+        "content_digest": "sha256:cf39eda67d648f6f8c2d694af13e577e508d7130e6b5d25ff5e0d6b3262ced26",
+        "path": "backend/knowledge/connectors/feishu.py"
+      },
+      {
+        "content_digest": "sha256:c1378d08fa40fc2f3f78829986d2d74f6c490c9c1e0937b598df3790e3d40d5c",
+        "path": "backend/knowledge/connectors/feishu_sync.py"
+      },
+      {
+        "content_digest": "sha256:88d3bc50042ca572ede4410351bef1f32c2721556513926aece9637a572088c6",
+        "path": "backend/knowledge/connectors/feishu_blocks.py"
+      },
+      {
+        "content_digest": "sha256:7d7db51358832e9abfa446b2956acba83a6cd7e038627edd1a2a71a3c628b757",
+        "path": "backend/knowledge/sources.py"
+      }
+    ],
+    "incremental_revision_fast_path": "same_revision_skips_block_fetch",
+    "oauth_pkce_binding_real": true,
+    "provider_boundary": "fixed_http_and_in_memory_feishu_api",
+    "provider_revision": "legacy-connector-capture-v1",
+    "raw_values_recorded": false,
+    "remote_network_used": false,
+    "source_identity_binding": "source_connection_id+external_id",
+    "unsafe_api_base_rejected": true
+  },
+  "failure_semantics": "wrong_principal->oauth_rejected; retry->same_document; same_revision->incremental_unchanged; unsafe_api_base->rejected",
+  "filesystem_side_effects": {
+    "after": [
+      {
+        "bytes": 486,
+        "content_digest": "sha256:a8ad38d4ec0568c3e91dac3958cd70958437df4a549dac34fbd3897984d4d06f",
+        "path": "imported/<capture-date>/Agent Capture Notes.md"
+      },
+      {
+        "bytes": 480,
+        "content_digest": "sha256:3fabb5f06b4206249086f122ed3fe54db46bb53c1297b12267022b29c69412ea",
+        "path": "imported/<capture-date>/Golden Connector Manual.md"
+      }
+    ],
+    "before": [],
+    "business_writes": [
+      "imported/<capture-date>/Agent Capture Notes.md",
+      "imported/<capture-date>/Golden Connector Manual.md"
+    ],
+    "knowledge_artifacts_under_root": true
+  },
+  "format": "agent-knowledge-platform-golden-baseline-record/v1",
+  "provider_revision": "legacy-connectors-and-capture-v1",
+  "result": {
+    "feishu_sync": {
+      "block_calls": 1,
+      "document": {
+        "canonical_content_digest": "sha256:3fabb5f06b4206249086f122ed3fe54db46bb53c1297b12267022b29c69412ea",
+        "source_revision": "7",
+        "source_type": "feishu_docx",
+        "status": "ready",
+        "storage_exists": true,
+        "storage_under_knowledge_root": true,
+        "title": "Golden Connector Manual",
+        "virtual_path": "<path-redacted>"
+      },
+      "first_stats": {
+        "changed": 1,
+        "discovered": 1,
+        "failed": 0,
+        "unchanged": 0
+      },
+      "first_status": "succeeded",
+      "item": {
+        "external_id": "wiki-node-golden",
+        "path": [
+          "Golden Connector Manual"
+        ],
+        "revision": "7",
+        "status": "ready"
+      },
+      "second_stats": {
+        "changed": 0,
+        "discovered": 1,
+        "failed": 0,
+        "unchanged": 1
+      }
+    },
+    "oauth": {
+      "auth_host": "accounts.feishu.cn",
+      "grant_status": "active",
+      "granted_scopes": [
+        "offline_access",
+        "wiki:wiki:readonly"
+      ],
+      "pkce_method": "S256",
+      "requested_scopes": [
+        "wiki:wiki:readonly",
+        "offline_access"
+      ],
+      "session_status": "consumed",
+      "source_status": "ready",
+      "temporary_vault_item_removed": true,
+      "wrong_principal_rejected": true
+    },
+    "source_identity": {
+      "connector_keys": [
+        "feishu_wiki",
+        "local_upload",
+        "web_capture"
+      ],
+      "document_count": 2,
+      "grant_count": 1,
+      "item_count": 2,
+      "source_count": 3,
+      "source_item_identity_scope": "source_connection_id+external_id",
+      "sync_run_count": 2
+    },
+    "web_capture": {
+      "canonical_url": "<url-redacted>",
+      "document": {
+        "canonical_content_digest": "sha256:a8ad38d4ec0568c3e91dac3958cd70958437df4a549dac34fbd3897984d4d06f",
+        "source_revision": null,
+        "source_type": "read_later",
+        "status": "ready",
+        "storage_exists": true,
+        "storage_under_knowledge_root": true,
+        "title": "Agent Capture Notes",
+        "virtual_path": "<path-redacted>"
+      },
+      "first_job_status": "succeeded",
+      "parse_status": "ready",
+      "retry_job_status": "succeeded",
+      "same_document_identity": true
+    }
+  },
+  "sanitized_fixture_manifest": {
+    "fixtures": [
+      "docs/knowledge-platform/golden-fixtures/connectors_and_capture.json"
+    ]
+  },
+  "source_revision": "sha256:e4706fabb4867af0f66e78d6f0c81ef09b51449594f31bd124e7cb8dee2532d4"
+}

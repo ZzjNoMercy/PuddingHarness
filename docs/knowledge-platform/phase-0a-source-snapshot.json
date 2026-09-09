@@ -1,0 +1,521 @@
+{
+  "capabilities": [
+    {
+      "capability_id": "document_rag",
+      "source_digest": "sha256:0b07be09ae0b02a2b9eb1866bf5041f32a68ffc55f9d5e52807c85e6eb632c0c",
+      "source_files": [
+        {
+          "bytes": 34460,
+          "path": "backend/knowledge/indexer.py",
+          "sha256": "c8e93b5c82ae25c51b2c8c85d685b237fb2146ad855512c50e67c50158e7b42b"
+        },
+        {
+          "bytes": 44321,
+          "path": "backend/tools/search_knowledge_tool.py",
+          "sha256": "6694e2b3368701e3a931a6165b4ac86e9d6c7d9bf9dfbeaebd76354353c47355"
+        }
+      ],
+      "test_files": [
+        {
+          "bytes": 46634,
+          "path": "backend/tests/test_knowledge_service.py",
+          "sha256": "f7ba7acb2f4fc7e34931fad1c824da0e2a173c43a8bce4c9ef10ca04a5f4c2bf"
+        }
+      ],
+      "test_manifest_digest": "sha256:0e7cdcfb982d4cfaef53344f48c1d7a7e59b4b48eea6c766878e0b6257c14603"
+    },
+    {
+      "capability_id": "wiki_query_and_compile",
+      "source_digest": "sha256:f370d7d3c1b4f34340832338fc194a5fb1141135df2598f1a828c1e258b1a11d",
+      "source_files": [
+        {
+          "bytes": 91074,
+          "path": "backend/knowledge/llm_wiki.py",
+          "sha256": "90b9c97752d5949be5deb0836d94dab47d78ae1530a35e188c80ac246757961c"
+        },
+        {
+          "bytes": 11820,
+          "path": "backend/knowledge/llm_wiki_compiler_agent.py",
+          "sha256": "ac471c30d5baa71a734a8fc87e4a130428c516afb2d4ca51d9fec650ae52f18e"
+        }
+      ],
+      "test_files": [
+        {
+          "bytes": 78767,
+          "path": "backend/tests/test_llm_wiki.py",
+          "sha256": "fd8aa72f3079f9933eb5caaf188d70c5416857ac314ba55a7553906f95b41f18"
+        }
+      ],
+      "test_manifest_digest": "sha256:8c1bc93c141db3c85cded0e5e9bf20c2a32b12b7166a3e53164769501c50fb52"
+    },
+    {
+      "capability_id": "table_query",
+      "source_digest": "sha256:e23c7ca45504512fa6c5f5bdca020327431de9804e0fdba75f6f4c1beaf5c8b6",
+      "source_files": [
+        {
+          "bytes": 69072,
+          "path": "backend/analytics/table_catalog.py",
+          "sha256": "1dad5ccb0620e5b29f7a1469c1a27294650ad5afa75eff84b099759a0dd8ce38"
+        },
+        {
+          "bytes": 20899,
+          "path": "backend/tools/pandas_knowledge_tool.py",
+          "sha256": "e795600bb44aa1646ccad668efebf74e4342db6955f57c9ec75d63d4484952bb"
+        }
+      ],
+      "test_files": [
+        {
+          "bytes": 12917,
+          "path": "backend/tests/test_table_catalog_concat.py",
+          "sha256": "3a0e87b1c068895b6691728398fb647233a22089d2dcebf0c13eb3056e686d97"
+        },
+        {
+          "bytes": 13272,
+          "path": "backend/tests/test_table_router.py",
+          "sha256": "f3ff40e589abfca33ae879b3a753c104033f5b753b93cdce71c4e06689767919"
+        }
+      ],
+      "test_manifest_digest": "sha256:b2014021f4f4c23422c36f58030572c69cc1bd517d6e540bc4f0e5bf0a3020d5"
+    },
+    {
+      "capability_id": "database_nl2sql_and_readonly_execute",
+      "source_digest": "sha256:99af863efce00a9ffb7484ec5f81b72dd9c47b42b734aaa40e81e15c0538ef56",
+      "source_files": [
+        {
+          "bytes": 736,
+          "path": "backend/analytics/nl2sql/__init__.py",
+          "sha256": "df43a7c6daa417ea8e48a56b76e28ad3bb5aa6a4179cbafdf93755d3505be3d8"
+        },
+        {
+          "bytes": 5994,
+          "path": "backend/analytics/nl2sql/agent_path_policy.py",
+          "sha256": "a82afd33368dc59ae99169d12040e78568a9a17ac73baffd187f95fdb506b372"
+        },
+        {
+          "bytes": 8578,
+          "path": "backend/analytics/nl2sql/agent_sql_replay.py",
+          "sha256": "66aad0e07ebe782a4942a50d5797fcdb2fe2a92f24a02e2279080b936e2cd213"
+        },
+        {
+          "bytes": 28535,
+          "path": "backend/analytics/nl2sql/eav_evidence.py",
+          "sha256": "889e234f3074942e3b27ec6f1640bb80115544513deab37cd7423f277fadefdb"
+        },
+        {
+          "bytes": 7684,
+          "path": "backend/analytics/nl2sql/entity_candidates.py",
+          "sha256": "18fc5eddb5d1b76314c21be600e68c0a74f436ccb2f40f391be4c578c6294342"
+        },
+        {
+          "bytes": 15341,
+          "path": "backend/analytics/nl2sql/evidence_service.py",
+          "sha256": "ab6f67d6cfe67b262f817f027d0d1607da42f9bc0fcb442c940ee0142b1f04c6"
+        },
+        {
+          "bytes": 8226,
+          "path": "backend/analytics/nl2sql/guardrail_runtime.py",
+          "sha256": "21d8bb52e7ba7e324250d9edd995058af84fdccecc6b87e890636d433e968d93"
+        },
+        {
+          "bytes": 38009,
+          "path": "backend/analytics/nl2sql/guardrails.py",
+          "sha256": "d301bb4a56ed4f54e21231f45fd016fa27207acd6a3dd7482e614bf2711f7ae6"
+        },
+        {
+          "bytes": 76,
+          "path": "backend/analytics/nl2sql/improve/__init__.py",
+          "sha256": "9623fb2d27440538d00e09b0c2535c072b78cf692d89f36956a48511053c94b6"
+        },
+        {
+          "bytes": 492,
+          "path": "backend/analytics/nl2sql/improve/clients/__init__.py",
+          "sha256": "cd00fc78a58f0c9765dbf6de789405d8ba3e9b0ab5bce9a2803006707fac3766"
+        },
+        {
+          "bytes": 15853,
+          "path": "backend/analytics/nl2sql/improve/clients/embedding_providers.py",
+          "sha256": "ad3d243c5464df0f86cf8a6d29ad7fc89f35e5a669b5523ae260a84b80f972b2"
+        },
+        {
+          "bytes": 18812,
+          "path": "backend/analytics/nl2sql/improve/clients/vanna_client.py",
+          "sha256": "766172f7072857d0db2c5ee0ea794c512f52c926869bad35266d5f69143bae80"
+        },
+        {
+          "bytes": 8101,
+          "path": "backend/analytics/nl2sql/profile_catalog.py",
+          "sha256": "23cfe82ed2717ace2929ef7806d588ce6b716594ff2870677f1ad8d6b3fe5b2e"
+        },
+        {
+          "bytes": 5207,
+          "path": "backend/analytics/nl2sql/query_plan.py",
+          "sha256": "4f44ae32a12f9672d675c7a8586d862d046011ffc8fb9c012fd63d8588a10cff"
+        },
+        {
+          "bytes": 2854,
+          "path": "backend/analytics/nl2sql/result_cleanup.py",
+          "sha256": "47bda92729ae989151e4a50c9a025909a886eec7c5fed4ad2070cb5807486f39"
+        },
+        {
+          "bytes": 27625,
+          "path": "backend/analytics/nl2sql/result_store.py",
+          "sha256": "bba3ae97fe241d24ee7744db0dbe8d41f1990f5b9e44261629b9457a5453b9a3"
+        },
+        {
+          "bytes": 4129,
+          "path": "backend/analytics/nl2sql/runtime.py",
+          "sha256": "f9c78564a84577ae85452247a372b44b0aaf627338e83b514097956f1321ee6f"
+        },
+        {
+          "bytes": 3273,
+          "path": "backend/analytics/nl2sql/schemas.py",
+          "sha256": "12b18c63e278faf7fee58beba9a699a51a87a9a2b9d9a2f7ea174f78cb9917bf"
+        },
+        {
+          "bytes": 124867,
+          "path": "backend/analytics/nl2sql/service.py",
+          "sha256": "b0d8cc943133f0e75253c87e515667be3e2d89b81a6513aa423eca30be79cfa5"
+        },
+        {
+          "bytes": 10378,
+          "path": "backend/analytics/nl2sql/sql_enum_extract.py",
+          "sha256": "fef873cf298837236df87d7dd04293679fe9098917621df803ea1bf2b8eeec0a"
+        },
+        {
+          "bytes": 26496,
+          "path": "backend/analytics/nl2sql/sql_runner.py",
+          "sha256": "68725b28fff0f0c70961e44457303c056509194852b79aa79df72fa34d215506"
+        },
+        {
+          "bytes": 26246,
+          "path": "backend/analytics/nl2sql/table_router.py",
+          "sha256": "7626e323d7b4e8e647caec0e644788b156cc4bf54893e4a2ac2018d0ed0236a7"
+        },
+        {
+          "bytes": 40574,
+          "path": "backend/analytics/nl2sql/training.py",
+          "sha256": "536a5604942ec053bb83ed4bb3a09897b483ab47e1ecbb2ec9bade899490eefc"
+        },
+        {
+          "bytes": 2696,
+          "path": "backend/tools/database/__init__.py",
+          "sha256": "1c54ae0d3e18b5025d70db43dddf4ca6e339c141536d6ab8efe2cab5d9c11294"
+        },
+        {
+          "bytes": 5387,
+          "path": "backend/tools/database/evidence_search_tool.py",
+          "sha256": "9c2ca44c4fef538147cbd8ed45c5d73edb15a5d791c06927de487b9b6659bc9d"
+        },
+        {
+          "bytes": 6853,
+          "path": "backend/tools/database/formatting.py",
+          "sha256": "252bc5987ba73fbc8c2a5f3019f8652870f9d6972a8af5121737e20d5c78995c"
+        },
+        {
+          "bytes": 5450,
+          "path": "backend/tools/database/legacy_query_tool.py",
+          "sha256": "1038e1325f3306df5bfac2e47cabab101121982023a716aa96e677e077cab0cf"
+        },
+        {
+          "bytes": 12644,
+          "path": "backend/tools/database/models.py",
+          "sha256": "c214b86529b56c76bc7821af590c18520b2c3966c303beef497777778c9007ca"
+        },
+        {
+          "bytes": 3817,
+          "path": "backend/tools/database/result_page_tool.py",
+          "sha256": "0c2d9e1caf224694e2263799589aa8ebdafb5d20e2f5ee5be656727f7d0f830c"
+        },
+        {
+          "bytes": 7368,
+          "path": "backend/tools/database/result_source_tool.py",
+          "sha256": "dae62c02a6f2f455bab6655f9cdf2c47008002cd9076eeff847898eed2be7634"
+        },
+        {
+          "bytes": 627,
+          "path": "backend/tools/database/result_store.py",
+          "sha256": "76bbb2b145269c7c912eaed97b6fd7f5023a5a6ba08a5a39504b62bfd8c8e681"
+        },
+        {
+          "bytes": 23318,
+          "path": "backend/tools/database/schema_inspect_tool.py",
+          "sha256": "9325cba917910479daafc2e8dc5fdab0cdefd58f0b354f6ecef12e43022640a1"
+        },
+        {
+          "bytes": 3068,
+          "path": "backend/tools/database/scope.py",
+          "sha256": "79e4e8f232b539947b0a155a68d75c5969557181f5a2325bae275ef2340ab361"
+        },
+        {
+          "bytes": 5190,
+          "path": "backend/tools/database/semantic_entity_lookup_tool.py",
+          "sha256": "88593d3d96758ef646a2bbbb99bfb0efac4d67c8a7630dc3af80f35ba1d5e375"
+        },
+        {
+          "bytes": 4632,
+          "path": "backend/tools/database/spans.py",
+          "sha256": "167af3f8ad68c8922869dc3fe968c2c9b47e40cc9292dcc24c5c0e1495ed8224"
+        },
+        {
+          "bytes": 15723,
+          "path": "backend/tools/database/sql_execute_tool.py",
+          "sha256": "5529a4ea09653b824a63fc9a34970ffe60be411506ac14c7b23236dd86161abc"
+        },
+        {
+          "bytes": 45932,
+          "path": "backend/tools/database/sql_generate_tool.py",
+          "sha256": "79bd71210571f6091efa7ec142e4021f2dc60fea1e51ac42eaa03f7f8e2e97c1"
+        },
+        {
+          "bytes": 7595,
+          "path": "backend/tools/database/sql_validate_legacy_tool.py",
+          "sha256": "6c164d6571cad696dcd48e706ef18339787704219c225aa72dbbba05c6b6b388"
+        },
+        {
+          "bytes": 31234,
+          "path": "backend/tools/database/sql_validate_tool.py",
+          "sha256": "f20ba9fa89bea791773dcd0c694bbdeec043b13fea7317939a17091159d2f2bc"
+        },
+        {
+          "bytes": 4049,
+          "path": "backend/tools/database/trace_inspect_tool.py",
+          "sha256": "bf8abd68c77cd8b263b42f42a0435b5e0a6598ddb6538deb0b37da7fe01bd65a"
+        }
+      ],
+      "test_files": [
+        {
+          "bytes": 48374,
+          "path": "backend/tests/test_database_query_result_contract.py",
+          "sha256": "c5905b07487324f8f21a1b6a3492f43862fd2eaf1b42078f3d4622be8f99ee1c"
+        },
+        {
+          "bytes": 14236,
+          "path": "backend/tests/test_sql_guardrails.py",
+          "sha256": "f4a7c083e42fb7a522f7711f18c86064e61f9189aee49cb5daac2eea2322ed22"
+        }
+      ],
+      "test_manifest_digest": "sha256:309cdd5685d83a4baa48cdcabb3e461c36d57748e36f1cddb3b2ca4530252f16"
+    },
+    {
+      "capability_id": "semantic_assets_and_authoring",
+      "source_digest": "sha256:1161062ea7d8781fe823cb63384148833c8aefd19afe37821088d9536f242e01",
+      "source_files": [
+        {
+          "bytes": 229,
+          "path": "backend/analytics/semantic_assets/__init__.py",
+          "sha256": "8aea6a7a057f5f8b597e05498d616675caf97924b04e48b2eb53045102c64c00"
+        },
+        {
+          "bytes": 28619,
+          "path": "backend/analytics/semantic_assets/registry.py",
+          "sha256": "fd7f84e060a0d55808a46071bee2dd3b0f3b55d954f0880d59a01c72d2d1b5b9"
+        },
+        {
+          "bytes": 16564,
+          "path": "backend/analytics/semantic_assets/resolver.py",
+          "sha256": "4ec97bd6bb36462cad91a8817880e4e6341738d859ff5b82baee49e029b4ea9d"
+        },
+        {
+          "bytes": 859,
+          "path": "backend/analytics/semantic_authoring/__init__.py",
+          "sha256": "e06a83cf6920c3dfc2841205822befee36f9e0c8841d63fada57522b03580b5f"
+        },
+        {
+          "bytes": 9992,
+          "path": "backend/analytics/semantic_authoring/contracts.py",
+          "sha256": "4e56e476b4fb0ad75a47f3c108a3d9f2bc4b3df36b35d845feec0fdbb2ceb6f0"
+        },
+        {
+          "bytes": 14638,
+          "path": "backend/analytics/semantic_authoring/discovery.py",
+          "sha256": "c3f356d7b0a9731a9d210d0ca3d885a562b24b0081e8c53f24b4d5ef43677f10"
+        },
+        {
+          "bytes": 1856,
+          "path": "backend/analytics/semantic_authoring/documents.py",
+          "sha256": "bb7d16cdc2392f3870036250ef228168fd8af44fb633552c95f221ddda269d2d"
+        },
+        {
+          "bytes": 20201,
+          "path": "backend/analytics/semantic_authoring/service.py",
+          "sha256": "cc4dc66ea7eb9431209615b65fb78783acf5187281823a43c890dc2163bcb9bc"
+        },
+        {
+          "bytes": 26603,
+          "path": "backend/analytics/semantic_authoring/validation.py",
+          "sha256": "fae32a6ceef0ffb6ba53072d1c682590c78eef919a15a5076998609a6ec86a73"
+        }
+      ],
+      "test_files": [
+        {
+          "bytes": 11968,
+          "path": "backend/tests/test_semantic_assets_registry.py",
+          "sha256": "4e4744315e7bd53fe7be5a75e14676bba7d414c6f7991ad65ce90a19fb00259f"
+        },
+        {
+          "bytes": 39661,
+          "path": "backend/tests/test_semantic_authoring.py",
+          "sha256": "b9b20eb76b8e15a48eb77a703b484eb249f037f750568bed005e40839b7305b3"
+        }
+      ],
+      "test_manifest_digest": "sha256:818710620c6e24d06995f6332e63260be51656f801203aa49c3d414ef7884c4a"
+    },
+    {
+      "capability_id": "package_export",
+      "source_digest": "sha256:6989911bc9e42ca139077b7a8e2dc3087ab228b6157468f4c8922a2176610ea0",
+      "source_files": [
+        {
+          "bytes": 408,
+          "path": "backend/analytics/project_export/__init__.py",
+          "sha256": "ee3146e41dd2144fd1d52961b063094ec6b0a1b26a2eb51298b97e3600c4c8ea"
+        },
+        {
+          "bytes": 1298,
+          "path": "backend/analytics/project_export/portable_guardrails.py",
+          "sha256": "5773ac5761974b4f218b5c33049ee401304a3f8113bab1a03145560909376e8e"
+        },
+        {
+          "bytes": 3135,
+          "path": "backend/analytics/project_export/portable_materializer.py",
+          "sha256": "2eccec0bf4f07d9e618e58ac202d56b1b1e71a9027029f042dc0ca6e9bb74c4a"
+        },
+        {
+          "bytes": 1852,
+          "path": "backend/analytics/project_export/schemas.py",
+          "sha256": "04120452246a10c84e5a8d6fdf94bd2101133cb3a4f54a8f2b672c30facb5c2a"
+        },
+        {
+          "bytes": 64542,
+          "path": "backend/analytics/project_export/service.py",
+          "sha256": "024e56d3b1abb6af2a775703c284f62dbd882b9d1f8905dec97530a3d3abf1ec"
+        }
+      ],
+      "test_files": [
+        {
+          "bytes": 21550,
+          "path": "backend/tests/test_analysis_project_export.py",
+          "sha256": "6c916a92e0aa2d2805f1c649d0d0b5a740d4b4b722cf76023cad48d9d024e264"
+        }
+      ],
+      "test_manifest_digest": "sha256:a0475ad69a443d6159f5c45b9cf37e1631a9d505a2577e44053676c18a219259"
+    },
+    {
+      "capability_id": "connectors_and_capture",
+      "source_digest": "sha256:e4706fabb4867af0f66e78d6f0c81ef09b51449594f31bd124e7cb8dee2532d4",
+      "source_files": [
+        {
+          "bytes": 79,
+          "path": "backend/knowledge/connectors/__init__.py",
+          "sha256": "dba064ade2c58fdae2d7e04ddaa69e5075166afbe8ca3e4b681c9f637e1f8832"
+        },
+        {
+          "bytes": 49553,
+          "path": "backend/knowledge/connectors/feishu.py",
+          "sha256": "cf39eda67d648f6f8c2d694af13e577e508d7130e6b5d25ff5e0d6b3262ced26"
+        },
+        {
+          "bytes": 4254,
+          "path": "backend/knowledge/connectors/feishu_bitable.py",
+          "sha256": "be7e4ab8df4717dd194911c1f5c0b9536eb0cdbf0ddc60951e37593e4ecf13e4"
+        },
+        {
+          "bytes": 9488,
+          "path": "backend/knowledge/connectors/feishu_blocks.py",
+          "sha256": "88d3bc50042ca572ede4410351bef1f32c2721556513926aece9637a572088c6"
+        },
+        {
+          "bytes": 54797,
+          "path": "backend/knowledge/connectors/feishu_sync.py",
+          "sha256": "c1378d08fa40fc2f3f78829986d2d74f6c490c9c1e0937b598df3790e3d40d5c"
+        },
+        {
+          "bytes": 36134,
+          "path": "backend/knowledge/read_later.py",
+          "sha256": "4147498b3e16b7dfa308257b6e891257c9fd50abb001a99b21a486504e60ea3c"
+        }
+      ],
+      "test_files": [
+        {
+          "bytes": 40654,
+          "path": "backend/tests/test_feishu_wiki_client.py",
+          "sha256": "2e1c6b905c82fe4d75348166cce50edc895710e6e4b2e78fdb6266f7d51f15ff"
+        },
+        {
+          "bytes": 10220,
+          "path": "backend/tests/test_knowledge_sources.py",
+          "sha256": "8a294ac79666ccb9de2cbf5de1aba12a4a988a927ef2e381f5db41090c2048de"
+        },
+        {
+          "bytes": 23582,
+          "path": "backend/tests/test_read_later.py",
+          "sha256": "48fb485c13fdea046385859dbdc0afdaf708a76033bc9bbf0b686af8c4e47973"
+        }
+      ],
+      "test_manifest_digest": "sha256:496b23406a0f91fabab501d1f872558d3370ef78f5f457945c614546df5a6b79"
+    },
+    {
+      "capability_id": "lease_and_jobs",
+      "source_digest": "sha256:a1ea984050095d22c6e701a2fdd8d5132b921b1c06c0a583698dac2521741c79",
+      "source_files": [
+        {
+          "bytes": 11776,
+          "path": "backend/knowledge/queue_repository.py",
+          "sha256": "d19915be9914af3f6d664432914cfc30698e47a1d449a840704654f869c3c9f8"
+        },
+        {
+          "bytes": 13551,
+          "path": "backend/runtime_control.py",
+          "sha256": "4fcb55909055cb97cd60bd5f3f54f2759ed03e83268bb53030df4fb71d84a20a"
+        }
+      ],
+      "test_files": [
+        {
+          "bytes": 27249,
+          "path": "backend/tests/test_queue_lease_protocol.py",
+          "sha256": "4a4ff2a5aed21f1100c8a77c8a6c2201ed2fc408d401c1374b8b7474f43c5d52"
+        },
+        {
+          "bytes": 17024,
+          "path": "backend/tests/test_runtime_control.py",
+          "sha256": "342f36436a9cdcb02332492415d5060da0290cb2aebe8b9d6b1828c76aa40886"
+        }
+      ],
+      "test_manifest_digest": "sha256:c1795cb41d9fced0d1c0c3ef687cd2e22bd16bfbdc7f10d1edfcae111db63359"
+    },
+    {
+      "capability_id": "catalog_migration_rehearsal",
+      "source_digest": "sha256:aac85c96f41d3e86550dde5c2218c3b4d7f6ebd823dffd5cdb99a0d59a6a449a",
+      "source_files": [
+        {
+          "bytes": 14984,
+          "path": "backend/catalog_backup.py",
+          "sha256": "48c7f425a6567cf73c540d9d6b6038a471ef9fdf220b94ea22f37b7ea52025bd"
+        },
+        {
+          "bytes": 39322,
+          "path": "backend/catalog_migration.py",
+          "sha256": "9bf56a08920c25bf1437e729fcb03b14afadaaa5b9ce49c88731c493a7c5f061"
+        }
+      ],
+      "test_files": [
+        {
+          "bytes": 7276,
+          "path": "backend/tests/test_catalog_backup.py",
+          "sha256": "4fb848df8d35ed194be870d931bdca4869c64ba5cb573d87f1e57ec17dbb4e59"
+        },
+        {
+          "bytes": 18593,
+          "path": "backend/tests/test_catalog_migration.py",
+          "sha256": "a876f7343afec53baa4b5ea47978561d65c2b288d5bf74d8c9ec85f91aed942b"
+        }
+      ],
+      "test_manifest_digest": "sha256:6ac8f0869afe87876d1f8d8194fd69ce9b2ec8045d08136ebde11baaaa14881d"
+    }
+  ],
+  "format": "agent-knowledge-platform-source-snapshot/v1",
+  "observation_only": true,
+  "raw_contents_included": false,
+  "repository_revision": "5c03ad3f68e2789d6d5c7110995b580d00abc832",
+  "snapshot_digest": "sha256:b8088faf4c1f84c96bb0803db494bb869e2d2368313b15d18c7a93108bec322a",
+  "worktree_clean": false
+}

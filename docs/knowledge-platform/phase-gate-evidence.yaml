@@ -1,0 +1,129 @@
+format: agent-knowledge-platform-phase-gate-evidence/v1
+spec_revision: v0.7
+policy:
+  principle: "Readiness is an explicit evidence claim; source-file presence and local unit tests do not imply production readiness."
+  verified_requires: [status, evidence_refs, evidence_sha256, check_id]
+  checks_are_registered_and_executed: true
+  evidence_hash_algorithm: sha256
+  missing_or_unknown_status: blocked
+  phase_scopes:
+    phase_0c: provider-neutral-reference-only
+phases:
+  phase_0a:
+    file_inventory_complete:
+      status: verified
+      evidence_refs: [docs/knowledge-platform/phase-0a-inventory.yaml, backend/tests/test_phase0a_dependency_inventory.py]
+      evidence_sha256:
+        docs/knowledge-platform/phase-0a-inventory.yaml: 071c76abbde8c38056e0f991547707125d9346462bb18be1cc24c595b509ab54
+        backend/tests/test_phase0a_dependency_inventory.py: 1dc1f3ff2be072943faf9a9ef0b7f252ac7a5f580d661a98aec2d034352848d0
+      check_id: phase0a_dependency_inventory
+    golden_baseline_frozen:
+      status: blocked
+      evidence_refs: [docs/knowledge-platform/golden-baseline.yaml]
+    source_snapshot_and_fixture_manifest_frozen:
+      status: blocked
+      evidence_refs: [docs/knowledge-platform/golden-baseline.yaml, docs/knowledge-platform/golden-fixture-manifest.yaml, docs/knowledge-platform/golden-fixtures/catalog_migration_rehearsal.json, docs/knowledge-platform/golden-records/catalog_migration_rehearsal.json, docs/knowledge-platform/golden-fixtures/connectors_and_capture.json, docs/knowledge-platform/golden-records/connectors_and_capture.json, docs/knowledge-platform/golden-fixtures/database_nl2sql_and_readonly_execute.json, docs/knowledge-platform/golden-records/database_nl2sql_and_readonly_execute.json, docs/knowledge-platform/golden-fixtures/document_rag.json, docs/knowledge-platform/golden-records/document_rag.json, docs/knowledge-platform/golden-fixtures/lease_and_jobs.json, docs/knowledge-platform/golden-records/lease_and_jobs.json, docs/knowledge-platform/golden-fixtures/package_export.json, docs/knowledge-platform/golden-records/package_export.json, docs/knowledge-platform/golden-fixtures/semantic_assets_and_authoring.json, docs/knowledge-platform/golden-records/semantic_assets_and_authoring.json, docs/knowledge-platform/golden-fixtures/table_query.json, docs/knowledge-platform/golden-records/table_query.json, docs/knowledge-platform/golden-fixtures/wiki_query_and_compile.json, docs/knowledge-platform/golden-records/wiki_query_and_compile.json, docs/knowledge-platform/phase-0a-source-snapshot.json, backend/scripts/phase0a_source_snapshot.py, backend/scripts/phase0a_baseline_record.py, backend/scripts/phase0a_catalog_migration_observer.py, backend/scripts/phase0a_connectors_capture_observer.py, backend/scripts/phase0a_database_nl2sql_observer.py, backend/scripts/phase0a_document_rag_observer.py, backend/scripts/phase0a_lease_jobs_observer.py, backend/scripts/phase0a_package_export_observer.py, backend/scripts/phase0a_semantic_authoring_observer.py, backend/scripts/phase0a_table_query_observer.py, backend/scripts/phase0a_wiki_query_compile_observer.py, backend/tests/test_knowledge_platform_baseline.py, backend/tests/test_knowledge_platform_fixture_manifest.py]
+    runtime_dependency_graph_verified:
+      status: blocked
+      evidence_refs: [backend/knowledge_platform/baseline/phase0a_probes.py, backend/knowledge_platform/baseline/runtime_graph.py, backend/knowledge_platform/baseline/runtime_registry.py, backend/knowledge_platform/baseline/legacy_runtime_registry.py, backend/knowledge_platform/readiness/phase_gates.py, backend/scripts/phase0a_dependency_inventory.py, backend/scripts/phase0a_runtime_call_graph.py, backend/scripts/phase0a_runtime_probe_registry.py, backend/scripts/phase0a_runtime_dependency_gate.py, backend/scripts/phase0a_legacy_runtime_probe_registry.py, backend/scripts/phase0a_catalog_migration_observer.py, backend/scripts/phase0a_connectors_capture_observer.py, backend/scripts/phase0a_database_nl2sql_observer.py, backend/scripts/phase0a_document_rag_observer.py, backend/scripts/phase0a_lease_jobs_observer.py, backend/scripts/phase0a_package_export_observer.py, backend/scripts/phase0a_semantic_authoring_observer.py, backend/scripts/phase0a_table_query_observer.py, backend/scripts/phase0a_wiki_query_compile_observer.py, backend/tests/test_knowledge_platform_phase0a_probes.py, backend/tests/test_knowledge_platform_runtime_registry.py, backend/tests/test_knowledge_platform_legacy_runtime_registry.py, docs/knowledge-platform/phase-0a-runtime-call-probes.yaml, docs/knowledge-platform/phase-0a-legacy-runtime-call-probes.yaml, docs/knowledge-platform/runtime-probes/catalog_processing.json, docs/knowledge-platform/runtime-probes/harness_wiring.json, docs/knowledge-platform/runtime-probes/retrieval_evidence.json, docs/knowledge-platform/runtime-probes/semantic_authoring.json, docs/knowledge-platform/runtime-probes/structured_query_boundary.json, docs/knowledge-platform/runtime-probes/wiki_compilation.json, docs/knowledge-platform/runtime-probes/legacy/catalog_migration_rehearsal.json, docs/knowledge-platform/runtime-probes/legacy/connectors_and_capture.json, docs/knowledge-platform/runtime-probes/legacy/database_nl2sql_and_readonly_execute.json, docs/knowledge-platform/runtime-probes/legacy/document_rag.json, docs/knowledge-platform/runtime-probes/legacy/lease_and_jobs.json, docs/knowledge-platform/runtime-probes/legacy/package_export.json, docs/knowledge-platform/runtime-probes/legacy/semantic_assets_and_authoring.json, docs/knowledge-platform/runtime-probes/legacy/table_query.json, docs/knowledge-platform/runtime-probes/legacy/wiki_query_and_compile.json]
+    vanna_provenance_resolved:
+      status: verified
+      evidence_refs: [docs/knowledge-platform/vanna-baseline.yaml, docs/knowledge-platform/vanna-patch-provenance.json, backend/scripts/vanna_vendor_baseline.py, backend/scripts/vanna_vendor_patch_provenance.py, backend/tests/test_vanna_entity_filters.py, backend/tests/test_phase0a_dependency_inventory.py]
+      evidence_sha256:
+        docs/knowledge-platform/vanna-baseline.yaml: a506d8663bf5a11a25eca1beb67b3edfe9bf02880be609435debd314746fa766
+        docs/knowledge-platform/vanna-patch-provenance.json: 3c779a3d9c7903d50ef1fa56a3acefd24a336ac9ed91d4beb679790594189111
+        backend/scripts/vanna_vendor_baseline.py: 8db0f2f18b301df2a2518fa6d622938fb86e00752baff658155f6f235283edcb
+        backend/scripts/vanna_vendor_patch_provenance.py: 9d399cef5b52a848738ac2535e29ed2a68ebe86e9c99140684c7a27d651cb40c
+        backend/tests/test_vanna_entity_filters.py: 338e83cd69d539c25fb02ee40ccefce340731a4c1b0e1fb72bc2ad81bdb9055a
+        backend/tests/test_phase0a_dependency_inventory.py: 1dc1f3ff2be072943faf9a9ef0b7f252ac7a5f580d661a98aec2d034352848d0
+      check_id: phase0a_vanna_provenance
+  phase_0b:
+    target_catalogs_independently_bootable:
+      status: verified
+      evidence_refs: [backend/tests/test_knowledge_platform_boundaries.py, backend/knowledge_platform/catalog/metadata.py]
+      evidence_sha256:
+        backend/tests/test_knowledge_platform_boundaries.py: b866cf18b1acc3bd57f0fd30186d45dd6ef6ca71235c7c6887013e39848d9441
+        backend/knowledge_platform/catalog/metadata.py: d64950ecb8d62c909966dd2d3a4661548bd62792d820e3b9cfd3395628f274bf
+      check_id: phase0b_catalog_bootstrap
+    production_catalog_copy_verified:
+      status: blocked
+      evidence_refs: [docs/knowledge-platform/catalog-ownership.yaml, docs/knowledge-platform/catalog-rehearsal.md]
+    real_vault_rebind_rotation_verified:
+      status: blocked
+      evidence_refs: [backend/knowledge_platform/catalog/vault_rebind_rehearsal.py, backend/scripts/phase7_local_vault_shadow.py, backend/tests/test_knowledge_platform_local_vault.py, artifacts/phase0b-local-catalog/phase7-local-vault-shadow/phase7-local-vault-shadow-report.json]
+    drain_copy_verify_rollback_verified:
+      status: blocked
+      evidence_refs: [backend/knowledge_platform/catalog/migration_orchestrator.py, backend/scripts/phase0b_local_catalog_copy.py, backend/tests/test_knowledge_platform_migration_orchestrator.py, artifacts/phase0b-local-catalog/local-catalog-stage-report.json]
+  phase_0c:
+    static_dependency_boundary_verified:
+      status: verified
+      evidence_refs: [backend/tests/test_knowledge_platform_boundaries.py, docs/knowledge-platform/phase-0c-boundaries.md]
+      evidence_sha256:
+        backend/tests/test_knowledge_platform_boundaries.py: b866cf18b1acc3bd57f0fd30186d45dd6ef6ca71235c7c6887013e39848d9441
+        docs/knowledge-platform/phase-0c-boundaries.md: 7a55631eab650a982bb4bae8ffdcd89a8678e8ef0851c6716222f3dcc0ede9d1
+      check_id: phase0c_static_boundary
+    framework_neutral_ports_verified:
+      status: verified
+      evidence_refs: [backend/tests/test_knowledge_platform_lease.py, backend/tests/test_knowledge_platform_wiki_compiler.py, backend/tests/test_knowledge_platform_research_delegation.py, backend/tests/test_knowledge_platform_evidence_ports.py, backend/tests/test_knowledge_platform_agent_surface.py]
+      evidence_sha256:
+        backend/tests/test_knowledge_platform_lease.py: 0c32eec6b7906e23860b69c6f404d6f0d1fb29d07783a4fe41ffe41345d97795
+        backend/tests/test_knowledge_platform_wiki_compiler.py: 2eb43a6dd71cc0c04bb74f90594c36236b8b22ac918d65015ddfe37e47e97484
+        backend/tests/test_knowledge_platform_research_delegation.py: f448d08d24656168b0854dab0c44c3f4783eda588717c88a0553f510ad5e7e02
+        backend/tests/test_knowledge_platform_evidence_ports.py: e0e29642d966f364fe8176c579411ed95191065fe1a8bcbc521bbfcf41d33bdd
+        backend/tests/test_knowledge_platform_agent_surface.py: 65fcd6199d5fc9f7dbf4c7e8c1b4dc4298b6c563b5c860c4796f8c203a028f44
+      check_id: phase0c_framework_neutral_ports
+    protocol_v2_boundary_verified:
+      status: verified
+      evidence_refs: [backend/knowledge_contracts/protocol.py, backend/tests/test_knowledge_platform_protocol.py]
+      evidence_sha256:
+        backend/knowledge_contracts/protocol.py: 670519361de7a18e9f037c75e563ccab6bb4800150b0cca88778120c1feb1794
+        backend/tests/test_knowledge_platform_protocol.py: baf8896f0697c85257edc4ed2b54fe2be8621828056b2057b0b455d1a9832f9e
+      check_id: phase0c_protocol_boundary
+    dynamic_delegation_boundary_verified:
+      status: verified
+      evidence_refs: [backend/tests/test_knowledge_platform_research_delegation.py]
+      evidence_sha256:
+        backend/tests/test_knowledge_platform_research_delegation.py: f448d08d24656168b0854dab0c44c3f4783eda588717c88a0553f510ad5e7e02
+      check_id: phase0c_dynamic_delegation
+    deepagents_wiring_stop_order_recorded:
+      status: verified
+      evidence_refs: [backend/tests/test_knowledge_platform_agent_surface.py, docs/knowledge-platform/deepagents-wiring-boundary.md]
+      evidence_sha256:
+        backend/tests/test_knowledge_platform_agent_surface.py: 65fcd6199d5fc9f7dbf4c7e8c1b4dc4298b6c563b5c860c4796f8c203a028f44
+        docs/knowledge-platform/deepagents-wiring-boundary.md: d23edae23c4c0dbb762a3785533ad24217f894bba6d8e04c57d8dc4e39d20443
+      check_id: phase0c_wiring_stop_order
+    contracts_verified:
+      status: verified
+      evidence_refs: [backend/tests/test_knowledge_contracts.py, backend/knowledge_contracts/schemas/query-plan.schema.json, backend/knowledge_contracts/schemas/query-result.schema.json, backend/knowledge_contracts/schemas/notification-event.schema.json, backend/knowledge_contracts/schemas/mcp-resource.schema.json]
+      evidence_sha256:
+        backend/tests/test_knowledge_contracts.py: 286817441579b7c07f27dc41320bff506aa48350db43dea5a3682b467800eece
+        backend/knowledge_contracts/schemas/query-plan.schema.json: b969e426e7f45e44a06bbcba97b89bf5a5dbe16161ee02c1cb675d799adf4be2
+        backend/knowledge_contracts/schemas/query-result.schema.json: c53cfc0431da0e5b907c7df6aab2fb6d3bc8e6f268ef746190ed578e5f3cd0e2
+        backend/knowledge_contracts/schemas/notification-event.schema.json: 9fa49a639b2535cb522d37e78cd47be31e2510325466af2e4c3c9988a6667efc
+        backend/knowledge_contracts/schemas/mcp-resource.schema.json: 29259b6a5222c975d4180f89eb86d8eb497f327d82bf74e8c7201f924d89f7bd
+      check_id: phase0c_contracts
+    # Production adapters, legacy stop-flow, and shadow side-effect proof are
+    # Phase 1/8 evidence, not prerequisites for the Phase 0C static boundary.
+  phase_1:
+    organization_decisions_confirmed:
+      status: blocked
+      evidence_refs: [docs/knowledge-platform/organization-decision-register.yaml]
+      
+    platform_application_service_extracted:
+      status: verified
+      evidence_refs: [backend/knowledge_platform/catalog/service.py, backend/knowledge_platform/catalog/query.py, backend/knowledge_platform/catalog/sqlite_query.py, backend/tests/test_knowledge_platform_catalog_query_service.py]
+      evidence_sha256:
+        backend/knowledge_platform/catalog/service.py: 3be68f1467b7c19f9ba0475cb1cd52b9a997cd75b2261677c6282740f7ff4f66
+        backend/knowledge_platform/catalog/query.py: 5feee4e8ce9d3a16db6c92aa85dc3166e4f8b909d0d9032dff42490b7c04f943
+        backend/knowledge_platform/catalog/sqlite_query.py: 00e1f6b11f527dec26ccf63d302bd55dce0249cfb8c656f7b6542262df387320
+        backend/tests/test_knowledge_platform_catalog_query_service.py: ac02b56e4eeaa17004d119647c47bd214c1cdfd1b9947bfc48188801021a1402
+      check_id: phase1_application_service
+    shadow_namespace_and_side_effect_fence_verified:
+      status: verified
+      evidence_refs: [backend/scripts/phase1_catalog_query_shadow.py, backend/scripts/phase1_local_catalog_shadow.py, backend/tests/test_phase1_local_catalog_shadow.py, artifacts/phase0b-local-catalog/catalog-query-shadow-report.json]
+      evidence_sha256:
+        backend/scripts/phase1_catalog_query_shadow.py: 459d25c92f51e88c53d8917eec7ae37b730f8979806e4d1e61226d958d94b47c
+        backend/scripts/phase1_local_catalog_shadow.py: bd267c6dd690da4c100053f3c98b2c402deaf6210bac4079d6a43c644ebaa8ec
+        backend/tests/test_phase1_local_catalog_shadow.py: b4c2d3703ec9069a1f59c398a9d2b21dd23cd1f6a92c04490aa8b60f239ac218
+        artifacts/phase0b-local-catalog/catalog-query-shadow-report.json: 23840e5d061f724717b45f40a57ae546d8fe3c402ecc078151095a38d836caee
+      check_id: phase1_shadow_fence

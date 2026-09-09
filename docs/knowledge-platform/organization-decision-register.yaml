@@ -1,0 +1,31 @@
+format: agent-knowledge-platform-organization-decision-register/v1
+spec_revision: v0.7
+status: partial-user-decisions-confirmed
+principle: "Confirmed user decisions are recorded separately from unresolved organization or business ownership decisions; no implementation may infer the latter."
+confirmed:
+  - id: delivery_term
+    decision: "Use Collection as the user-facing top-level delivery term; Dataset remains an internal compatibility/type term where required by the specification."
+    source: explicit-user-decision-in-task-conversation
+    effective_scope: local-platform-development
+  - id: vanna_ownership
+    decision: "Maintain Vanna as a locally maintained Platform collection/provider; do not require an upstream rewrite for the local implementation."
+    source: explicit-user-decision-in-task-conversation
+    effective_scope: local-platform-development
+  - id: puddingclaw_maintenance_timing
+    decision: "Defer PuddingClaw archive/maintenance responsibility decisions until the later migration stage."
+    source: explicit-user-decision-in-task-conversation
+    effective_scope: migration-planning
+unresolved:
+  - id: vehicle_canonical_identity
+    question: "When brand + serial_name normalize to one key but have multiple raw rows, what stable key or merge rule authorizes one canonical entity?"
+    blocking_artifact: phase7-local-crosswalk-real-canonical-shadow-report.json
+    current_observation: "7 normalized-key collision groups; vehicle_model_base exposes no id/model_id/serial_id stable identity column."
+  - id: platform_repository_ownership
+    question: "Which organization/team owns the future puddingknowledge repository and its production release authority?"
+  - id: harness_repository_ownership
+    question: "Which organization/team owns the future puddingharness repository and its release authority?"
+  - id: production_migration_authority
+    question: "Who may approve production Catalog copy, Vault rebind/rotation, drain window, cutover, and rollback closure?"
+  - id: production_vault_backend
+    question: "Which production Vault backend and independently verifiable state-proof mechanism will be used?"
+policy: "Until unresolved decisions are recorded as approved by the responsible authority, local shadows may continue but active routing, destructive cleanup, and production cutover remain forbidden."

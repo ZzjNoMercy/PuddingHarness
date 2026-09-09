@@ -1,0 +1,89 @@
+{
+  "base_vendor_commit": "1e7b458b94eebb0a001e8ae841ab5e0a872a62ee",
+  "base_vendor_commit_subject": "checkpoint: analytics workbench, nl2sql/vanna integration, knowledge updates",
+  "current_vendor_commit": "38bf5619951f8ee82df7162254a0c9fb4ceb7bb9",
+  "explanation_boundary": "This records the local vendor source trees, content-addressed patch range, license and semantic change boundary. It deliberately does not claim file equivalence to upstream v0.7.9 or compatibility with the v2 rewrite.",
+  "format": "agent-knowledge-platform-vanna-vendor-patch-provenance/v1",
+  "local_patch_commit_count": 2,
+  "local_patch_commits": [
+    {
+      "changed_paths": [
+        {
+          "paths": [
+            "backend/vanna/base/base.py"
+          ],
+          "status": "M"
+        },
+        {
+          "paths": [
+            "backend/vanna/openai/openai_chat.py"
+          ],
+          "status": "M"
+        }
+      ],
+      "commit": "355b81e9cf1f3f9e79cb29d586bf127ded7bdd3c",
+      "subject": "checkpoint: nl2sql service, result contract, import worker and analytics UI updates"
+    },
+    {
+      "changed_paths": [
+        {
+          "paths": [
+            "backend/vanna/base/base.py"
+          ],
+          "status": "M"
+        }
+      ],
+      "commit": "38bf5619951f8ee82df7162254a0c9fb4ceb7bb9",
+      "subject": "优化数据库分析证据链与运行状态"
+    }
+  ],
+  "semantic_change_summary": [
+    "VannaBase.generate_sql accepts caller-prefetched entity candidates and bounded EAV value profiles while preserving legacy retrieval fallback.",
+    "EAV profiles are rendered as deterministic database facts and exact-value SQL guidance; incomplete profiles do not authorize invented values or fuzzy predicates.",
+    "Entity prompt construction supports per-type top-k limits and JSON-encoded aliases with deterministic normalization.",
+    "The OpenAI adapter accepts an explicit base_url and disables ambient proxy inheritance for loopback development endpoints."
+  ],
+  "source_content_digests": {
+    "base_git_tree_sha256": "sha256:efcb0eacfde671a96e82d4eb679112aca20f9fe1a9a46a9e682060186229118f",
+    "current_git_tree_sha256": "sha256:3152c8d84ee9e5f4e3928fd0ccb180c08797f1d5292532eb97916cab54351645",
+    "working_tree_vendor_sha256": "sha256:dab603366d192bce706ebe50d65436f4e64e4000dca7bba1440053bff3fc46eb"
+  },
+  "source_contents_recorded": true,
+  "status": "local-fork-provenance-resolved-upstream-rewrite-not-adopted",
+  "tracked_patch": {
+    "changed_paths": [
+      {
+        "paths": [
+          "backend/vanna/base/base.py"
+        ],
+        "status": "M"
+      },
+      {
+        "paths": [
+          "backend/vanna/openai/openai_chat.py"
+        ],
+        "status": "M"
+      }
+    ],
+    "diff_bytes": 8916,
+    "diff_sha256": "sha256:4cd68275fa29d71f1777ffc72cc6545be2fad2173f71a0077510c195b87fc5dc",
+    "range": "1e7b458b94eebb0a001e8ae841ab5e0a872a62ee..38bf5619951f8ee82df7162254a0c9fb4ceb7bb9"
+  },
+  "untracked_vendor_files": [
+    "backend/vanna/LICENSE"
+  ],
+  "upstream_boundary": {
+    "compatibility_evidence": "black-box entity API test plus recorded upstream comparison in docs/knowledge-platform/vanna-baseline.yaml",
+    "selected_local_fork": true,
+    "upstream_v0_7_9_file_equivalence": "not_claimed",
+    "upstream_v2_adoption": "not_selected"
+  },
+  "vendor_root": "backend/vanna",
+  "working_tree_tracked_patch": {
+    "clean": true,
+    "staged_diff_bytes": 0,
+    "staged_diff_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "unstaged_diff_bytes": 0,
+    "unstaged_diff_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

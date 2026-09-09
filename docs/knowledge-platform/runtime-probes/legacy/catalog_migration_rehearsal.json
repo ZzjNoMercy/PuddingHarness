@@ -1,0 +1,78 @@
+{
+  "format": "agent-native-knowledge-platform-runtime-call-graph-report/v1",
+  "observation_only": true,
+  "probes": [
+    {
+      "edges": [
+        {
+          "callee_function": "observe",
+          "callee_module": "scripts.phase0a_catalog_migration_observer",
+          "caller_function": "capture_runtime_call_graph",
+          "caller_module": "knowledge_platform.baseline.runtime_graph"
+        },
+        {
+          "callee_function": "export_catalog",
+          "callee_module": "catalog_migration",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_catalog_migration_observer"
+        },
+        {
+          "callee_function": "import_catalog",
+          "callee_module": "catalog_migration",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_catalog_migration_observer"
+        },
+        {
+          "callee_function": "validate_migration",
+          "callee_module": "catalog_migration",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_catalog_migration_observer"
+        },
+        {
+          "callee_function": "_create_engine",
+          "callee_module": "catalog_migration",
+          "caller_function": "_seed_source",
+          "caller_module": "scripts.phase0a_catalog_migration_observer"
+        },
+        {
+          "callee_function": "_deserialize_value",
+          "callee_module": "catalog_migration",
+          "caller_function": "_seed_source",
+          "caller_module": "scripts.phase0a_catalog_migration_observer"
+        }
+      ],
+      "format": "agent-knowledge-platform-runtime-call-graph/v1",
+      "graph_digest": "sha256:74002536facdc8170d54a5346c4f6b34d899e81a5f7ab2f6fb457926617d6930",
+      "loaded_modules": [
+        "catalog_migration",
+        "knowledge",
+        "knowledge.models",
+        "knowledge.queue_repository",
+        "knowledge_platform",
+        "knowledge_platform.baseline",
+        "knowledge_platform.baseline.fixtures",
+        "knowledge_platform.baseline.normalizer",
+        "knowledge_platform.baseline.runtime_graph",
+        "knowledge_platform.baseline.runtime_registry",
+        "knowledge_platform.baseline.snapshot",
+        "runtime_control",
+        "scripts",
+        "scripts.phase0a_catalog_migration_observer"
+      ],
+      "module_prefixes": [
+        "analytics",
+        "catalog_migration",
+        "graph",
+        "knowledge",
+        "knowledge_contracts",
+        "knowledge_platform",
+        "runtime_control",
+        "scripts",
+        "tools",
+        "vanna"
+      ],
+      "observation_only": true,
+      "probe_reference": "scripts.phase0a_catalog_migration_observer:observe"
+    }
+  ]
+}

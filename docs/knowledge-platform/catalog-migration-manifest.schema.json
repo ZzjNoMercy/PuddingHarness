@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingclaw.local/schemas/catalog-migration-manifest.schema.json",
+  "title": "Agent-native Knowledge Platform Catalog Migration Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "installation_id", "source_revision", "target_revision", "active_revision_before", "active_revision_after", "active_revision_changed", "state", "source", "targets", "active_writers", "failure_checkpoints", "slices", "rollback_strategy"],
+  "properties": {
+    "format": {"const": "agent-knowledge-platform-catalog-migration/v1"},
+    "installation_id": {"type": "string", "minLength": 1},
+    "source_revision": {"type": "string", "minLength": 1},
+    "target_revision": {"type": "string", "minLength": 1},
+    "active_revision_before": {"type": "string", "minLength": 1},
+    "active_revision_after": {"type": "string", "minLength": 1},
+    "active_revision_changed": {"const": false},
+    "state": {"const": "VERIFIED"},
+    "source": {
+      "type": "object",
+      "required": ["before_digest", "after_digest"],
+      "properties": {
+        "before_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "after_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "targets": {
+      "type": "object",
+      "required": ["platform", "harness"],
+      "properties": {
+        "platform": {"$ref": "#/$defs/digest"},
+        "harness": {"$ref": "#/$defs/digest"}
+      },
+      "additionalProperties": false
+    },
+    "active_writers": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
+    "failure_checkpoints": {"type": "array", "items": {"type": "string"}},
+    "slices": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/slice"}},
+    "rollback_strategy": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "required": ["digest"],
+      "properties": {"digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
+      "additionalProperties": false
+    },
+    "slice": {
+      "type": "object",
+      "required": ["name", "mapping_count", "report"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "mapping_count": {"type": "integer", "minimum": 0},
+        "report": {"type": "object"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,60 @@
+format: agent-knowledge-platform-file-classification/v1
+spec_revision: v0.7
+status: executable-coverage-rules
+scan_extensions: [.py, .ts, .tsx, .js, .mjs, .json, .yaml, .yml, .toml, .md, .sh, .plist]
+scan_roots:
+  - backend/knowledge
+  - backend/analytics
+  - backend/tools
+  - backend/graph
+  - backend/harness
+  - backend/vanna
+  - backend/llm
+  - backend/api
+  - backend/skills
+  - frontend/src/app/knowledge
+  - frontend/src/app/analytics
+  - frontend/src/lib
+  - frontend/src/components
+  - electron
+  - packages/puddingclaw-deploy-cli
+  - skills/puddingclaw
+  - backend/pyproject.toml
+  - backend/requirements.txt
+  - backend/uv.lock
+  - docker-compose.yml
+  - docker-compose.infra.yml
+  - scripts/start-local-infra.sh
+rules:
+  - {glob: "backend/knowledge/**", target_owner: puddingknowledge, migration: extract-platform-legacy-preserved}
+  - {glob: "backend/analytics/**", target_owner: puddingknowledge, migration: extract-platform-legacy-preserved}
+  - {glob: "backend/tools/database/**", target_owner: puddingknowledge, migration: extract-database-query-capability}
+  - {glob: "backend/tools/database_knowledge_tool.py", target_owner: puddingknowledge, migration: retain-as-legacy-shim-then-remove-from-harness}
+  - {glob: "backend/tools/search_knowledge_tool.py", target_owner: puddingknowledge, migration: extract-rag-application-service}
+  - {glob: "backend/tools/pandas_knowledge_tool.py", target_owner: puddingknowledge, migration: extract-table-query-application-service}
+  - {glob: "backend/tools/llm_wiki_tools.py", target_owner: puddingknowledge, migration: replace-with-platform-worker-port}
+  - {glob: "backend/tools/logical_dataset_tools.py", target_owner: puddingknowledge, migration: extract-structured-asset-capability}
+  - {glob: "backend/tools/semantic_steward_tool.py", target_owner: puddingknowledge, migration: extract-semantic-authoring-capability}
+  - {glob: "backend/tools/inspect_dimension_build_input_tool.py", target_owner: puddingknowledge, migration: extract-semantic-authoring-capability}
+  - {glob: "backend/tools/request_dimension_build_rule_tool.py", target_owner: puddingknowledge, migration: extract-semantic-authoring-capability}
+  - {glob: "backend/tools/semantic_dimension_build_tool.py", target_owner: puddingknowledge, migration: extract-semantic-authoring-capability}
+  - {glob: "backend/tools/**", target_owner: split, migration: inspect-and-classify-before-harness-extraction}
+  - {glob: "backend/graph/**", target_owner: puddingharness, migration: remove-platform-business-edges-in-target-harness}
+  - {glob: "backend/harness/**", target_owner: puddingharness, migration: retain-harness-core}
+  - {glob: "backend/vanna/**", target_owner: puddingknowledge, migration: vendor-fork-decision-and-black-box-compatibility}
+  - {glob: "backend/llm/**", target_owner: split, migration: platform-owns-retrieval-providers-harness-owns-agent-providers}
+  - {glob: "backend/api/**", target_owner: split, migration: platform-owns-knowledge-admin-query-routes}
+  - {glob: "backend/skills/**", target_owner: split, migration: rewrite-knowledge-skills-for-platform-mcp-workspace}
+  - {glob: "frontend/src/app/knowledge/**", target_owner: puddingknowledge, migration: move-to-platform-console}
+  - {glob: "frontend/src/app/analytics/**", target_owner: puddingknowledge, migration: move-to-platform-console}
+  - {glob: "frontend/**", target_owner: split, migration: keep-generic-harness-ui-extract-platform-console}
+  - {glob: "electron/**", target_owner: split, migration: split-platform-infra-from-harness-supervisor}
+  - {glob: "packages/puddingclaw-deploy-cli/**", target_owner: split, migration: split-install-recipes-and-migration-orchestrator}
+  - {glob: "skills/puddingclaw/**", target_owner: puddingharness, migration: keep-root-harness-delegation-skill-generic}
+  - {glob: "backend/pyproject.toml", target_owner: split, migration: split-dependency-locks-at-repository-extraction}
+  - {glob: "backend/requirements.txt", target_owner: split, migration: split-dependency-locks-at-repository-extraction}
+  - {glob: "backend/uv.lock", target_owner: split, migration: split-dependency-locks-at-repository-extraction}
+  - {glob: "docker-compose*.yml", target_owner: split, migration: platform-infra-companion-and-harness-only-compose}
+  - {glob: "scripts/start-local-infra.sh", target_owner: split, migration: split-startup-responsibilities}
+coverage_rule: "First matching rule wins; every scanned file must match exactly one rule."
+status_reason: "This proves classification coverage only; it does not claim that the target repositories or production paths already exist."

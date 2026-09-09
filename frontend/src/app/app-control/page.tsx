@@ -24,6 +24,9 @@ import type {
 
 type BackendStatus = { status: string; error: string | null; url: string };
 type InfraStatus = {
+  owner: "knowledge-platform";
+  platform: string;
+  home: string;
   docker: boolean;
   postgres: string;
   milvus: string;
@@ -583,10 +586,8 @@ export default function AppControlPage() {
     starting: "text-yellow-600 bg-yellow-50 border-yellow-200",
     error: "text-red-600 bg-red-50 border-red-200",
     partial: "text-yellow-600 bg-yellow-50 border-yellow-200",
+    not_configured: "text-slate-600 bg-slate-50 border-slate-200",
     unknown: "text-gray-500 bg-gray-50 border-gray-200",
-  };
-  const infraServiceStateLabel: Record<string, string> = {
-    running: "运行中", stopped: "未运行", error: "异常", not_required: "无需启动",
   };
 
   return (
@@ -619,21 +620,22 @@ export default function AppControlPage() {
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">可选 Docker 基础设施</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Knowledge Platform 基础设施</h2>
             {infraStatus && <span className={`rounded-full border px-3 py-1 text-xs font-medium ${statusColor[infraStatus.status] || statusColor.unknown}`}>{infraStatus.status}</span>}
           </div>
           {infraStatus && (
             <div className="mb-4 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-gray-600">Docker Desktop</span><span className={infraStatus.docker ? "text-green-600" : "text-gray-500"}>{infraStatus.docker ? "运行中" : "未运行"}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">PostgreSQL</span><span>{infraServiceStateLabel[infraStatus.postgres] || infraStatus.postgres}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">Milvus</span><span>{infraServiceStateLabel[infraStatus.milvus] || infraStatus.milvus}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600">生命周期所有者</span><span>Knowledge Platform</span></div>
+              <div className="flex justify-between"><span className="text-gray-600">Platform Home</span><span className="max-w-[65%] truncate font-mono text-xs text-gray-900">{infraStatus.home}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600">监督器状态</span><span>{infraStatus.platform}</span></div>
               {infraStatus.error && <div className="mt-2 text-xs text-gray-500">{infraStatus.error}</div>}
             </div>
           )}
           <div className="flex gap-3">
-            <button onClick={() => void handleStartInfra()} disabled={loading.infra} className="rounded-lg bg-[#002fa7] px-4 py-2 text-sm font-medium text-white hover:bg-[#001f7a] disabled:opacity-40">{loading.infra ? "处理中..." : "启动 Infra"}</button>
-            <button onClick={() => void handleStopInfra()} disabled={loading.infra} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40">停止 Infra</button>
+            <button onClick={() => void handleStartInfra()} disabled={loading.infra} className="rounded-lg bg-[#002fa7] px-4 py-2 text-sm font-medium text-white hover:bg-[#001f7a] disabled:opacity-40">{loading.infra ? "处理中..." : "启动 Platform"}</button>
+            <button onClick={() => void handleStopInfra()} disabled={loading.infra} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40">停止 Platform</button>
           </div>
+          <p className="mt-3 text-xs text-gray-500">PuddingClaw 只转交 Platform supervisor，不探测或管理其内部数据库、向量库及解析服务。</p>
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">

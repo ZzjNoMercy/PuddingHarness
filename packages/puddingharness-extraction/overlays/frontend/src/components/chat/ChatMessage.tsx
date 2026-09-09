@@ -1,0 +1,2266 @@
+/* Target Harness ChatMessage overlay: generic messages, attachments, citations, and HITL cards. */
+"use client";
+
+import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileSpreadsheet, FileText, FolderOpen, Globe2, HelpCircle, ImageIcon, Key, KeyRound, Loader2, Maximize2, PauseCircle, Plus, ShieldCheck, Sparkles, SquareTerminal, Trash2, XCircle } from "lucide-react";
+import {
+  denyPermissionRequest,
+  grantExternalFilePermission,
+  grantShellDirectoryPermission,
+  grantToolActionPermission,
+  resolveKernelFallbackRequest,
+  resolveSkillSecretRequest,
+  resolveUserInputRequest,
+  type AgentAttachment,
+  type KernelFallbackRequest,
+  type PermissionRequest,
+  type SkillSecretRequest,
+  type UserInputAnswer,
+  type UserInputRequest,
+} from "@/lib/api";
+import { markdownRemarkPlugins, markdownUrlTransform, normalizeLooseStrongMarkdown } from "@/lib/markdown";
+import { useApp, type ChatMessage as ChatMessageType, type SourceRecord, type TimelineItem, type ToolCall } from "@/lib/store";
+import { isPreviewableImageAttachment, isQrImageAttachment } from "@/lib/imageAttachments";
+import { placeOutputAttachments } from "@/lib/artifactPlacement";
+import { splitTimelineAtManagedAuthorizations } from "@/lib/managedAuthorization";
+import { parseLightweightHtmlDocument } from "@/lib/lightweightHtml";
+import ThoughtChain, { SkillPlanCards } from "./ThoughtChain";
+import RetrievalCard from "./RetrievalCard";
+import ManagedAuthorizationCards from "./ManagedAuthorizationCard";
+import HtmlArtifactCard from "./HtmlArtifactCard";
+import LocalFileAttachmentCard from "./LocalFileAttachmentCard";
+
+interface Props {
+  message: ChatMessageType;
+  sessionSources?: SourceRecord[];
+  isStreaming?: boolean;
+  showInterruptionNotice?: boolean;
+}
+
+const BEIJING_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: "Asia/Shanghai",
+});
+
+function beijingDateTimeParts(date: Date): Record<string, string> {
+  return Object.fromEntries(
+    BEIJING_DATE_TIME_FORMATTER.formatToParts(date).map(({ type, value }) => [type, value])
+  );
+}
+
+function formatTime(ts: number): string {
+  if (!Number.isFinite(ts) || ts <= 0) return "";
+  const value = beijingDateTimeParts(new Date(ts));
+  const today = beijingDateTimeParts(new Date());
+  const time = `${value.hour}:${value.minute}`;
+  const isToday = value.year === today.year
+    && value.month === today.month
+    && value.day === today.day;
+  return isToday ? time : `${value.year}/${value.month}/${value.day} ${time}`;
+}
+
+function stripModelCallLimitNotice(content: string): string {
+  return content
+    .replace(
+      /(?:\r?\n){0,2}Model call limits exceeded:\s*(?:run|thread) limit\s*\(\d+\s*\/\s*\d+\)\.?\s*$/i,
+      ""
+    )
+    .trimEnd();
+}
+
+async function writeTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Clipboard copy failed");
+}
+
+const ScrollableMarkdownTable: Components["table"] = ({ node: _node, ...props }) => (
+  <div className="markdown-table-scroll">
+    <table {...props} />
+  </div>
+);
+
+const HtmlAwarePre: NonNullable<Components["pre"]> = ({ node: _node, children, ...props }) => {
+  if (Children.count(children) === 1) {
+    const child = Children.only(children);
+    if (isValidElement<{ className?: string; children?: ReactNode }>(child) && child.type === "code") {
+      const code = Children.toArray(child.props.children)
+        .filter((value): value is string => typeof value === "string")
+        .join("");
+      const document = parseLightweightHtmlDocument(child.props.className, code);
+      if (document) {
+        return <HtmlArtifactCard html={document.html} title={document.title} />;
+      }
+    }
+  }
+
+  return <pre {...props}>{children}</pre>;
+};
+
+/** Detect 401 / API key errors without matching arbitrary numbers like patent IDs. */
+function isAuthError(content: string): boolean {
+  const lower = content.toLowerCase();
+  // Specific HTTP 401 contexts (avoid matching a bare "401" in patent numbers / dates)
+  const has401 = /\b401\s*(unauthorized| unauthorised|禁止|认证失败|未授权)\b/i.test(content) ||
+    /\b(http\s*401|status\s*401|error\s*401|code\s*401|返回\s*401)\b/i.test(content);
+  const hasApiKeyError = /invalid.*api\s*key|api\s*key.*invalid|api\s*key.*missing|api\s*key.*not\s*set|apikey.*invalid/i.test(lower);
+  const hasAuthFail = /authentication\s*(fail|error|failed)|认证失败|鉴权失败|未通过认证|授权失败/i.test(content);
+  return has401 || hasApiKeyError || hasAuthFail;
+}
+
+type AttachmentAnalysisMap = Record<string, ToolCall[]>;
+
+function taskAttachmentRefs(toolCall: ToolCall): string[] {
+  if (toolCall.tool !== "task" && !toolCall.tool.includes("subagent")) return [];
+  let searchable = toolCall.input || "";
+  try {
+    const parsed = JSON.parse(searchable) as Record<string, unknown>;
+    searchable = String(parsed.description || parsed.prompt || searchable);
+  } catch {
+    // Legacy persisted calls may contain plain-text task input.
+  }
+  return Array.from(new Set(searchable.match(/att_[a-zA-Z0-9]+/g) || []));
+}
+
+function attachmentAnalysisMap(message: ChatMessageType): AttachmentAnalysisMap {
+  const attachmentIds = new Set(
+    (message.outputAttachments || []).map((attachment) => attachment.id).filter(Boolean),
+  );
+  const calls = [
+    ...(message.toolCalls || []),
+    ...(message.timeline || []).flatMap((item) => item.type === "tool" && item.toolCall ? [item.toolCall] : []),
+    ...(message.segments || []).flatMap((segment) => [
+      ...(segment.toolCalls || []),
+      ...(segment.timeline || []).flatMap((item) => item.type === "tool" && item.toolCall ? [item.toolCall] : []),
+    ]),
+  ];
+  const uniqueCalls = Array.from(new Map(calls.map((call) => [call.id, call])).values());
+  const result: AttachmentAnalysisMap = {};
+  for (const call of uniqueCalls) {
+    for (const ref of taskAttachmentRefs(call)) {
+      if (!attachmentIds.has(ref)) continue;
+      result[ref] = [...(result[ref] || []), call];
+    }
+  }
+  return result;
+}
+
+function withoutEmbeddedAttachmentAnalysis(
+  timeline: TimelineItem[] = [],
+  analysisByAttachmentId: AttachmentAnalysisMap,
+): TimelineItem[] {
+  const embeddedToolIds = new Set(
+    Object.values(analysisByAttachmentId).flatMap((calls) => calls.map((call) => call.id)),
+  );
+  return timeline.filter(
+    (item) => item.type !== "tool" || !item.toolCall || !embeddedToolIds.has(item.toolCall.id),
+  );
+}
+
+export default function ChatMessage({ message, sessionSources = [], isStreaming = false, showInterruptionNotice = false }: Props) {
+  const isUser = message.role === "user";
+  const hasAuthError = !isUser && isAuthError(message.content);
+  const renderedContent = renderCitationMarkers(message, sessionSources);
+  const availableSources = mergeSources(message.sources, sessionSources);
+  const { sessionId, setActiveSourceId, setInspectorOpen, closeAttachmentPreview } = useApp();
+  // Persisted turns can carry both a message-level timeline and per-model-call
+  // segment timelines.  Neither representation is guaranteed to be a strict
+  // superset of the other (large managed-tool results in particular may only
+  // survive in one of them), so confirmation UI must inspect both.  De-dupe
+  // by timeline/tool id to avoid rendering the same plan batch twice.
+  const skillPlanTimeline = Array.from(
+    new Map(
+      [
+        ...(message.timeline || []),
+        ...(message.segments?.flatMap((segment) => segment.timeline || []) || []),
+      ].map((item, index) => [
+        item.type === "tool"
+          ? `tool:${item.toolCall?.id || item.id || index}`
+          : `${item.type}:${item.id || index}`,
+        item,
+      ]),
+    ).values(),
+  );
+  const pendingPermissionRequests = (message.permissionRequests || []).filter(
+    (request) => request.status !== "resolved"
+  );
+  const visibleUserInputRequests = (message.userInputRequests || []).filter(
+    (request) => (request.status || "pending") === "pending"
+  );
+  const visibleSkillSecretRequests = (message.skillSecretRequests || []).filter(
+    (request) => (request.status || "pending") === "pending"
+  );
+  const pendingKernelFallbackRequests = (message.kernelFallbackRequests || []).filter(
+    (request) => (request.status || "pending") === "pending"
+  );
+  const outputAttachmentPlacement = message.segments?.length
+    ? placeOutputAttachments(message.outputAttachments, message.segments, message.toolCalls)
+    : { bySegment: [], unplaced: message.outputAttachments || [] };
+  const analysisByAttachmentId = attachmentAnalysisMap(message);
+
+  const citationComponents: Components = {
+    a: (props) => (
+      <CitationLink
+        {...props}
+        sessionId={sessionId}
+        sources={availableSources}
+        onActivate={(sourceId) => {
+          closeAttachmentPreview();
+          setActiveSourceId(sourceId);
+          setInspectorOpen(true);
+        }}
+      />
+    ),
+    img: SafeMarkdownImage,
+    table: ScrollableMarkdownTable,
+    ...(!isStreaming ? { pre: HtmlAwarePre } : {}),
+  };
+
+  return (
+    <div className="animate-fade-in px-7 py-3">
+      <div className="mx-auto w-full max-w-[900px]">
+        {/* User message — right-aligned bubble */}
+        {isUser ? (
+          <div className="flex justify-end">
+            <div className="flex max-w-xl flex-col items-end">
+              {message.content ? (
+                <div className="rounded-2xl rounded-tr-md bg-[#002fa7] px-4 py-2.5 text-[14px] leading-relaxed text-white shadow-sm shadow-blue-950/10">
+                  {message.content}
+                </div>
+              ) : null}
+              {message.attachments?.length ? <UserAttachmentList attachments={message.attachments} /> : null}
+              <div className="text-[10px] text-gray-400 mt-1 text-right pr-1">
+                {formatTime(message.timestamp)}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Assistant message — left-aligned */
+          <div>
+            <div className="min-w-0">
+              <details open>
+                  <summary className="hidden" />
+              {message.segments && message.segments.length > 0 ? (
+                /* Multi-segment agent turn: each model invocation is its own block */
+                <div className="space-y-4">
+                  {message.segments.map((segment, index) => (
+                    <SegmentBlock
+                      key={`${message.id}-seg-${index}`}
+                      segment={segment}
+                      message={message}
+                      sessionSources={sessionSources}
+                      isStreaming={isStreaming}
+                      isLast={index === message.segments!.length - 1}
+                      verificationSummary={index === message.segments!.length - 1 ? message.verificationSummary : undefined}
+                      outputAttachments={outputAttachmentPlacement.bySegment[index]}
+                      analysisByAttachmentId={analysisByAttachmentId}
+                    />
+                  ))}
+                  {outputAttachmentPlacement.unplaced.length ? (
+                    <AssistantAttachmentList
+                      attachments={outputAttachmentPlacement.unplaced}
+                      analysisByAttachmentId={analysisByAttachmentId}
+                    />
+                  ) : null}
+                  {message.retrievals && message.retrievals.length > 0 && (
+                    <RetrievalCard retrievals={message.retrievals} />
+                  )}
+                  {pendingPermissionRequests.map((request) => (
+                    <PermissionRequestCard
+                      key={request.id}
+                      request={request}
+                      sessionId={sessionId}
+                    />
+                  ))}
+                  {visibleUserInputRequests.map((request) => (
+                    <UserInputRequestCard key={request.id} request={request} sessionId={sessionId} />
+                  ))}
+                  {visibleSkillSecretRequests.map((request) => (
+                    <SkillSecretRequestCard key={request.id} request={request} sessionId={sessionId} />
+                  ))}
+                  {pendingKernelFallbackRequests.map((request) => (
+                    <KernelFallbackRequestCard key={request.id} request={request} sessionId={sessionId} />
+                  ))}
+                  {/* Skill plans are direct frontend-to-backend actions, not HITL
+                      interruptions. Keep them once at the bottom of the whole turn
+                      so later model segments can never render below the card. */}
+                  <SkillPlanCards timeline={skillPlanTimeline} sessionId={sessionId} />
+                  {(message.segments.length > 0 || pendingPermissionRequests.length > 0 || visibleUserInputRequests.length > 0 || visibleSkillSecretRequests.length > 0 || pendingKernelFallbackRequests.length > 0) && (
+                    <div className="text-[10px] text-gray-400 mt-1 pl-1">
+                      {formatTime(message.timestamp)}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {(() => {
+                    const displayTimeline = withoutEmbeddedAttachmentAnalysis(
+                      message.timeline || [],
+                      analysisByAttachmentId,
+                    );
+                    const hasTools = displayTimeline.some((item) => item.type === "tool");
+
+                    const thoughtChain = displayTimeline.length > 0 ? (
+                      <TimelineWithManagedAuthorization
+                        timeline={displayTimeline}
+                        isStreaming={isStreaming}
+                      />
+                      ) : message.reasoning ? (
+                      <ReasoningBlock
+                          content={message.reasoning}
+                          defaultOpen={isStreaming && !message.content}
+                          isStreaming={isStreaming && !message.content}
+                        />
+                      ) : null;
+
+                    const contentBlock = hasAuthError ? (
+                      <AuthErrorAlert content={message.content} />
+                    ) : message.content || message.verificationSummary ? (
+                      <div>
+                        <div className="px-1 py-1 text-[15px] leading-relaxed">
+                          <div className="markdown-content">
+                            {message.content ? (
+                              <ReactMarkdown
+                                remarkPlugins={markdownRemarkPlugins}
+                                components={citationComponents}
+                                urlTransform={markdownUrlTransform}
+                              >
+                                {renderedContent}
+                              </ReactMarkdown>
+                            ) : null}
+                            <VerificationSummaryText text={message.verificationSummary} />
+                          </div>
+                        </div>
+                        {message.retrievals && message.retrievals.length > 0 && (
+                          <RetrievalCard retrievals={message.retrievals} />
+                        )}
+                      </div>
+                    ) : null;
+
+                    // Pure reasoning precedes the answer; tool chains follow it
+                    // so intent and action stay adjacent.
+                    return (
+                      <>
+                        {!hasTools && thoughtChain}
+                        {contentBlock}
+                        {hasTools && thoughtChain}
+                        {outputAttachmentPlacement.unplaced.length ? (
+                          <AssistantAttachmentList
+                            attachments={outputAttachmentPlacement.unplaced}
+                            analysisByAttachmentId={analysisByAttachmentId}
+                          />
+                        ) : null}
+                        {pendingPermissionRequests.map((request) => (
+                          <PermissionRequestCard
+                            key={request.id}
+                            request={request}
+                            sessionId={sessionId}
+                          />
+                        ))}
+                        {visibleUserInputRequests.map((request) => (
+                          <UserInputRequestCard key={request.id} request={request} sessionId={sessionId} />
+                        ))}
+                        {visibleSkillSecretRequests.map((request) => (
+                          <SkillSecretRequestCard key={request.id} request={request} sessionId={sessionId} />
+                        ))}
+                        {pendingKernelFallbackRequests.map((request) => (
+                          <KernelFallbackRequestCard key={request.id} request={request} sessionId={sessionId} />
+                        ))}
+                        <SkillPlanCards timeline={skillPlanTimeline} sessionId={sessionId} />
+                        {((message.content || thoughtChain) || pendingPermissionRequests.length > 0 || visibleUserInputRequests.length > 0 || visibleSkillSecretRequests.length > 0 || pendingKernelFallbackRequests.length > 0) && (
+                          <div className="text-[10px] text-gray-400 mt-1 pl-1">
+                            {formatTime(message.timestamp)}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </>
+              )}
+                </details>
+
+              {showInterruptionNotice && message.interrupted && message.interruptionNotice ? (
+                <InterruptionNotice text={message.interruptionNotice} />
+              ) : null}
+              {message.errorNotice ? (
+                <ErrorNotice text={message.errorNotice} />
+              ) : null}
+
+              <AssistantMessageActions message={message} isStreaming={isStreaming} />
+
+              {/* Typing indicator — only when nothing else is visible yet */}
+              {isStreaming && !message.content && !message.reasoning && !message.timeline?.length ? (
+                <div className="workspace-message-card inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-[12px] text-slate-500">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="typing-dot h-1.5 w-1.5 rounded-full bg-[#002fa7]" />
+                    <span className="typing-dot h-1.5 w-1.5 rounded-full bg-[#002fa7]" />
+                    <span className="typing-dot h-1.5 w-1.5 rounded-full bg-[#002fa7]" />
+                  </span>
+                  <span>Agent 正在处理</span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SafeMarkdownImage({ alt }: React.ImgHTMLAttributes<HTMLImageElement>) {
+  return (
+    <span className="my-2 inline-flex max-w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+      <ImageIcon className="h-4 w-4 shrink-0" />
+      <span className="truncate">{alt || "图片"}（请通过附件预览）</span>
+    </span>
+  );
+}
+
+function InlineImageAttachment({
+  attachment,
+  align = "left",
+  analysisTools = [],
+}: {
+  attachment: AgentAttachment & { id: string; preview_url: string };
+  align?: "left" | "right";
+  analysisTools?: ToolCall[];
+}) {
+  const { openAttachmentPreview } = useApp();
+  const [failed, setFailed] = useState(false);
+  const isQr = isQrImageAttachment(attachment);
+  const label = attachment.name || "图片附件";
+  const analysisRunning = analysisTools.some((tool) => tool.status === "running");
+  const analysisFailed = analysisTools.some((tool) => Boolean(tool.is_error));
+  const AnalysisIcon = analysisRunning ? Loader2 : analysisFailed ? XCircle : CheckCircle2;
+  const analysisLabel = analysisRunning
+    ? "子代理正在分析图片"
+    : analysisFailed
+      ? "子代理图片分析未完成"
+      : `子代理图片分析已完成${analysisTools.length > 1 ? ` · ${analysisTools.length} 次核对` : ""}`;
+
+  if (failed) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+        <ImageIcon className="h-4 w-4" />
+        <span className="truncate">{label} · 预览失败</span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-attachment-id={attachment.id}
+      onClick={() => openAttachmentPreview(attachment.id)}
+      className={`group relative block overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:border-[#002fa7]/35 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#002fa7]/30 ${
+        isQr ? "w-[220px] max-w-full p-3" : "w-full max-w-[560px]"
+      } ${align === "right" ? "ml-auto" : ""}`}
+      aria-label={`打开图片预览：${label}`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={attachment.preview_url}
+        alt={label}
+        onError={() => setFailed(true)}
+        className={`block w-full object-contain ${isQr ? "aspect-square bg-white" : "max-h-[360px] bg-slate-50"}`}
+      />
+      <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-950/65 text-white opacity-0 shadow-sm backdrop-blur-sm transition group-hover:opacity-100 group-focus:opacity-100">
+        <Maximize2 className="h-3.5 w-3.5" />
+      </span>
+      <span className="block truncate border-t border-slate-100 px-3 py-2 text-[11px] font-medium text-slate-700">
+        {label}
+      </span>
+      {analysisTools.length > 0 ? (
+        <span className="flex items-center gap-1.5 border-t border-slate-100 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-600">
+          <AnalysisIcon
+            className={`h-3.5 w-3.5 shrink-0 ${
+              analysisRunning
+                ? "animate-spin text-[#002fa7]"
+                : analysisFailed
+                  ? "text-rose-500"
+                  : "text-emerald-600"
+            }`}
+          />
+          <span className="truncate">{analysisLabel}</span>
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function UserAttachmentList({ attachments }: { attachments: AgentAttachment[] }) {
+  return (
+    <div className="mt-2 flex max-w-xl flex-wrap justify-end gap-2">
+      {attachments.map((attachment, index) => {
+        if (isPreviewableImageAttachment(attachment)) {
+          return (
+            <InlineImageAttachment
+              key={`${attachment.id}-${index}`}
+              attachment={attachment}
+              align="right"
+            />
+          );
+        }
+        const Icon = attachment.type === "spreadsheet" ? FileSpreadsheet : FileText;
+        return (
+          <div
+            key={`${attachment.id || attachment.name || "attachment"}-${index}`}
+            className="inline-flex max-w-full items-center gap-2 rounded-xl border border-[#002fa7]/15 bg-[#f7f9ff] px-3 py-2 text-left text-[12px] text-gray-700 shadow-sm"
+            title={attachment.name || attachment.path || "附件"}
+          >
+            <Icon className="h-4 w-4 shrink-0 text-[#002fa7]" />
+            <span className="min-w-0 truncate font-medium">{attachment.name || attachment.path || attachment.id || "附件"}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function formatAttachmentSize(size?: number): string {
+  if (!size || size < 1) return "";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AssistantAttachmentList({
+  attachments,
+  analysisByAttachmentId = {},
+}: {
+  attachments: AgentAttachment[];
+  analysisByAttachmentId?: AttachmentAnalysisMap;
+}) {
+  const images = attachments.filter(isPreviewableImageAttachment);
+  const files = attachments.filter((attachment) => !isPreviewableImageAttachment(attachment));
+  return (
+    <div className="mt-3 flex max-w-[680px] flex-col gap-2">
+      {images.map((attachment, index) => (
+        <InlineImageAttachment
+          key={`${attachment.id}-${index}`}
+          attachment={attachment}
+          analysisTools={analysisByAttachmentId[attachment.id] || []}
+        />
+      ))}
+      {files.map((attachment, index) => {
+        const Icon = attachment.type === "spreadsheet" ? FileSpreadsheet : FileText;
+        const href = attachment.download_url || "";
+        const content = (
+          <>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#002fa7]/10 text-[#002fa7]">
+              <Icon className="h-4.5 w-4.5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-semibold text-slate-900">
+                {attachment.name || attachment.id || "生成附件"}
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-slate-500">
+                <span>已生成附件</span>
+                {formatAttachmentSize(attachment.size) ? <span>{formatAttachmentSize(attachment.size)}</span> : null}
+                {attachment.derived_from ? <span>源自上传文件</span> : null}
+              </div>
+            </div>
+            <Download className="h-4 w-4 shrink-0 text-[#002fa7]" />
+          </>
+        );
+        const className = "flex w-full items-center gap-3 rounded-2xl border border-[#002fa7]/15 bg-[#f7f9ff] px-3 py-2.5 text-left shadow-sm transition hover:border-[#002fa7]/30 hover:bg-[#f1f5ff]";
+        return href ? (
+          <a
+            key={`${attachment.id || attachment.name || "output"}-${index}`}
+            className={className}
+            href={href}
+            download={attachment.name || true}
+          >
+            {content}
+          </a>
+        ) : (
+          <div key={`${attachment.id || attachment.name || "output"}-${index}`} className={className}>
+            {content}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function InterruptionNotice({ text }: { text: string }) {
+  return (
+    <div className="mt-3 flex w-full max-w-[820px] items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-[12px] font-medium leading-relaxed text-amber-800 shadow-sm shadow-amber-900/[0.03]">
+      <PauseCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+      <span className="min-w-0 break-words">{text}</span>
+    </div>
+  );
+}
+
+function ErrorNotice({ text }: { text: string }) {
+  return (
+    <div className="mt-3 flex w-full max-w-[820px] items-start gap-2 rounded-xl border border-rose-200 bg-rose-50/85 px-3 py-2.5 text-[12px] font-medium leading-relaxed text-rose-800 shadow-sm shadow-rose-900/[0.03]">
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600" />
+      <span className="min-w-0 break-words">{text}</span>
+    </div>
+  );
+}
+
+function KernelFallbackRequestCard({
+  request,
+  sessionId,
+}: {
+  request: KernelFallbackRequest;
+  sessionId: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const resolve = async (action: "switch_project_to_spawn" | "fallback_once" | "reject") => {
+    setBusy(true);
+    setError(null);
+    try {
+      await resolveKernelFallbackRequest(sessionId, request.id, request.version, action);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "处理回退请求失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="my-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+      <div className="flex items-center gap-2 font-medium">
+        <AlertTriangle className="h-4 w-4" /> Kernel 沙箱当前不可用
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-amber-900">
+        {request.reason}。宿主执行（spawn）没有 OS 沙箱边界，请明确选择回退范围。
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {request.project_id ? (
+          <button disabled={busy} onClick={() => void resolve("switch_project_to_spawn")} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">
+            本项目以后使用宿主执行
+          </button>
+        ) : null}
+        <button disabled={busy} onClick={() => void resolve("fallback_once")} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium disabled:opacity-50">
+          仅本次 Run 回退
+        </button>
+        <button disabled={busy} onClick={() => void resolve("reject")} className="rounded-lg border border-amber-300 px-3 py-2 text-xs disabled:opacity-50">
+          拒绝
+        </button>
+      </div>
+      {error ? <p className="mt-2 text-xs text-red-700">{error}</p> : null}
+    </div>
+  );
+}
+
+function ExternalFilePermissionCard({
+  request,
+  sessionId,
+}: {
+  request: PermissionRequest;
+  sessionId: string;
+}) {
+  const [status, setStatus] = useState<"idle" | "loading" | "granted" | "denied" | "error">("idle");
+  const [error, setError] = useState("");
+  const path = request.path || "";
+  const name = path.split("/").filter(Boolean).pop() || "外部文件";
+  const isDirectory = request.type.startsWith("external_directory_");
+  const isWrite = request.type === "external_file_write" || request.type === "external_directory_write";
+  const isDelete = request.type === "external_file_delete";
+  const isSensitiveRead = request.reason === "sensitive_host_read";
+  const isPersistenceWrite = request.reason === "persistence_write";
+
+  const grant = async (
+    targetKind: "exact_file" | "exact_directory" | "all_external_files",
+    scope?: "run" | "session",
+  ) => {
+    setStatus("loading");
+    setError("");
+    try {
+      await grantExternalFilePermission(
+        sessionId,
+        targetKind,
+        targetKind === "all_external_files" ? undefined : path,
+        request.id,
+        scope,
+      );
+      setStatus("granted");
+      window.dispatchEvent(new CustomEvent("puddingclaw:permissions-changed"));
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "授权失败");
+    }
+  };
+
+  const deny = async () => {
+    setStatus("loading");
+    setError("");
+    try {
+      await denyPermissionRequest(
+        sessionId,
+        request.id,
+        `User denied external ${isDirectory ? "directory" : "file"} ${isDelete ? "delete" : isWrite ? "write" : "read"} permission.`
+      );
+      setStatus("denied");
+      window.dispatchEvent(new CustomEvent("puddingclaw:permissions-changed"));
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "拒绝失败");
+    }
+  };
+
+  return (
+    <div className="mb-3 max-w-[680px] rounded-2xl border border-black/[0.06] bg-white/75 p-4 shadow-sm shadow-slate-950/[0.04] backdrop-blur">
+      <div className="flex gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#002fa7]/10 text-[#002fa7]">
+          {status === "granted"
+            ? <CheckCircle2 className="h-5 w-5" />
+            : isDirectory ? <FolderOpen className="h-5 w-5" /> : <KeyRound className="h-5 w-5" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[15px] font-bold text-slate-950">
+              {isDelete
+                ? "允许删除此外部文件"
+                : isPersistenceWrite
+                  ? "允许修改敏感配置文件"
+                  : isSensitiveRead
+                    ? `允许读取敏感${isDirectory ? "目录" : "文件"}`
+                : isWrite
+                  ? `允许修改外部${isDirectory ? "目录" : "文件"}`
+                  : `允许读取外部${isDirectory ? "目录" : "文件"}`}
+            </h3>
+            {status === "granted" ? (
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                已授权
+              </span>
+            ) : null}
+          </div>
+          {isSensitiveRead || isPersistenceWrite ? (
+            <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+              {isSensitiveRead
+                ? `该路径可能包含凭证或私钥。授权只适用于这个精确${isDirectory ? "目录" : "文件"}，不会扩大到其他外部路径。`
+                : "该路径属于凭证、Shell 启动项或持久化配置。请确认本次精确文件修改。"}
+            </div>
+          ) : null}
+          <div className="mt-2 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2">
+            {isDirectory
+              ? <FolderOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+              : <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />}
+            <div className="min-w-0">
+              <div className="truncate text-[13px] font-medium text-slate-800">{name}</div>
+              <div className="mt-0.5 truncate font-mono text-[11px] text-slate-500">{path}</div>
+            </div>
+          </div>
+          {(isWrite || isDelete) && request.change_preview ? (
+            <div className="mt-2 space-y-2 rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2">
+              {Object.entries(request.change_preview).map(([key, value]) => (
+                <div key={key}>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">{key}</div>
+                  <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-700">
+                    {value}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {isDirectory ? (
+            <div className="mt-2 rounded-xl border border-sky-100 bg-sky-50/70 px-3 py-2 text-[11px] leading-relaxed text-sky-800">
+              此授权只开放 HostFileBroker 文件能力，不会把宿主目录挂载进命令容器，也不会授予 shell 访问；
+              {isWrite
+                ? " 可在此目录内创建、修改和删除普通文件；递归或批量删除仍需单独确认。"
+                : " 只允许读取和搜索，不会修改原目录，也不会扩展到父目录或相邻目录。"}
+            </div>
+          ) : null}
+          {status !== "granted" && status !== "denied" ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {isDirectory ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={status === "loading"}
+                    onClick={() => grant("exact_directory", "session")}
+                    className="rounded-full bg-[#002fa7] px-3.5 py-2 text-[12px] font-semibold text-white shadow-sm transition hover:bg-[#00298f] disabled:cursor-default disabled:opacity-60"
+                  >
+                    {isWrite ? "本 Session 允许修改此目录" : "本 Session 允许读取此目录"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={status === "loading"}
+                    onClick={() => grant("exact_directory", "run")}
+                    className="rounded-full bg-white px-3.5 py-2 text-[12px] font-semibold text-slate-700 shadow-sm ring-1 ring-black/[0.08] transition hover:bg-slate-50 disabled:cursor-default disabled:opacity-60"
+                  >
+                    仅本次 Run
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  disabled={status === "loading"}
+                  onClick={() => grant("exact_file")}
+                  className="rounded-full bg-[#002fa7] px-3.5 py-2 text-[12px] font-semibold text-white shadow-sm transition hover:bg-[#00298f] disabled:cursor-default disabled:opacity-60"
+                >
+                  {isDelete ? "确认删除此文件" : isWrite ? "允许修改此文件" : "允许此文件"}
+                </button>
+              )}
+              {!isWrite && !isDelete && !isDirectory && !isSensitiveRead ? (
+                <button
+                  type="button"
+                  disabled={status === "loading"}
+                  onClick={() => grant("all_external_files")}
+                  className="rounded-full bg-white px-3.5 py-2 text-[12px] font-semibold text-slate-700 shadow-sm ring-1 ring-black/[0.08] transition hover:bg-slate-50 disabled:cursor-default disabled:opacity-60"
+                >
+                  本 session 允许所有外部文件
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={status === "loading"}
+                onClick={deny}
+                className="rounded-full px-3 py-2 text-[12px] font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:cursor-default disabled:opacity-60"
+              >
+                拒绝
+              </button>
+            </div>
+          ) : null}
+          {status === "loading" ? <div className="mt-2 text-[11px] text-slate-500">处理中...</div> : null}
+          {status === "denied" ? <div className="mt-2 text-[11px] text-slate-500">已拒绝</div> : null}
+          {status === "error" ? <div className="mt-2 text-[11px] text-rose-600">{error}</div> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PermissionRequestCard({
+  request,
+  sessionId,
+}: {
+  request: PermissionRequest;
+  sessionId: string;
+}) {
+  if (request.type === "tool_action") {
+    return <ToolActionPermissionCard request={request} sessionId={sessionId} />;
+  }
+  if (request.type === "shell_directory_access") {
+    return <ShellDirectoryPermissionCard request={request} sessionId={sessionId} />;
+  }
+  return <ExternalFilePermissionCard request={request} sessionId={sessionId} />;
+}
+
+function ShellDirectoryPermissionCard({
+  request,
+  sessionId,
+}: {
+  request: PermissionRequest;
+  sessionId: string;
+}) {
+  const [status, setStatus] = useState<"idle" | "loading" | "granted" | "denied" | "error">("idle");
+  const [error, setError] = useState("");
+  const specs = request.grant_specs || [];
+  const directories = Array.from(new Set((request.paths || specs.map((spec) => spec.target)).filter(Boolean)));
+  const permissionsFor = (target: string) => {
+    const targetSpecs = specs.filter((spec) => spec.target === target);
+    const writable = targetSpecs.some((spec) => spec.access === "write");
+    const deletable = targetSpecs.some((spec) => spec.delete);
+    return deletable ? "读取、修改和删除" : writable ? "读取和修改" : "只读";
+  };
+
+  const grant = async (scope: "run" | "session") => {
+    setStatus("loading");
+    setError("");
+    try {
+      await grantShellDirectoryPermission(sessionId, request.id, scope);
+      setStatus("granted");
+      window.dispatchEvent(new CustomEvent("puddingclaw:permissions-changed"));
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "授权失败");
+    }
+  };
+
+  const deny = async () => {
+    setStatus("loading");
+    setError("");
+    try {
+      await denyPermissionRequest(sessionId, request.id, "User denied shell directory access.");
+      setStatus("denied");
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "拒绝失败");
+    }
+  };
+
+  return (
+    <div className="mb-3 max-w-[680px] rounded-2xl border border-sky-200 bg-white/90 p-4 shadow-sm">
+      <div className="flex gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
+          {status === "granted" ? <CheckCircle2 className="h-5 w-5" /> : <FolderOpen className="h-5 w-5" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[15px] font-bold text-slate-950">允许终端访问这些目录</h3>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+            此授权会直接开放给当前沙箱中的标准 shell 命令；只包含下列目录，不会扩展到父目录或其他已授权目录。
+          </p>
+          {request.command ? (
+            <pre className="mt-2 overflow-auto rounded-xl bg-slate-950 px-3 py-2 text-[11px] text-slate-100">{request.command}</pre>
+          ) : null}
+          <div className="mt-2 space-y-1.5">
+            {directories.map((path) => (
+              <div key={path} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                <div className="font-mono text-[11px] text-slate-700">{path}</div>
+                <div className="mt-0.5 text-[10px] font-semibold text-sky-700">{permissionsFor(path)}</div>
+              </div>
+            ))}
+          </div>
+          {status === "idle" || status === "error" ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => grant("run")} className="rounded-full bg-[#002fa7] px-3.5 py-2 text-[12px] font-semibold text-white">
+                仅本次 Run
+              </button>
+              <button type="button" onClick={() => grant("session")} className="rounded-full bg-white px-3.5 py-2 text-[12px] font-semibold text-slate-700 ring-1 ring-black/[0.08]">
+                本 Session 允许
+              </button>
+              <button type="button" onClick={deny} className="rounded-full px-3 py-2 text-[12px] font-semibold text-slate-500">
+                拒绝
+              </button>
+            </div>
+          ) : null}
+          {status === "loading" ? <div className="mt-2 text-[11px] text-slate-500">处理中...</div> : null}
+          {status === "granted" ? <div className="mt-2 text-[11px] text-emerald-700">已授权，命令将继续执行。</div> : null}
+          {status === "denied" ? <div className="mt-2 text-[11px] text-slate-500">已拒绝</div> : null}
+          {status === "error" ? <div className="mt-2 text-[11px] text-rose-600">{error}</div> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ToolActionPermissionCard({
+  request,
+  sessionId,
+}: {
+  request: PermissionRequest;
+  sessionId: string;
+}) {
+  const [status, setStatus] = useState<"idle" | "loading" | "granted" | "denied" | "error">("idle");
+  const [error, setError] = useState("");
+  const isFetchUrl = request.tool_name === "fetch_url";
+  const isSearch = request.tool_name === "tavily_search";
+  const isNetworkTool = isFetchUrl || isSearch;
+  const needsTemporaryNetwork = (request.capabilities || []).includes("temporary_network");
+  const needsNetwork = needsTemporaryNetwork || (request.capabilities || []).includes("network_access");
+  const installsPackages = (request.capabilities || []).includes("package_install");
+  const writesFiles = (request.capabilities || []).includes("managed_write");
+  const writesSkills = (request.capabilities || []).includes("managed_skill_write");
+  const opensSessionScope = (request.options || []).includes("session")
+    && Boolean(request.session_target_kind && request.session_target);
+  const opensProjectScope = (request.options || []).includes("project")
+    && request.session_target_kind === "command_pattern"
+    && Boolean(request.session_target);
+  const reason = request.reason || "需要人工确认";
+  const installsHostCli = reason === "managed_cli_host_install";
+  const managesSkills = writesSkills || [
+    "prepare_skill_install",
+    "prepare_skill_update",
+    "install_skill",
+    "update_skill",
+  ].includes(request.tool_name || "")
+    || reason.startsWith("managed_skill_source_download:")
+    || request.change_preview?.action === "prepare_install";
+  const riskLabel = ({
+    high: "脚本执行 · 需确认",
+    network: "联网 · 需确认",
+    package_install: installsHostCli ? "安装全局 CLI · 需确认" : "安装依赖 · 需确认",
+    managed_write: "写入文件 · 需确认",
+    destructive_write: "破坏性写入 · 需确认",
+    managed_skill_write: "安装或更新 Skill · 需确认",
+    critical: "禁止级风险",
+  } as Record<string, string>)[request.risk || ""] || request.risk || "受控操作";
+  const reasonLabel = request.policy_explanation || (reason.startsWith("arbitrary_interpreter:")
+    ? "解释器可执行任意代码；Harness 会另外标明本次是否联网、写入或安装依赖。"
+    : reason.startsWith("network_access:")
+      ? "该命令需要访问互联网。"
+      : reason.startsWith("package_management")
+        ? "该操作会下载并安装运行时依赖。"
+        : reason.startsWith("skill_source_download") || reason.startsWith("managed_skill_source_download:")
+          ? "该操作会联网下载 Skill 到隔离暂存区，并校验文件和来源；不会修改已安装 Skill。"
+        : reason.startsWith("managed_skill_write")
+          ? "该操作会提交已校验的不可变计划到受管 Skill 目录。授权仅对本次计划有效。"
+          : reason.startsWith("managed_workspace_write")
+            ? "该命令会修改本地文件。"
+          : `Harness 规则：${reason}`);
+  const reviewedBySmartPolicy = request.policy_source === "codex_grok_smart_reviewer";
+  const title = isFetchUrl
+    ? "允许访问网站"
+    : isSearch
+      ? "允许联网搜索"
+      : installsPackages
+        ? installsHostCli ? "允许安装全局飞书 CLI" : "允许在沙箱中安装依赖"
+        : managesSkills
+          ? request.tool_name === "prepare_skill_update"
+            ? "允许检查 Skill 更新"
+            : request.tool_name === "prepare_skill_install"
+              ? "允许准备安装 Skill"
+              : request.tool_name === "update_skill" ? "允许更新 Skill" : "允许安装 Skill"
+        : needsNetwork
+          ? "允许命令联网执行"
+        : "允许执行受控命令";
+
+  const grant = async (scope: "once" | "session" | "project") => {
+    setStatus("loading");
+    setError("");
+    try {
+      await grantToolActionPermission(sessionId, request.id, scope);
+      setStatus("granted");
+      window.dispatchEvent(new CustomEvent("puddingclaw:permissions-changed"));
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "授权失败");
+    }
+  };
+
+  const deny = async () => {
+    setStatus("loading");
+    setError("");
+    try {
+      await denyPermissionRequest(
+        sessionId,
+        request.id,
+        "User denied managed Tool execution.",
+      );
+      setStatus("denied");
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "拒绝失败");
+    }
+  };
+
+  return (
+    <div className="mb-3 max-w-[760px] rounded-2xl border border-amber-200 bg-amber-50/75 p-4 shadow-sm shadow-amber-950/[0.04]">
+      <div className="flex gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+          {status === "granted"
+            ? <CheckCircle2 className="h-5 w-5" />
+            : isNetworkTool || needsNetwork
+              ? <Globe2 className="h-5 w-5" />
+              : <SquareTerminal className="h-5 w-5" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[15px] font-bold text-slate-950">{title}</h3>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+              {riskLabel}
+            </span>
+            {reviewedBySmartPolicy ? (
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800">
+                智能审查后需确认
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-[12px] text-slate-500">
+            {reasonLabel}
+          </p>
+          {needsNetwork ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800">
+                {needsTemporaryNetwork ? "临时联网" : "联网执行"}
+              </span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                {needsTemporaryNetwork ? "命令结束后自动断开" : "仍受当前 Backend 网络策略约束"}
+              </span>
+            </div>
+          ) : null}
+          {writesFiles || writesSkills || installsPackages ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {writesFiles ? (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                  写入文件
+                </span>
+              ) : null}
+              {writesSkills ? (
+                <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-semibold text-cyan-800">
+                  写入受管 Skill
+                </span>
+              ) : null}
+              {installsPackages ? (
+                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-800">
+                  {installsHostCli ? "写入用户级全局 CLI" : "安装依赖"}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          {managesSkills && request.change_preview ? (
+            <div className="mt-3 rounded-xl border border-cyan-200 bg-white/80 p-3 text-[12px] text-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-bold text-slate-950">
+                  {request.change_preview.skill_name || "Skill"}
+                  {request.change_preview.version ? ` · ${request.change_preview.version}` : ""}
+                </span>
+                <span className="rounded-full bg-cyan-100 px-2 py-0.5 font-semibold text-cyan-800">
+                  {request.change_preview.changes || (writesSkills ? "已校验变更" : "下载并校验")}
+                </span>
+              </div>
+              {request.change_preview.source ? (
+                <p className="mt-2 break-all font-mono text-[10.5px] text-slate-500">{request.change_preview.source}</p>
+              ) : null}
+              {["added", "changed", "removed"].map((key) => request.change_preview?.[key] ? (
+                <p key={key} className="mt-1 break-all">
+                  <span className="mr-1 font-semibold text-slate-500">
+                    {key === "added" ? "新增" : key === "changed" ? "修改" : "删除"}：
+                  </span>
+                  {request.change_preview[key]}
+                </p>
+              ) : null)}
+            </div>
+          ) : null}
+          {managesSkills ? (
+            <details className="group mt-3 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2">
+              <summary className="cursor-pointer select-none text-[11px] font-semibold text-slate-500 marker:text-slate-300">
+                技术详情
+              </summary>
+              {request.change_preview?.plan_sha256 ? (
+                <p className="mt-2 break-all font-mono text-[10px] text-slate-400">
+                  Plan SHA-256: {request.change_preview.plan_sha256}
+                </p>
+              ) : null}
+              <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950 px-3 py-2.5 font-mono text-[11px] leading-5 text-slate-100">
+                {request.command || ""}
+              </pre>
+            </details>
+          ) : (
+            <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-950 px-3 py-2.5 font-mono text-[12px] leading-5 text-slate-100">
+              {request.command || ""}
+            </pre>
+          )}
+          {status === "idle" || status === "error" ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {opensProjectScope ? (
+                <button
+                  type="button"
+                  onClick={() => void grant("project")}
+                  className="rounded-full bg-violet-700 px-3.5 py-2 text-[12px] font-semibold text-white hover:bg-violet-800"
+                >
+                  记住到本项目
+                </button>
+              ) : null}
+              {opensSessionScope ? (
+                <button
+                  type="button"
+                  onClick={() => void grant("session")}
+                  className="rounded-full bg-[#002fa7] px-3.5 py-2 text-[12px] font-semibold text-white hover:bg-[#00298f]"
+                >
+                  {request.session_scope_label || "本 Session 允许联网"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void grant("once")}
+                  className="rounded-full bg-[#002fa7] px-3.5 py-2 text-[12px] font-semibold text-white hover:bg-[#00298f]"
+                >
+                  仅允许本次
+                </button>
+              )}
+              {!managesSkills && opensSessionScope ? (
+                <button
+                  type="button"
+                  onClick={() => void grant("once")}
+                  className="rounded-full bg-white px-3.5 py-2 text-[12px] font-semibold text-slate-700 ring-1 ring-black/[0.08] hover:bg-slate-50"
+                >
+                  仅允许本次
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void deny()}
+                className="rounded-full px-3 py-2 text-[12px] font-semibold text-slate-500 hover:bg-white/70"
+              >
+                拒绝
+              </button>
+            </div>
+          ) : null}
+          {status === "loading" ? <p className="mt-2 text-[11px] text-slate-500">处理中...</p> : null}
+          {status === "granted" ? <p className="mt-2 text-[11px] text-emerald-700">已授权，Agent 将继续执行。</p> : null}
+          {status === "denied" ? <p className="mt-2 text-[11px] text-slate-500">已拒绝。</p> : null}
+          {status === "error" ? <p className="mt-2 text-[11px] text-rose-600">{error}</p> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkillSecretRequestCard({ request, sessionId }: { request: SkillSecretRequest; sessionId: string }) {
+  const [value, setValue] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "done" | "cancelled" | "error">("idle");
+  const [error, setError] = useState("");
+  const submittingRef = useRef(false);
+
+  const resolve = async (action: "configure" | "reuse" | "cancel") => {
+    if (submittingRef.current) return;
+    if (action === "configure" && !value) {
+      setError("请输入凭证值。");
+      return;
+    }
+    submittingRef.current = true;
+    setStatus("loading");
+    setError("");
+    try {
+      await resolveSkillSecretRequest(sessionId, request.id, {
+        request_version: request.version,
+        action,
+        ...(action === "configure" ? { secret_value: value } : {}),
+      });
+      setValue("");
+      setStatus(action === "cancel" ? "cancelled" : "done");
+    } catch (nextError) {
+      submittingRef.current = false;
+      setStatus("error");
+      setError(nextError instanceof Error ? nextError.message : "配置失败，请重试");
+    }
+  };
+
+  if (status === "done" || request.decision?.action === "configured") {
+    return <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status"><CheckCircle2 className="h-4 w-4" />已安全配置 {request.env_name}，Agent 将继续执行。</div>;
+  }
+  if (status === "cancelled" || request.decision?.action === "cancel") {
+    return <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600" role="status"><XCircle className="h-4 w-4" />已取消凭证配置。</div>;
+  }
+
+  const reuse = request.mode === "reuse";
+  return (
+    <form
+      className="mb-4 max-w-[820px] rounded-2xl border border-amber-200 bg-white p-5 shadow-sm shadow-amber-950/[0.04]"
+      onSubmit={(event) => { event.preventDefault(); void resolve(reuse ? "reuse" : "configure"); }}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700"><KeyRound className="h-5 w-5" /></div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">安全凭证输入</p>
+          <h3 className="mt-1 text-base font-bold text-slate-950">为 {request.skill_id} 配置 {request.env_name}</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{request.reason}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-400">值不会发送给 Agent，也不会出现在命令、消息或执行日志中。</p>
+        </div>
+      </div>
+      {!reuse ? (
+        <label className="mt-4 block text-sm font-semibold text-slate-700">
+          {request.env_name}
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={value}
+            disabled={status === "loading"}
+            onChange={(event) => setValue(event.target.value)}
+            className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+          />
+        </label>
+      ) : (
+        <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">这个变量已有保存值。确认后只为当前版本的 {request.skill_id} 建立使用绑定，不会向 Agent 展示值。</p>
+      )}
+      {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
+      <div className="mt-4 flex items-center gap-2">
+        <button type="submit" disabled={status === "loading"} className="rounded-full bg-[#002fa7] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+          {status === "loading" ? "处理中..." : reuse ? "允许当前 Skill 使用" : "保存并继续"}
+        </button>
+        <button type="button" disabled={status === "loading"} onClick={() => void resolve("cancel")} className="rounded-full px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50">取消</button>
+      </div>
+    </form>
+  );
+}
+
+function UserInputRequestCard({ request, sessionId }: { request: UserInputRequest; sessionId: string }) {
+  type Draft = { optionIds: string[]; text: string };
+  const draftStorageKey = `puddingclaw:user-input-draft:${sessionId}:${request.id}:v${request.version}`;
+  const [drafts, setDrafts] = useState<Record<string, Draft>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.sessionStorage.getItem(draftStorageKey);
+        if (saved) return JSON.parse(saved) as Record<string, Draft>;
+      } catch {
+        // Fall through to an empty form if storage is unavailable/corrupt.
+      }
+    }
+    return Object.fromEntries(
+      request.questions.map((question) => [question.id, { optionIds: [], text: "" }]),
+    );
+  });
+  const [status, setStatus] = useState<"idle" | "loading" | "submitted" | "cancelled" | "decided" | "error">("idle");
+  const [error, setError] = useState("");
+  const submittingRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      if (request.status === "pending") {
+        window.sessionStorage.setItem(draftStorageKey, JSON.stringify(drafts));
+      } else {
+        window.sessionStorage.removeItem(draftStorageKey);
+      }
+    } catch {
+      // Draft persistence is best-effort; server validation remains authoritative.
+    }
+  }, [draftStorageKey, drafts, request.status]);
+
+  const updateChoice = (questionId: string, optionId: string, multiple: boolean) => {
+    setDrafts((current) => {
+      const draft = current[questionId] || { optionIds: [], text: "" };
+      const optionIds = multiple
+        ? draft.optionIds.includes(optionId)
+          ? draft.optionIds.filter((item) => item !== optionId)
+          : [...draft.optionIds, optionId]
+        : [optionId];
+      return {
+        ...current,
+        [questionId]: { ...draft, optionIds, text: multiple ? draft.text : "" },
+      };
+    });
+  };
+
+  if (request.status !== "pending" && request.decision) {
+    const action = request.decision.action;
+    const answerLabels = (request.decision.answers || []).flatMap((answer) => {
+      const question = request.questions.find((item) => item.id === answer.question_id);
+      const selected = answer.option_ids.map((optionId) =>
+        question?.options?.find((option) => option.id === optionId)?.label || optionId
+      );
+      return [...selected, ...(answer.text ? [answer.text] : [])];
+    });
+    const text = action === "cancel"
+      ? "已跳过这个问题，Agent 将继续执行。"
+      : action === "agent_decide"
+        ? "已交由 Agent 按推荐项或稳妥默认值继续。"
+        : `已提交：${answerLabels.join("；") || "已确认"}`;
+    const cancelled = action === "cancel";
+    return <div className={`mb-3 inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${cancelled ? "border-slate-200 bg-slate-50 text-slate-600" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role="status"><CheckCircle2 className="h-4 w-4" />{text}</div>;
+  }
+
+  const validate = (): UserInputAnswer[] | null => {
+    const answers = request.questions.map((question) => ({
+      question_id: question.id,
+      option_ids: drafts[question.id]?.optionIds || [],
+      text: (drafts[question.id]?.text || "").trim(),
+    }));
+    for (let index = 0; index < request.questions.length; index += 1) {
+      const question = request.questions[index];
+      const answer = answers[index];
+      const count = answer.option_ids.length + (answer.text ? 1 : 0);
+      if (question.required !== false && count === 0) {
+        setError(`请回答“${question.prompt}”。`);
+        return null;
+      }
+      if (question.type === "multi_select") {
+        const minimum = question.min_selections ?? (question.required === false ? 0 : 1);
+        if (count < minimum) {
+          setError(`“${question.prompt}”至少选择 ${minimum} 项。`);
+          return null;
+        }
+        if (question.max_selections != null && count > question.max_selections) {
+          setError(`“${question.prompt}”最多选择 ${question.max_selections} 项。`);
+          return null;
+        }
+      }
+    }
+    return answers;
+  };
+
+  const resolve = async (action: "submit" | "cancel" | "agent_decide") => {
+    if (submittingRef.current) return;
+    const answers = action === "submit" ? validate() : [];
+    if (action === "submit" && !answers) return;
+    submittingRef.current = true;
+    setStatus("loading");
+    setError("");
+    try {
+      await resolveUserInputRequest(sessionId, request.id, {
+        request_version: request.version,
+        action,
+        answers: answers || [],
+      });
+      setStatus(action === "submit" ? "submitted" : action === "cancel" ? "cancelled" : "decided");
+    } catch (nextError) {
+      submittingRef.current = false;
+      setStatus("error");
+      setError(nextError instanceof Error ? nextError.message : "提交选择失败，请重试");
+    }
+  };
+
+  if (["submitted", "cancelled", "decided"].includes(status)) {
+    const label = status === "submitted"
+      ? "已提交，Agent 将继续执行。"
+      : status === "decided"
+        ? "已交由 Agent 采用推荐方案继续。"
+        : "已跳过这个问题，Agent 将继续执行。";
+    const cancelled = status === "cancelled";
+    return <div className={`mb-3 inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${cancelled ? "border-slate-200 bg-slate-50 text-slate-600" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role="status"><CheckCircle2 className="h-4 w-4" />{label}</div>;
+  }
+
+  return (
+    <form
+      className="mb-4 max-w-[820px] rounded-2xl border border-blue-200 bg-white p-5 shadow-sm shadow-blue-950/[0.05]"
+      onSubmit={(event) => { event.preventDefault(); void resolve("submit"); }}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#002fa7]"><HelpCircle className="h-5 w-5" /></div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#002fa7]">需要你的选择</p>
+          <h3 className="mt-1 text-base font-bold text-slate-950">{request.title}</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{request.reason}</p>
+        </div>
+      </div>
+      <div className="mt-4 space-y-4">
+        {request.questions.map((question) => {
+          const draft = drafts[question.id] || { optionIds: [], text: "" };
+          return (
+            <fieldset key={question.id} className="rounded-xl border border-slate-200 p-4" disabled={status === "loading"}>
+              <legend className="px-1 text-sm font-semibold text-slate-800">{question.prompt}{question.required === false ? <span className="ml-1 font-normal text-slate-400">（可选）</span> : null}</legend>
+              {question.type === "text" ? (
+                <textarea
+                  value={draft.text}
+                  maxLength={question.max_length || 1000}
+                  required={question.required !== false}
+                  onChange={(event) => setDrafts((current) => ({ ...current, [question.id]: { ...draft, text: event.target.value } }))}
+                  className="mt-2 min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#002fa7] focus:ring-2 focus:ring-blue-100"
+                />
+              ) : (
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {(question.options || []).map((option) => {
+                    const checked = draft.optionIds.includes(option.id);
+                    return (
+                      <label key={option.id} className={`flex cursor-pointer gap-3 rounded-xl border p-3 transition ${checked ? "border-[#002fa7] bg-blue-50" : "border-slate-200 hover:border-slate-300"}`}>
+                        <input
+                          type={question.type === "single_select" ? "radio" : "checkbox"}
+                          name={`question-${request.id}-${question.id}`}
+                          value={option.id}
+                          checked={checked}
+                          onChange={() => updateChoice(question.id, option.id, question.type === "multi_select")}
+                          className="mt-0.5 h-4 w-4 accent-[#002fa7]"
+                        />
+                        <span><span className="block text-sm font-semibold text-slate-800">{option.label}{option.recommended ? <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] text-[#002fa7]">推荐</span> : null}</span>{option.description ? <span className="mt-0.5 block text-xs leading-5 text-slate-500">{option.description}</span> : null}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {question.type !== "text" && question.allow_other ? (
+                <label className="mt-3 block text-xs font-medium text-slate-600">其他
+                  <input
+                    value={draft.text}
+                    maxLength={question.max_length || 1000}
+                    onChange={(event) => setDrafts((current) => ({
+                      ...current,
+                      [question.id]: {
+                        ...draft,
+                        optionIds: question.type === "single_select" ? [] : draft.optionIds,
+                        text: event.target.value,
+                      },
+                    }))}
+                    className="mt-1.5 h-9 w-full rounded-lg border border-slate-200 px-3 text-sm font-normal outline-none focus:border-[#002fa7]"
+                  />
+                </label>
+              ) : null}
+            </fieldset>
+          );
+        })}
+      </div>
+      {error ? <p className="mt-3 text-sm text-rose-600" role="alert">{error}</p> : null}
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <button type="button" disabled={status === "loading"} onClick={() => void resolve("cancel")} className="h-9 rounded-xl px-4 text-sm font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50">取消</button>
+        {request.allow_agent_decide !== false ? <button type="button" disabled={status === "loading"} onClick={() => void resolve("agent_decide")} className="h-9 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">由 Agent 决定</button> : null}
+        <button type="submit" disabled={status === "loading"} className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#002fa7] px-4 text-sm font-semibold text-white hover:bg-[#00247f] disabled:opacity-50">{status === "loading" ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <CheckCircle2 className="h-4 w-4" />}确认并继续</button>
+      </div>
+    </form>
+  );
+}
+
+function SegmentBlock({
+  segment,
+  message,
+  sessionSources,
+  isStreaming,
+  isLast,
+  verificationSummary,
+  outputAttachments,
+  analysisByAttachmentId,
+}: {
+  segment: {
+    content: string;
+    reasoning?: string;
+    timeline?: TimelineItem[];
+  };
+  message: ChatMessageType;
+  sessionSources: SourceRecord[];
+  isStreaming?: boolean;
+  isLast?: boolean;
+  verificationSummary?: string;
+  outputAttachments?: AgentAttachment[];
+  analysisByAttachmentId: AttachmentAnalysisMap;
+}) {
+  const { sessionId, setActiveSourceId, setInspectorOpen, closeAttachmentPreview } = useApp();
+  // Terminal text is withheld by the backend until accepted.  Segments shown
+  // here are therefore process activity or the single published response;
+  // verification control state must never hide history or tool progress.
+  const rendered = renderCitationMarkersForSegment(message, segment.content, sessionSources);
+  const availableSources = mergeSources(message.sources, sessionSources);
+  const citationComponents: Components = {
+    a: (props) => (
+      <CitationLink
+        {...props}
+        sessionId={sessionId}
+        sources={availableSources}
+        onActivate={(sourceId) => {
+          closeAttachmentPreview();
+          setActiveSourceId(sourceId);
+          setInspectorOpen(true);
+        }}
+      />
+    ),
+    img: SafeMarkdownImage,
+    table: ScrollableMarkdownTable,
+    ...(!(isStreaming && isLast) ? { pre: HtmlAwarePre } : {}),
+  };
+
+  const displayTimeline = withoutEmbeddedAttachmentAnalysis(
+    segment.timeline || [],
+    analysisByAttachmentId,
+  );
+  const hasTools = displayTimeline.some((item) => item.type === "tool");
+
+  const thoughtChain =
+    displayTimeline.length > 0 ? (
+      <TimelineWithManagedAuthorization
+        timeline={displayTimeline}
+        isStreaming={isStreaming && isLast}
+      />
+    ) : segment.reasoning ? (
+      <ReasoningBlock
+        content={segment.reasoning}
+        defaultOpen={isStreaming && !segment.content}
+        isStreaming={isStreaming && !segment.content}
+      />
+    ) : null;
+
+  const contentBlock = segment.content || verificationSummary ? (
+    <div className="px-1 py-1 text-[15px] leading-relaxed">
+      <div className="markdown-content">
+        {segment.content ? (
+          <ReactMarkdown
+            remarkPlugins={markdownRemarkPlugins}
+            components={citationComponents}
+            urlTransform={markdownUrlTransform}
+          >
+            {rendered}
+          </ReactMarkdown>
+        ) : null}
+        <VerificationSummaryText text={verificationSummary} />
+      </div>
+    </div>
+  ) : null;
+
+  return (
+    <div className="space-y-2">
+      {!hasTools && thoughtChain}
+      {contentBlock}
+      {hasTools && thoughtChain}
+      {outputAttachments?.length ? (
+        <AssistantAttachmentList
+          attachments={outputAttachments}
+          analysisByAttachmentId={analysisByAttachmentId}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function TimelineWithManagedAuthorization({
+  timeline,
+  isStreaming,
+}: {
+  timeline: TimelineItem[];
+  isStreaming?: boolean;
+}) {
+  const slices = splitTimelineAtManagedAuthorizations(timeline);
+  return (
+    <div className="space-y-2">
+      {slices.map((slice, index) => (
+        <div key={`${slice.timeline[0]?.id || "timeline"}-${index}`} className="space-y-2">
+          {slice.timeline.length > 0 ? (
+            <ThoughtChain
+              timeline={slice.timeline}
+              isStreaming={Boolean(isStreaming && index === slices.length - 1)}
+            />
+          ) : null}
+          {slice.authorization ? (
+            <ManagedAuthorizationCards timeline={[slice.authorization]} />
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VerificationSummaryText({ text }: { text?: string }) {
+  const summary = String(text || "").trim();
+  const plainSummary = summary.replace(/\*\*/g, "").trim();
+  if (
+    !summary
+    || /^验证通过[。.!！]?$/.test(summary)
+    // Ordinary Run review has a dedicated status row and details panel below
+    // the answer. Keep review state out of the answer body, including for old
+    // persisted messages that still carry this compatibility annotation.
+    || /^质量复核\s*·\s*实验性[：:]/.test(plainSummary)
+  ) return null;
+  return (
+    <div className="mt-5 text-slate-700">
+      <ReactMarkdown
+        remarkPlugins={markdownRemarkPlugins}
+        components={{ img: SafeMarkdownImage, table: ScrollableMarkdownTable }}
+        urlTransform={markdownUrlTransform}
+      >
+        {summary}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+const RUN_REVIEW_CRITERIA: Record<string, { title: string; description: string }> = {
+  task_fulfillment: {
+    title: "任务完成度",
+    description: "是否真正完成本轮要求，而不是只给计划或口头声明。",
+  },
+  todo_reconciliation: {
+    title: "待办收口",
+    description: "本轮产生的待办是否全部完成或已明确取消。",
+  },
+  tool_protocol_integrity: {
+    title: "工具调用完整性",
+    description: "每个工具调用是否都有唯一、完整的返回结果。",
+  },
+  artifact_delivery: {
+    title: "产物交付",
+    description: "要求生成或更新的文件是否真实存在并可定位。",
+  },
+  code_validation: {
+    title: "代码验证",
+    description: "是否执行并通过与代码改动相称的测试或静态检查。",
+  },
+  web_evidence_traceability: {
+    title: "网页来源可追溯",
+    description: "网页结论是否关联本轮真实检索得到的来源。",
+  },
+  analytics_evidence_traceability: {
+    title: "分析证据可追溯",
+    description: "关键数据是否关联本轮查询结果、数据源或查询轨迹。",
+  },
+  metric_consistency: {
+    title: "指标口径一致性",
+    description: "指标名称、计算口径、维度和结论是否前后一致。",
+  },
+  time_scope: {
+    title: "数据时间范围",
+    description: "是否明确并遵守用户指定的数据期间。",
+  },
+  report_integrity: {
+    title: "报告完整性",
+    description: "报告结构、标题、图表和正文是否完整。",
+  },
+};
+
+function runReviewCriterionPresentation(criterionId: string, rawName: string) {
+  const known = RUN_REVIEW_CRITERIA[criterionId];
+  if (known) return known;
+  const technicalName = /^[a-z0-9_:-]+$/i.test(rawName);
+  return {
+    title: technicalName ? "自定义验收规则" : rawName,
+    description: technicalName ? `规则标识：${criterionId}` : rawName,
+  };
+}
+
+function runReviewMethodLabel(method: string): string {
+  return ({
+    deterministic: "系统核验",
+    environment: "环境核验",
+    semantic_rubric: "模型复核",
+  } as Record<string, string>)[method] || "验收检查";
+}
+
+function runReviewEvidenceSummary(
+  evidence: Array<Record<string, unknown>> | undefined,
+  method: string,
+  passed: boolean | null,
+): string {
+  for (const item of evidence || []) {
+    if (item.kind === "todo_state") {
+      const total = Number(item.total || 0);
+      const incomplete = Number(item.incomplete || 0);
+      return incomplete > 0
+        ? `${incomplete} 项待办尚未收口（共 ${total} 项）。`
+        : total > 0
+          ? `${total} 项待办均已完成或明确取消。`
+          : "本轮没有未收口的待办。";
+    }
+    if (item.kind === "tool_protocol") {
+      const requested = Array.isArray(item.requested_call_ids) ? item.requested_call_ids.length : 0;
+      const missing = Array.isArray(item.missing_call_ids) ? item.missing_call_ids.length : 0;
+      const duplicate = Array.isArray(item.duplicate_call_ids) ? item.duplicate_call_ids.length : 0;
+      return missing || duplicate
+        ? `发现 ${missing} 个缺失结果、${duplicate} 个重复结果。`
+        : requested > 0
+          ? `${requested} 个工具调用均有唯一且完整的结果。`
+          : "本轮没有需要配对的工具调用。";
+    }
+  }
+  if (passed === null) return "该项没有形成有效裁决。";
+  if (method === "semantic_rubric") {
+    return passed
+      ? "模型根据当前回答与验收规则判定通过。"
+      : "模型根据当前回答与验收规则发现缺口。";
+  }
+  return passed ? "结构化检查未发现问题。" : "结构化检查发现未满足项。";
+}
+
+function formatReviewDuration(milliseconds: number): string {
+  if (milliseconds < 1000) return `${Math.max(1, Math.round(milliseconds))} ms`;
+  return `${(milliseconds / 1000).toFixed(milliseconds < 10000 ? 1 : 0)} 秒`;
+}
+
+function runReviewOutcomeSummary(
+  status: string,
+  criteria: Array<{ passed: boolean | null }>,
+): string {
+  const failed = criteria.filter((criterion) => criterion.passed === false).length;
+  const unavailable = criteria.filter((criterion) => criterion.passed === null).length;
+  if (status === "satisfied") return `${criteria.length} 项验收均已通过。`;
+  if (status === "needs_revision") {
+    return failed > 0 ? `${criteria.length} 项已检查，${failed} 项未通过。` : "验收发现待修正项。";
+  }
+  if (status === "failed") return "验收规则无法完成有效判定。";
+  if (status === "grader_error") return "模型验收未形成有效裁决，可重新验收。";
+  if (status === "infrastructure_error") return "验收基础设施异常，可重新验收。";
+  if (status === "stale") return "回答或证据已变化，需要重新验收。";
+  if (unavailable > 0) return `${unavailable} 项验收未执行。`;
+  return "验收尚未形成最终结论。";
+}
+
+function localizedRunReviewGap(
+  criterionId: string,
+  gap: string | null | undefined,
+): string {
+  const normalized = String(gap || "").trim();
+  if (normalized && /[\u3400-\u9fff]/.test(normalized)) return normalized;
+  return ({
+    task_fulfillment: "本轮回答未完成用户要求的最终交付。",
+    todo_reconciliation: "本轮仍有待办未完成或未明确取消。",
+    tool_protocol_integrity: "本轮工具调用缺少唯一、完整的返回结果。",
+    artifact_delivery: "要求交付的产物未能确认存在或无法定位。",
+    code_validation: "代码改动缺少相应的测试或静态检查证据。",
+    web_evidence_traceability: "网页结论缺少可追溯的本轮检索来源。",
+    analytics_evidence_traceability: "关键数据缺少可追溯的数据源或查询记录。",
+    metric_consistency: "指标名称、口径、维度或结论存在不一致。",
+    time_scope: "结果未明确遵守用户指定的数据时间范围。",
+    report_integrity: "报告结构或内容不完整。",
+  } as Record<string, string>)[criterionId] || "该项未达到验收标准。";
+}
+
+function RunReviewDetailsPanel({
+  report,
+  panelId,
+}: {
+  report: NonNullable<ChatMessageType["runReviewReport"]>;
+  panelId: string;
+}) {
+  const records = report.verification_records || [];
+  const criteria = records.flatMap((record) => record.criteria.map((criterion) => ({
+    ...criterion,
+    method: record.method,
+  })));
+  const emptyRecords = records.filter((record) => record.criteria.length === 0);
+  const latency = records.reduce((total, record) => total + Math.max(0, Number(record.latency_ms || 0)), 0);
+  const passed = report.status === "satisfied";
+  const outcomeSummary = runReviewOutcomeSummary(report.status, criteria);
+
+  return (
+    <section
+      id={panelId}
+      className="mt-2 max-w-2xl overflow-hidden rounded-2xl border border-black/[0.08] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.06)]"
+      aria-label="质量复核详情"
+    >
+      <div className={`border-b px-4 py-3 ${passed ? "border-emerald-100 bg-emerald-50/70" : "border-amber-100 bg-amber-50/70"}`}>
+        <div className="flex items-start gap-2.5">
+          {passed
+            ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold text-slate-800">验收详情</h3>
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+                <span>{report.manual ? "手动验收" : "后台质量复核"}</span>
+                <span className="text-slate-300">·</span>
+                <span>第 {Math.max(1, Number(report.attempt_no || 0) + 1)} 次</span>
+                {latency > 0 ? (
+                  <>
+                    <span className="text-slate-300">·</span>
+                    <span>用时 {formatReviewDuration(latency)}</span>
+                  </>
+                ) : null}
+              </div>
+            </div>
+            <p className="mt-1 text-[11px] leading-5 text-slate-600">
+              {outcomeSummary}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2 p-3">
+        {criteria.map((criterion) => {
+          const presentation = runReviewCriterionPresentation(criterion.criterion_id, criterion.name);
+          const notEvaluated = criterion.passed === null;
+          const criterionPassed = criterion.passed === true;
+          return (
+            <div
+              key={`${criterion.method}-${criterion.criterion_id}`}
+              className={`rounded-xl border px-3 py-2.5 ${
+                criterionPassed
+                  ? "border-emerald-100 bg-emerald-50/45"
+                  : notEvaluated
+                    ? "border-slate-200 bg-slate-50"
+                    : "border-amber-200 bg-amber-50/70"
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                {criterionPassed
+                  ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                  : notEvaluated
+                    ? <HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    : <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[12px] font-semibold text-slate-800">{presentation.title}</p>
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                        {runReviewMethodLabel(criterion.method)}
+                      </span>
+                      <span className={`text-[10px] font-semibold ${
+                        criterionPassed ? "text-emerald-700" : notEvaluated ? "text-slate-500" : "text-amber-700"
+                      }`}>
+                        {criterionPassed ? "通过" : notEvaluated ? "未执行" : "未通过"}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-4 text-slate-500">{presentation.description}</p>
+                  <p className={`mt-2 text-[11px] leading-5 ${criterionPassed ? "text-slate-600" : "text-amber-800"}`}>
+                    {criterionPassed || notEvaluated
+                      ? runReviewEvidenceSummary(criterion.evidence, criterion.method, criterion.passed)
+                      : localizedRunReviewGap(criterion.criterion_id, criterion.gap)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {emptyRecords.map((record) => (
+          <div key={record.verification_id} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-[12px] font-semibold text-slate-800">{runReviewMethodLabel(record.method)}未完成</p>
+                <p className="mt-1 text-[11px] leading-5 text-amber-800">
+                  {record.status === "not_evaluated"
+                    ? "该验收器本次未执行，因此没有形成业务裁决。"
+                    : "验收器执行异常；这不等同于回答质量未通过，可稍后重新验收。"}
+                </p>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {records.length === 0 ? (
+          <div className="rounded-xl bg-slate-50 px-3 py-3 text-[11px] leading-5 text-slate-500">
+            这份旧报告没有附带逐项验收记录；重新验收后可查看完整明细。
+          </div>
+        ) : null}
+
+      </div>
+    </section>
+  );
+}
+
+function AssistantMessageActions({ message, isStreaming }: { message: ChatMessageType; isStreaming?: boolean }) {
+  const { reviewRun } = useApp();
+  const [pending, setPending] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const copyResetTimer = useRef<number | null>(null);
+  const detailsContainerRef = useRef<HTMLDivElement | null>(null);
+  const runId = message.runId || message.segments?.findLast((segment) => segment.runId)?.runId;
+  const isGoalRun = Boolean(message.segments?.some((segment) => segment.goalId));
+  const supportsReview = Boolean(
+    runId
+    && !isGoalRun
+    && !message.interrupted
+    && (
+      message.runReviewEligible === true
+      || message.runReviewStatus
+      || message.runReviewReport
+    )
+  );
+  const copyText = stripModelCallLimitNotice(
+    message.content.trim()
+      || message.segments?.map((segment) => segment.content.trim()).filter(Boolean).join("\n\n")
+      || "",
+  );
+
+  useEffect(() => () => {
+    if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
+  }, []);
+
+  useEffect(() => {
+    if (!detailsOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      detailsContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [detailsOpen]);
+
+  if (isStreaming || (!copyText && !supportsReview)) return null;
+
+  const status = supportsReview ? message.runReviewStatus : undefined;
+  const report = supportsReview ? message.runReviewReport : undefined;
+  const statusLabel: Record<string, string> = {
+    pending: "质量复核排队中",
+    running: "质量复核进行中",
+    satisfied: "质量复核通过",
+    needs_revision: "质量复核未通过",
+    failed: "复核未通过",
+    grader_error: "复核未完成",
+    infrastructure_error: "复核未完成",
+    stale: "复核已失效",
+  };
+  const terminal = status && status !== "pending" && status !== "running";
+  const canRequestReview = supportsReview && (
+    !status
+    || status === "grader_error"
+    || status === "infrastructure_error"
+  );
+  const actionLabel = status ? "重新验证此回答" : "验证此回答";
+  const detailsPanelId = `run-review-details-${runId || message.id}`;
+  const handleCopy = async () => {
+    if (!copyText) return;
+    try {
+      await writeTextToClipboard(copyText);
+      setCopied(true);
+      if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
+      copyResetTimer.current = window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  };
+  const handleReview = async () => {
+    if (pending || !runId) return;
+    setPending(true);
+    try {
+      await reviewRun(runId);
+    } catch {
+      // The store records a failed local state; keep the transcript intact.
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="mt-1 pl-1 text-[11px]" data-testid="assistant-message-actions">
+      <div className="flex min-h-8 flex-wrap items-center gap-1">
+      {copyText ? (
+        <button
+          type="button"
+          onClick={() => void handleCopy()}
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#002fa7]/30 ${
+            copied
+              ? "bg-emerald-50 text-emerald-600"
+              : "text-gray-400 hover:bg-black/[0.05] hover:text-gray-700"
+          }`}
+          aria-label={copied ? "已复制回答" : "复制回答"}
+          title={copied ? "已复制" : "复制"}
+        >
+          {copied ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          <span className="sr-only" aria-live="polite">{copied ? "已复制" : "复制回答"}</span>
+        </button>
+      ) : null}
+      {canRequestReview ? (
+        <button
+          type="button"
+          onClick={handleReview}
+          disabled={pending}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition hover:bg-black/[0.05] hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#002fa7]/30 disabled:cursor-wait disabled:opacity-50"
+          aria-label={actionLabel}
+          title={actionLabel}
+        >
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+          <span className="sr-only">{pending ? "正在验证" : actionLabel}</span>
+        </button>
+      ) : null}
+      {status ? (
+        <button
+          type="button"
+          onClick={() => report && setDetailsOpen((open) => !open)}
+          disabled={!report}
+          aria-expanded={report ? detailsOpen : undefined}
+          aria-controls={report ? detailsPanelId : undefined}
+          className={`ml-1 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 transition disabled:cursor-default ${
+          terminal && status === "satisfied"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            : terminal
+              ? "border-amber-200 bg-amber-50 text-amber-700"
+              : "border-blue-200 bg-blue-50 text-blue-700"
+        } ${report ? "hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#002fa7]/25" : ""}`}>
+          {!terminal && <Loader2 className="h-3 w-3 animate-spin" />}
+          {statusLabel[status] || "质量复核"}
+          {report ? <ChevronDown className={`h-3 w-3 transition-transform ${detailsOpen ? "rotate-180" : ""}`} /> : null}
+        </button>
+      ) : null}
+      </div>
+      {detailsOpen && report ? (
+        <div ref={detailsContainerRef} className="scroll-mb-44">
+          <RunReviewDetailsPanel report={report} panelId={detailsPanelId} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function renderCitationMarkersForSegment(
+  message: ChatMessageType,
+  content: string,
+  sessionSources: SourceRecord[] = []
+): string {
+  const normalizedContent = sanitizeCitationMarkdown(stripModelCallLimitNotice(content));
+  const indexes = new Map<string, number>();
+  message.citations?.forEach((citation) => {
+    indexes.set(citation.source_id, citation.display_index);
+  });
+  const existingIndexes = Array.from(indexes.values());
+  let nextIndex = existingIndexes.length > 0 ? Math.max(...existingIndexes) + 1 : 1;
+  message.sources?.forEach((source) => {
+    if (source.source_id && !indexes.has(source.source_id)) {
+      indexes.set(source.source_id, nextIndex++);
+    }
+  });
+  const sessionSourceIds = new Set(sessionSources.map((source) => source.source_id));
+  const historicalMarkerRe = /\[\^(src_[A-Za-z0-9_-]+)\]/g;
+  let historicalMatch: RegExpExecArray | null;
+  while ((historicalMatch = historicalMarkerRe.exec(normalizedContent)) !== null) {
+    const sourceId = historicalMatch[1];
+    if (sessionSourceIds.has(sourceId) && !indexes.has(sourceId)) {
+      indexes.set(sourceId, nextIndex++);
+    }
+  }
+  if (indexes.size === 0) return normalizedContent;
+  return normalizedContent.replace(/\[\^(src_[A-Za-z0-9_-]+)\]/g, (marker, sourceId: string) => {
+    const index = indexes.get(sourceId);
+    return index ? `[${index}](#source-${sourceId})` : marker;
+  });
+}
+
+function ReasoningBlock({
+  content,
+  defaultOpen,
+  isStreaming,
+}: {
+  content: string;
+  defaultOpen?: boolean;
+  isStreaming?: boolean;
+}) {
+  const [open, setOpen] = useState(Boolean(defaultOpen));
+  const lineCount = content.split("\n").filter(Boolean).length;
+
+  return (
+    <div className="mb-2 inline-block max-w-full overflow-hidden rounded-xl border border-black/[0.055] bg-white/58 shadow-sm shadow-slate-950/[0.025]">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex max-w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 transition-colors hover:bg-white/60"
+      >
+        {open ? (
+          <ChevronDown className="h-3 w-3 text-slate-400" />
+        ) : (
+          <ChevronRight className="h-3 w-3 text-slate-400" />
+        )}
+        <div className="flex h-5 w-5 items-center justify-center rounded bg-[#eef2ff] text-[#002fa7]">
+          <Sparkles className="h-3 w-3" />
+        </div>
+        <span className="font-medium">处理过程</span>
+        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+          {content.length} 字{lineCount > 1 ? ` · ${lineCount} 行` : ""}
+        </span>
+        {isStreaming && (
+          <span className="ml-1 inline-flex items-center gap-1.5 text-[11px] text-[#002fa7]">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#002fa7]" />
+            正在推理
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="w-[min(720px,calc(100vw-180px))] max-w-full border-t border-black/[0.045] px-3 pb-2 pt-1.5">
+          <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-lg bg-white/58 p-2 text-[11px] leading-relaxed text-slate-500">
+            {content}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderCitationMarkers(message: ChatMessageType, sessionSources: SourceRecord[] = []): string {
+  const normalizedContent = sanitizeCitationMarkdown(stripModelCallLimitNotice(message.content));
+  const indexes = new Map<string, number>();
+
+  // Citations carry the authoritative display index.
+  message.citations?.forEach((citation) => {
+    indexes.set(citation.source_id, citation.display_index);
+  });
+
+  // Fallback: assign sequential indexes from sources for markers that were not
+  // finalized as citations (e.g. due to truncation or adapter mismatch).
+  const existingIndexes = Array.from(indexes.values());
+  let nextIndex = existingIndexes.length > 0 ? Math.max(...existingIndexes) + 1 : 1;
+  message.sources?.forEach((source) => {
+    if (source.source_id && !indexes.has(source.source_id)) {
+      indexes.set(source.source_id, nextIndex++);
+    }
+  });
+  const sessionSourceIds = new Set(sessionSources.map((source) => source.source_id));
+  const historicalMarkerRe = /\[\^(src_[A-Za-z0-9_-]+)\]/g;
+  let historicalMatch: RegExpExecArray | null;
+  while ((historicalMatch = historicalMarkerRe.exec(normalizedContent)) !== null) {
+    const sourceId = historicalMatch[1];
+    if (sessionSourceIds.has(sourceId) && !indexes.has(sourceId)) {
+      indexes.set(sourceId, nextIndex++);
+    }
+  }
+
+  if (indexes.size === 0) return normalizedContent;
+
+  return normalizedContent.replace(/\[\^(src_[A-Za-z0-9_-]+)\]/g, (marker, sourceId: string) => {
+    const index = indexes.get(sourceId);
+    return index ? `[${index}](#source-${sourceId})` : marker;
+  });
+}
+
+function sanitizeCitationMarkdown(content: string): string {
+  return normalizeLooseStrongMarkdown(content)
+    // Citation metadata belongs to the structured source cards, never a GFM
+    // Footnotes appendix rendered inside the assistant answer.
+    .replace(/^[ \t]*\[\^[^\]\n]+\]:[^\n]*(?:\n(?:(?: {2,}|\t)[^\n]*))*(?:\n|$)/gm, "")
+    // Only structured source ids are eligible for citation rendering. SQL
+    // generation ids and arbitrary model-created footnotes remain plain ids.
+    .replace(/\[\^(?!src_[A-Za-z0-9_-]+\])[^\]\n]+\]/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function mergeSources(
+  primary: SourceRecord[] | undefined,
+  fallback: SourceRecord[]
+): SourceRecord[] {
+  const catalog = new Map<string, SourceRecord>();
+  for (const source of fallback) catalog.set(source.source_id, source);
+  for (const source of primary || []) {
+    catalog.set(source.source_id, { ...catalog.get(source.source_id), ...source });
+  }
+  return Array.from(catalog.values());
+}
+
+function CitationLink({
+  href,
+  children,
+  sessionId,
+  sources,
+  onActivate,
+}: {
+  href?: string;
+  children?: React.ReactNode;
+  sessionId: string;
+  sources?: SourceRecord[];
+  onActivate?: (sourceId: string) => void;
+}) {
+  if (!href?.startsWith("#source-")) {
+    if (href?.startsWith("file://")) {
+      let localPath = href.slice("file://".length);
+      try {
+        localPath = decodeURIComponent(new URL(href).pathname);
+      } catch {
+        // Keep the original path for the existing open-file error handling.
+      }
+      return (
+        <LocalFileAttachmentCard
+          href={href}
+          filePath={localPath}
+          sessionId={sessionId}
+        />
+      );
+    }
+    return <a href={href}>{children}</a>;
+  }
+  const sourceId = href.replace("#source-", "");
+  const source = sources?.find((s) => s.source_id === sourceId);
+  const label = typeof children === "string" ? children : "•";
+
+  return (
+    <sup className="inline-block mx-0.5">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          onActivate?.(sourceId);
+        }}
+        title={source?.title || sourceId}
+        className="inline-flex h-4 min-w-4 items-center justify-center rounded bg-[#002fa7]/[0.08] px-1 text-[10px] font-semibold text-[#002fa7] hover:bg-[#002fa7]/[0.15]"
+      >
+        {label}
+      </button>
+    </sup>
+  );
+}
+
+/** Prominent auth error alert with setup guidance */
+function AuthErrorAlert({ content }: { content: string }) {
+  return (
+    <div className="animate-fade-in-scale rounded-xl border border-red-200 bg-red-50/80 px-4 py-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+        <span className="text-[13px] font-semibold text-red-700">
+          API Key 认证失败
+        </span>
+      </div>
+      <p className="text-[12px] text-red-600/80 leading-relaxed">
+        你的 API Key 无效或未配置。请检查 <code className="bg-red-100 px-1 rounded text-red-700">backend/.env</code> 文件中的配置。
+      </p>
+      <div className="flex items-center gap-3 pt-1">
+        <a
+          href="http://localhost:8002/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-red-600 hover:text-red-800 transition-colors"
+        >
+          <Key className="w-3 h-3" />
+          检查后端状态
+        </a>
+        <span className="text-[10px] text-red-400">|</span>
+        <span className="text-[10px] text-red-500 font-mono">{content.slice(0, 120)}...</span>
+      </div>
+    </div>
+  );
+}

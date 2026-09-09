@@ -1,0 +1,59 @@
+format: agent-knowledge-platform-catalog-ownership/v1
+spec_revision: v0.7
+current_base: backend.knowledge.models.Base
+current_migration_owner: backend.schema_migrations
+target_session_factories:
+  harness: HarnessSessionFactory
+  platform: KnowledgeSessionFactory
+  rule: "No cross-Base ORM relationship, FK, or transaction."
+tables:
+  - {table: knowledge_bases, model: KnowledgeBase, owner: puddingknowledge, target_base: knowledge, migration: extract, rollback: legacy_read_only}
+  - {table: knowledge_documents, model: KnowledgeDocument, owner: puddingknowledge, target_base: knowledge, migration: extract, rollback: legacy_read_only}
+  - {table: knowledge_source_connections, model: KnowledgeSourceConnection, owner: puddingknowledge, target_base: knowledge, migration: extract, rollback: legacy_read_only}
+  - {table: knowledge_source_items, model: KnowledgeSourceItem, owner: puddingknowledge, target_base: knowledge, migration: extract, rollback: legacy_read_only}
+  - {table: knowledge_sync_runs, model: KnowledgeSyncRun, owner: puddingknowledge, target_base: knowledge, migration: extract, rollback: legacy_read_only}
+  - {table: feishu_app_credentials, model: FeishuAppCredential, owner: puddingknowledge, target_base: knowledge, migration: secret_ref_rebind, rollback: legacy_read_only}
+  - {table: feishu_user_grants, model: FeishuUserGrant, owner: puddingknowledge, target_base: knowledge, migration: secret_ref_rebind, rollback: legacy_read_only}
+  - {table: feishu_oauth_sessions, model: FeishuOAuthSession, owner: puddingknowledge, target_base: knowledge, migration: expire_and_rebind, rollback: legacy_read_only}
+  - {table: read_later_items, model: ReadLaterItem, owner: puddingknowledge, target_base: knowledge, migration: extract, rollback: legacy_read_only}
+  - {table: knowledge_database_sources, model: KnowledgeDatabaseSource, owner: puddingknowledge, target_base: knowledge, migration: split_secret_ref, rollback: legacy_read_only}
+  - {table: knowledge_table_assets, model: KnowledgeTableAsset, owner: puddingknowledge, target_base: knowledge, migration: extract, rollback: legacy_read_only}
+  - {table: analytics_query_results, model: AnalyticsQueryResult, owner: puddingknowledge, target_base: knowledge, migration: rename_to_query_result, rollback: legacy_read_only}
+  - {table: knowledge_import_jobs, model: KnowledgeImportJob, owner: puddingknowledge, target_base: knowledge, migration: extract_with_lease, rollback: legacy_read_only}
+  - {table: knowledge_import_events, model: KnowledgeImportEvent, owner: puddingknowledge, target_base: knowledge, migration: extract, rollback: legacy_read_only}
+  - {table: semantic_dimension_build_jobs, model: SemanticDimensionBuildJob, owner: puddingknowledge, target_base: knowledge, migration: extract_without_session_identity, rollback: legacy_read_only}
+  - {table: semantic_dimension_build_events, model: SemanticDimensionBuildEvent, owner: puddingknowledge, target_base: knowledge, migration: extract, rollback: legacy_read_only}
+  - {table: worker_access_logs, model: WorkerAccessLog, owner: puddingharness, target_base: harness, migration: retain_and_remove_from_platform_catalog, rollback: legacy_read_write}
+  - {table: task_notifications, model: TaskNotification, owner: split, target_base: event_contract, migration: publish_platform_event_consumer, rollback: legacy_read_only}
+foreign_key_policy:
+  current: "Inventory current FK graph before any move."
+  target: "Only intra-owner FK; cross-owner references become stable IDs/URIs with application-level validation."
+verification:
+  row_counts: required
+  primary_key_sets: required
+  normalized_content_digests: required
+  foreign_key_integrity: required
+  file_reference_reachability: required
+  lease_state: required
+  secret_redaction: required
+  active_revision_switch: "single compare-and-swap pointer; never multi-process environment edits"
+status: rehearsal-slices-implemented-production-migration-open
+implemented_target_tables:
+  - {source_table: knowledge_bases, target_table: knowledge_spaces, schema_version: 1}
+  - {source_table: knowledge_documents, target_table: knowledge_assets, schema_version: 1}
+  - {source_table: knowledge_source_connections, target_table: knowledge_connectors, schema_version: 1}
+  - {source_table: knowledge_source_items, target_table: knowledge_source_items, schema_version: 1}
+  - {source_table: knowledge_sync_runs, target_table: knowledge_sync_runs, schema_version: 1}
+  - {source_table: feishu_app_credentials, target_table: knowledge_credentials, schema_version: 2}
+  - {source_table: feishu_user_grants, target_table: knowledge_credential_grants, schema_version: 2}
+  - {source_table: feishu_oauth_sessions, target_table: knowledge_oauth_sessions, schema_version: 2}
+  - {source_table: read_later_items, target_table: knowledge_web_captures, schema_version: 3}
+  - {source_table: knowledge_database_sources, target_table: knowledge_database_connectors, schema_version: 8}
+  - {source_table: knowledge_table_assets, target_table: knowledge_structured_assets, schema_version: 4}
+  - {source_table: analytics_query_results, target_table: knowledge_query_results, schema_version: 5}
+  - {source_table: knowledge_import_jobs, target_table: knowledge_processing_jobs, schema_version: 6}
+  - {source_table: knowledge_import_events, target_table: knowledge_processing_events, schema_version: 6}
+  - {source_table: semantic_dimension_build_jobs, target_table: knowledge_authoring_jobs, schema_version: 7}
+  - {source_table: semantic_dimension_build_events, target_table: knowledge_authoring_events, schema_version: 7}
+  - {source_table: task_notifications, target_table: knowledge_notification_events, schema_version: 9}
+  - {source_table: task_notifications, target_table: knowledge_notification_event_scopes, schema_version: 11}

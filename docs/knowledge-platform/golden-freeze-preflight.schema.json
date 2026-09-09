@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingai.local/schemas/golden-freeze-preflight.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "status", "activation_allowed", "execution_allowed", "manifest", "source_snapshot", "worktree", "summary", "policy"],
+  "properties": {
+    "format": {"const": "agent-native-knowledge-platform-golden-freeze-preflight/v1"},
+    "status": {"enum": ["PHASE0A_GOLDEN_FREEZE_PREFLIGHT_READY_NOT_FROZEN", "PHASE0A_GOLDEN_FREEZE_PREFLIGHT_BLOCKED"]},
+    "activation_allowed": {"const": false},
+    "execution_allowed": {"const": false},
+    "manifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sha256", "status", "frozen", "capability_count", "incomplete_capability_count"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "status": {"enum": ["capture-required", "frozen"]},
+        "frozen": {"type": "boolean"},
+        "capability_count": {"type": "integer", "minimum": 1},
+        "incomplete_capability_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "source_snapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["captured", "declared_sha256", "actual_sha256", "repository_revision", "worktree_clean", "raw_contents_included", "observation_only"],
+      "properties": {
+        "captured": {"type": "boolean"},
+        "declared_sha256": {"oneOf": [{"const": "pending"}, {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}]},
+        "actual_sha256": {"oneOf": [{"const": "unavailable"}, {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}]},
+        "repository_revision": {"oneOf": [{"const": "unavailable"}, {"type": "string", "pattern": "^[0-9a-f]{40}$"}]},
+        "worktree_clean": {"type": "boolean"},
+        "raw_contents_included": {"const": false},
+        "observation_only": {"const": true}
+      }
+    },
+    "worktree": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dirty_entry_count", "status_sha256"],
+      "properties": {
+        "dirty_entry_count": {"type": "integer", "minimum": 0},
+        "status_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "summary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["blocker_count", "blockers", "freeze_allowed"],
+      "properties": {
+        "blocker_count": {"type": "integer", "minimum": 0},
+        "blockers": {"type": "array", "items": {"type": "string", "pattern": "^[a-z_]+$"}},
+        "freeze_allowed": {"type": "boolean"}
+      }
+    },
+    "policy": {"type": "string", "minLength": 1}
+  }
+}

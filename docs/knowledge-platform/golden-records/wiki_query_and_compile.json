@@ -1,0 +1,269 @@
+{
+  "capability_id": "wiki_query_and_compile",
+  "database_side_effects": {
+    "business_rows_written": 0,
+    "catalog_used": false
+  },
+  "evidence": {
+    "failure_checks": {
+      "bundle_mismatch": {
+        "error": "Schema Bundle changed since the Ingest context was loaded",
+        "status": "rejected"
+      }
+    },
+    "implementation_dependencies": [
+      {
+        "content_digest": "sha256:8ebd828dff38cf7a3774fe2808686abc19bacbef959fd2b043450b06886f2873",
+        "path": "backend/scripts/phase0a_wiki_query_compile_observer.py"
+      },
+      {
+        "content_digest": "sha256:90b9c97752d5949be5deb0836d94dab47d78ae1530a35e188c80ac246757961c",
+        "path": "backend/knowledge/llm_wiki.py"
+      },
+      {
+        "content_digest": "sha256:14e2d7c41a9741352e92627399b654e912884321d5ff831147c2c54ab164ff05",
+        "path": "backend/knowledge/brain_schema.py"
+      },
+      {
+        "content_digest": "sha256:85abc5f800ba988c6776f34ce6956d15335c4969a094468a09c4e92bc1de1f54",
+        "path": "backend/tools/llm_wiki_tools.py"
+      },
+      {
+        "content_digest": "sha256:ac471c30d5baa71a734a8fc87e4a130428c516afb2d4ca51d9fec650ae52f18e",
+        "path": "backend/knowledge/llm_wiki_compiler_agent.py"
+      }
+    ],
+    "published_page_path": "concepts/hybrid-retrieval.md",
+    "query_state_unchanged": true,
+    "raw_snapshot_digest": "91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+    "raw_snapshot_path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md",
+    "rejected_publish_state_unchanged": true,
+    "retrieval_mode": "lexical",
+    "schema_bundle_hash": "1346d9974c9fb742d668b89cbe82c9a5f82087133c132d470146809940601ee8",
+    "source_policy": "wiki-only"
+  },
+  "failure_semantics": "missing_query->knowledge_gap; bundle_mismatch->publish_rejected; valid_raw->published_and_queryable",
+  "filesystem_side_effects": {
+    "after_compile": {
+      "index_digest": "sha256:bdb4f665b5f2c08abbd033e45fb9f6f975ad50cb430bfd6e38e886fc70344748",
+      "raw_files": [
+        {
+          "bytes": 87,
+          "content_digest": "sha256:91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+          "path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md"
+        }
+      ],
+      "raw_records": [
+        {
+          "asset_id": "retrieval-note",
+          "bundle_hash": "1346d9974c9fb742d668b89cbe82c9a5f82087133c132d470146809940601ee8",
+          "sha256": "91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+          "size_bytes": 87,
+          "snapshot_path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md",
+          "source_id": "kb_golden_wiki",
+          "source_path": "<path-redacted>",
+          "title": "Hybrid retrieval note"
+        }
+      ],
+      "wiki_pages": [
+        {
+          "bytes": 281,
+          "content_digest": "sha256:acfe6cc3b83d594c12cb2a896c7dbefbcfd3d9be2e83d8729bc9b1dd698169e9",
+          "path": "concepts/hybrid-retrieval.md"
+        }
+      ]
+    },
+    "after_raw_snapshot": {
+      "index_digest": "sha256:09900b192a47c2c0ce309c3e688ba52752984e3a379c879d9101c1f8fbb6cc8e",
+      "raw_files": [
+        {
+          "bytes": 87,
+          "content_digest": "sha256:91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+          "path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md"
+        }
+      ],
+      "raw_records": [
+        {
+          "asset_id": "retrieval-note",
+          "bundle_hash": "1346d9974c9fb742d668b89cbe82c9a5f82087133c132d470146809940601ee8",
+          "sha256": "91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+          "size_bytes": 87,
+          "snapshot_path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md",
+          "source_id": "kb_golden_wiki",
+          "source_path": "<path-redacted>",
+          "title": "Hybrid retrieval note"
+        }
+      ],
+      "wiki_pages": []
+    },
+    "after_rejected_publish": {
+      "index_digest": "sha256:bdb4f665b5f2c08abbd033e45fb9f6f975ad50cb430bfd6e38e886fc70344748",
+      "raw_files": [
+        {
+          "bytes": 87,
+          "content_digest": "sha256:91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+          "path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md"
+        }
+      ],
+      "raw_records": [
+        {
+          "asset_id": "retrieval-note",
+          "bundle_hash": "1346d9974c9fb742d668b89cbe82c9a5f82087133c132d470146809940601ee8",
+          "sha256": "91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+          "size_bytes": 87,
+          "snapshot_path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md",
+          "source_id": "kb_golden_wiki",
+          "source_path": "<path-redacted>",
+          "title": "Hybrid retrieval note"
+        }
+      ],
+      "wiki_pages": [
+        {
+          "bytes": 281,
+          "content_digest": "sha256:acfe6cc3b83d594c12cb2a896c7dbefbcfd3d9be2e83d8729bc9b1dd698169e9",
+          "path": "concepts/hybrid-retrieval.md"
+        }
+      ]
+    },
+    "before": {
+      "index_digest": "sha256:09900b192a47c2c0ce309c3e688ba52752984e3a379c879d9101c1f8fbb6cc8e",
+      "raw_files": [],
+      "raw_records": [],
+      "wiki_pages": []
+    },
+    "business_writes": [
+      "raw/kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md",
+      "wiki/concepts/hybrid-retrieval.md"
+    ],
+    "query_after": {
+      "index_digest": "sha256:bdb4f665b5f2c08abbd033e45fb9f6f975ad50cb430bfd6e38e886fc70344748",
+      "raw_files": [
+        {
+          "bytes": 87,
+          "content_digest": "sha256:91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+          "path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md"
+        }
+      ],
+      "raw_records": [
+        {
+          "asset_id": "retrieval-note",
+          "bundle_hash": "1346d9974c9fb742d668b89cbe82c9a5f82087133c132d470146809940601ee8",
+          "sha256": "91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+          "size_bytes": 87,
+          "snapshot_path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md",
+          "source_id": "kb_golden_wiki",
+          "source_path": "<path-redacted>",
+          "title": "Hybrid retrieval note"
+        }
+      ],
+      "wiki_pages": [
+        {
+          "bytes": 281,
+          "content_digest": "sha256:acfe6cc3b83d594c12cb2a896c7dbefbcfd3d9be2e83d8729bc9b1dd698169e9",
+          "path": "concepts/hybrid-retrieval.md"
+        }
+      ]
+    },
+    "query_before": {
+      "index_digest": "sha256:bdb4f665b5f2c08abbd033e45fb9f6f975ad50cb430bfd6e38e886fc70344748",
+      "raw_files": [
+        {
+          "bytes": 87,
+          "content_digest": "sha256:91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+          "path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md"
+        }
+      ],
+      "raw_records": [
+        {
+          "asset_id": "retrieval-note",
+          "bundle_hash": "1346d9974c9fb742d668b89cbe82c9a5f82087133c132d470146809940601ee8",
+          "sha256": "91d52e42b52408ba9c8f48d4e88df4d9afff7c5cc8996078ae937208de227966",
+          "size_bytes": 87,
+          "snapshot_path": "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md",
+          "source_id": "kb_golden_wiki",
+          "source_path": "<path-redacted>",
+          "title": "Hybrid retrieval note"
+        }
+      ],
+      "wiki_pages": [
+        {
+          "bytes": 281,
+          "content_digest": "sha256:acfe6cc3b83d594c12cb2a896c7dbefbcfd3d9be2e83d8729bc9b1dd698169e9",
+          "path": "concepts/hybrid-retrieval.md"
+        }
+      ]
+    }
+  },
+  "format": "agent-knowledge-platform-golden-baseline-record/v1",
+  "provider_revision": "legacy-llm-wiki-query-publish-v1",
+  "result": {
+    "compile": {
+      "lint_counts": {
+        "errors": 0,
+        "pages": 1,
+        "warnings": 0
+      },
+      "lint_ok": true,
+      "pages": [
+        "concepts/hybrid-retrieval"
+      ],
+      "published": true
+    },
+    "missing_query": {
+      "knowledge_gap": true,
+      "pages": [],
+      "question": "完全不存在的火星术语",
+      "references": [],
+      "retrieval": {
+        "hybrid_enabled": false,
+        "keyword_candidates": 0,
+        "mode": "lexical",
+        "ranking_version": "lexical-v1",
+        "semantic_candidates": 0,
+        "semantic_error": null,
+        "semantic_used": false
+      },
+      "source_policy": "wiki-only"
+    },
+    "query": {
+      "knowledge_gap": false,
+      "pages": [
+        {
+          "content_digest": "sha256:acfe6cc3b83d594c12cb2a896c7dbefbcfd3d9be2e83d8729bc9b1dd698169e9",
+          "score": 7.0,
+          "slug": "concepts/hybrid-retrieval"
+        }
+      ],
+      "question": "semantic evidence retrieval",
+      "references": [
+        {
+          "excerpt": "# Hybrid Retrieval\n\nHybrid retrieval combines keyword evidence with semantic evidence.",
+          "score": 7.0,
+          "slug": "concepts/hybrid-retrieval",
+          "sources": [
+            "kb_golden_wiki-3d92479b65/retrieval-note-8822ccbf6b-91d52e42b524.md"
+          ],
+          "title": "Hybrid Retrieval",
+          "type": "concept",
+          "uri": "<path-redacted>"
+        }
+      ],
+      "retrieval": {
+        "hybrid_enabled": false,
+        "keyword_candidates": 1,
+        "mode": "lexical",
+        "ranking_version": "lexical-v1",
+        "semantic_candidates": 0,
+        "semantic_error": null,
+        "semantic_used": false
+      },
+      "source_policy": "wiki-only"
+    }
+  },
+  "sanitized_fixture_manifest": {
+    "fixtures": [
+      "docs/knowledge-platform/golden-fixtures/wiki_query_and_compile.json"
+    ]
+  },
+  "source_revision": "sha256:f370d7d3c1b4f34340832338fc194a5fb1141135df2598f1a828c1e258b1a11d"
+}

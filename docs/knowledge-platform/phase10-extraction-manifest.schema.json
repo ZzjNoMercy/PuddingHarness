@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingknowledge.dev/contracts/phase10-extraction-manifest/v1",
+  "title": "Agent-native Knowledge Platform Phase 10 extraction preflight manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "phase",
+    "status",
+    "executable",
+    "activation_allowed",
+    "source_repository",
+    "source_revision",
+    "source_tag",
+    "source_tag_signed",
+    "source_worktree_clean",
+    "extraction_method",
+    "extraction_tool_version",
+    "component_versions",
+    "artifact_digests",
+    "target_repositories",
+    "path_plans",
+    "mixed_file_paths",
+    "mixed_file_plans",
+    "missing_mixed_file_paths",
+    "phase_gate_statuses",
+    "phase_gate_blockers",
+    "unresolved_gates",
+    "manifest_digest",
+    "replay_consistent",
+    "path_resolution"
+  ],
+  "properties": {
+    "format": {
+      "const": "agent-knowledge-platform-phase10-extraction-manifest/v1"
+    },
+    "phase": {
+      "const": 10
+    },
+    "status": {
+      "const": "PHASE10_EXTRACTION_PREFLIGHT_NOT_EXECUTABLE"
+    },
+    "executable": {
+      "const": false
+    },
+    "activation_allowed": {
+      "const": false
+    },
+    "source_repository": {
+      "const": "PuddingClaw"
+    },
+    "source_revision": {
+      "$ref": "#/$defs/safeText"
+    },
+    "source_tag": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 256
+    },
+    "source_tag_signed": {
+      "type": "boolean"
+    },
+    "source_worktree_clean": {
+      "type": "boolean"
+    },
+    "extraction_method": {
+      "const": "git-filter-repo"
+    },
+    "extraction_tool_version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 512
+    },
+    "component_versions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/safeText"
+      }
+    },
+    "artifact_digests": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/digest"
+      }
+    },
+    "target_repositories": {
+      "const": [
+        "puddingknowledge",
+        "puddingharness"
+      ]
+    },
+    "path_plans": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/pathPlan"
+      }
+    },
+    "mixed_file_paths": {
+      "type": "array",
+      "minItems": 23,
+      "items": {
+        "$ref": "#/$defs/path"
+      }
+    },
+    "mixed_file_plans": {
+      "type": "array",
+      "minItems": 23,
+      "items": {
+        "$ref": "#/$defs/pathPlan"
+      }
+    },
+    "missing_mixed_file_paths": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/path"
+      }
+    },
+    "phase_gate_statuses": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    },
+    "phase_gate_blockers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/safeText"
+      }
+    },
+    "unresolved_gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/safeText"
+      }
+    },
+    "manifest_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "replay_consistent": {
+      "const": true
+    },
+    "path_resolution": {
+      "const": "mixed-exact-then-most-specific"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._*/-]+$"
+    },
+    "safeText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!.*(?:/Users/|/private/|file://|password=|secret=)).+$"
+    },
+    "pathPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "action",
+        "target",
+        "rule",
+        "preserve",
+        "exclude"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "action": {
+          "enum": [
+            "extract",
+            "retain",
+            "manual",
+            "preserve-legacy"
+          ]
+        },
+        "target": {
+          "enum": [
+            "puddingknowledge",
+            "puddingharness",
+            "shared-review",
+            "PuddingClaw"
+          ]
+        },
+        "rule": {
+          "$ref": "#/$defs/safeText"
+        },
+        "preserve": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/safeText"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/safeText"
+          }
+        }
+      }
+    }
+  }
+}

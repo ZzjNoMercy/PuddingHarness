@@ -1,0 +1,250 @@
+{
+  "capability_id": "database_nl2sql_and_readonly_execute",
+  "database_side_effects": {
+    "after": {
+      "content_digest": "sha256:f2fb74e6ced04f0611b86e45e059304856ef934595423d258eb1a2f562b59d90",
+      "rows": 3,
+      "table": "sales_facts"
+    },
+    "before": {
+      "content_digest": "sha256:f2fb74e6ced04f0611b86e45e059304856ef934595423d258eb1a2f562b59d90",
+      "rows": 3,
+      "table": "sales_facts"
+    },
+    "business_rows_written": 0,
+    "unchanged": true
+  },
+  "evidence": {
+    "failure_checks": {
+      "unregistered_table": {
+        "error": "SQL 引用了未授权数据表：other_facts",
+        "status": "rejected"
+      },
+      "write_statement": {
+        "error": "只允许执行 SELECT / WITH 查询。",
+        "status": "rejected"
+      }
+    },
+    "generated_sql": "SELECT brand, SUM(sales) AS total_sales FROM sales_facts GROUP BY brand ORDER BY total_sales DESC",
+    "implementation_dependencies": [
+      {
+        "content_digest": "sha256:9622095a863fb5ed39c003c17b7c003d9fa99db6ef648b241c73a82fe892d7dc",
+        "path": "backend/scripts/phase0a_database_nl2sql_observer.py"
+      },
+      {
+        "content_digest": "sha256:b0d8cc943133f0e75253c87e515667be3e2d89b81a6513aa423eca30be79cfa5",
+        "path": "backend/analytics/nl2sql/service.py"
+      },
+      {
+        "content_digest": "sha256:68725b28fff0f0c70961e44457303c056509194852b79aa79df72fa34d215506",
+        "path": "backend/analytics/nl2sql/sql_runner.py"
+      },
+      {
+        "content_digest": "sha256:12b18c63e278faf7fee58beba9a699a51a87a9a2b9d9a2f7ea174f78cb9917bf",
+        "path": "backend/analytics/nl2sql/schemas.py"
+      },
+      {
+        "content_digest": "sha256:44bdc355899479375b64b35df9f379ede3efd2174b8db8283d13075f6d7079b9",
+        "path": "backend/knowledge/database_sources.py"
+      }
+    ],
+    "production_source_registry": {
+      "sqlite_rejected": "暂不支持的数据源类型：sqlite",
+      "supported_types": [
+        "mysql",
+        "postgresql"
+      ],
+      "unchanged": true
+    },
+    "provider_calls": {
+      "max": 3,
+      "used": 2
+    },
+    "read_only_transaction_adapter": "test_only_sqlite_adapter_for_postgresql_session_controls",
+    "references_count": {
+      "ddl": 1,
+      "documentation": 1,
+      "sql_examples": 1
+    },
+    "validated_table_scope": [
+      "sales_facts"
+    ]
+  },
+  "failure_semantics": "unregistered_table->validation_rejected; write_statement->validation_rejected; valid_sql->complete_rows",
+  "filesystem_side_effects": {
+    "after": [
+      {
+        "bytes": 8192,
+        "content_digest": "sha256:0184bc0ab2c1afc1767f634d4e6d0947f2633840a17b322c51a50118e1144dad",
+        "path": "analytics.sqlite3"
+      }
+    ],
+    "before": [
+      {
+        "bytes": 8192,
+        "content_digest": "sha256:0184bc0ab2c1afc1767f634d4e6d0947f2633840a17b322c51a50118e1144dad",
+        "path": "analytics.sqlite3"
+      }
+    ],
+    "business_writes": [],
+    "fixture_root_unchanged": true
+  },
+  "format": "agent-knowledge-platform-golden-baseline-record/v1",
+  "provider_revision": "legacy-nl2sql-readonly-v1",
+  "result": {
+    "execution": {
+      "columns": [
+        "brand",
+        "total_sales"
+      ],
+      "is_complete": true,
+      "limited": false,
+      "omitted_count": 0,
+      "preview_count": 2,
+      "profile": {},
+      "row_count": 2,
+      "rows": [
+        {
+          "brand": "比亚迪",
+          "total_sales": 42
+        },
+        {
+          "brand": "蔚来",
+          "total_sales": 5
+        }
+      ],
+      "total_row_count": 2
+    },
+    "generation": {
+      "applied_rules": [],
+      "candidate_sql": "SELECT brand, SUM(sales) AS total_sales FROM sales_facts GROUP BY brand ORDER BY total_sales DESC",
+      "eav_evidence": {
+        "bindings": [],
+        "candidate_type_names": [],
+        "complete": true,
+        "final_type_names": [],
+        "live_inspection_count": 0,
+        "live_type_names": [],
+        "unsupported": [],
+        "vanna_type_names": []
+      },
+      "entity_authority": "database_entity_evidence_for_physical_facts",
+      "entity_evidence_count": 0,
+      "final_sql": "SELECT brand, SUM(sales) AS total_sales FROM sales_facts GROUP BY brand ORDER BY total_sales DESC",
+      "guardrail_rewrites": 0,
+      "llm_call_budget": {
+        "max": 3,
+        "used": 2
+      },
+      "permission_epoch": 1,
+      "profile_evidence_refs": [],
+      "retrieval_question": "按品牌汇总销量并按销量降序排列",
+      "semantic_asset_stale_candidates": [],
+      "semantic_refinement_applied": true,
+      "technical_repairs": 0
+    },
+    "question": "按品牌汇总销量并按销量降序排列",
+    "references": {
+      "ddl": {
+        "count": 1,
+        "items": [
+          "CREATE TABLE sales_facts (brand TEXT, sales INTEGER)"
+        ],
+        "omitted_count": 0,
+        "preview_count": 1
+      },
+      "documentation": {
+        "count": 1,
+        "items": [
+          "sales_facts.sales is the integer sales measure; brand is the grouping dimension."
+        ],
+        "omitted_count": 0,
+        "preview_count": 1
+      },
+      "eav_live_inspection": {
+        "candidate_type_names": [],
+        "final_type_names": [],
+        "rows": [],
+        "source": "live_database"
+      },
+      "entities": {
+        "groups": [],
+        "strategy": "per_type_top_k",
+        "top_k": {
+          "by_type": {},
+          "default": 10
+        },
+        "total": 0
+      },
+      "sql_examples": {
+        "count": 1,
+        "items": [
+          {
+            "question": "品牌销量汇总",
+            "sql": "SELECT brand, SUM(sales) FROM sales_facts GROUP BY brand"
+          }
+        ],
+        "omitted_count": 0,
+        "preview_count": 1
+      }
+    },
+    "route": {
+      "database_source_id": "dbs_golden_sql",
+      "dialect": "PostgreSQL",
+      "table_names": [
+        "sales_facts"
+      ]
+    },
+    "semantic_assets": {
+      "binding_hash": "sha256:b9a24eab12d67a5f7cd723212e4a0bbaa84a8fe24cb77068a057a9887c098183",
+      "matched": [
+        {
+          "id": "dimension:brand",
+          "match_score": 48.0,
+          "name": "品牌",
+          "type": "dimension"
+        },
+        {
+          "id": "measure:sales",
+          "match_score": 46.0,
+          "name": "销量",
+          "type": "measure"
+        },
+        {
+          "id": "dimension:vehicle_series",
+          "match_score": 16.0,
+          "name": "车系",
+          "type": "dimension"
+        },
+        {
+          "id": "measure:launch_cycle",
+          "match_score": 10.0,
+          "name": "上市周期",
+          "type": "measure"
+        },
+        {
+          "id": "measure:launch_update_count",
+          "match_score": 6.0,
+          "name": "更新次数",
+          "type": "measure"
+        }
+      ],
+      "matched_count": 5,
+      "resolution_mode": "fuzzy",
+      "semantic_context_hash": "sha256:f594491a8bdfe66a8ef7788b0491a23fb2033598e193bc393c6e673fb46f3635"
+    },
+    "source": {
+      "database": "golden",
+      "dialect": "PostgreSQL",
+      "id": "dbs_golden_sql",
+      "name": "Golden PostgreSQL source"
+    },
+    "sql": "SELECT brand, SUM(sales) AS total_sales FROM sales_facts GROUP BY brand ORDER BY total_sales DESC"
+  },
+  "sanitized_fixture_manifest": {
+    "fixtures": [
+      "docs/knowledge-platform/golden-fixtures/database_nl2sql_and_readonly_execute.json"
+    ]
+  },
+  "source_revision": "sha256:99af863efce00a9ffb7484ec5f81b72dd9c47b42b734aaa40e81e15c0538ef56"
+}

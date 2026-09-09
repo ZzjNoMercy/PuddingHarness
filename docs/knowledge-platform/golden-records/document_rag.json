@@ -1,0 +1,126 @@
+{
+  "capability_id": "document_rag",
+  "database_side_effects": {
+    "business_rows_written": 0,
+    "index_database_used": false
+  },
+  "evidence": {
+    "citation_source_type": "knowledge_base",
+    "citation_uri": "<path-redacted>",
+    "filesystem_unchanged": true,
+    "implementation_dependencies": [
+      {
+        "content_digest": "sha256:d9adf736319e717990b9503c0a504ffad45499bd5b4de9f97ea1b67148a7b654",
+        "path": "backend/scripts/phase0a_document_rag_observer.py"
+      },
+      {
+        "content_digest": "sha256:c8e93b5c82ae25c51b2c8c85d685b237fb2146ad855512c50e67c50158e7b42b",
+        "path": "backend/knowledge/indexer.py"
+      },
+      {
+        "content_digest": "sha256:6694e2b3368701e3a931a6165b4ac86e9d6c7d9bf9dfbeaebd76354353c47355",
+        "path": "backend/tools/search_knowledge_tool.py"
+      },
+      {
+        "content_digest": "sha256:6443db9c981eb135fc48dc184243edccf0b86036f9a020c8ccc83c383dfba849",
+        "path": "backend/graph/citations.py"
+      }
+    ],
+    "provider_boundary": "fixed_in_memory_local_retriever",
+    "provider_revision": "legacy-local-retriever-v1",
+    "raw_embeddings_recorded": false,
+    "virtual_path": "<path-redacted>"
+  },
+  "failure_semantics": "no_match->empty_sources; valid_query->citation_envelope",
+  "filesystem_side_effects": {
+    "after": [
+      {
+        "bytes": 165,
+        "content_digest": "sha256:f77e93a37cfbcd7c16dc196dfd81cfb32f9081a38f55de1b76cbe93601bf4115",
+        "path": "knowledge/imported/operating-policy.md"
+      }
+    ],
+    "before": [
+      {
+        "bytes": 165,
+        "content_digest": "sha256:f77e93a37cfbcd7c16dc196dfd81cfb32f9081a38f55de1b76cbe93601bf4115",
+        "path": "knowledge/imported/operating-policy.md"
+      }
+    ],
+    "business_writes": [],
+    "unchanged": true
+  },
+  "format": "agent-knowledge-platform-golden-baseline-record/v1",
+  "provider_revision": "legacy-document-rag-query-v1",
+  "result": {
+    "chunks": {
+      "chunk_count": 3,
+      "chunks": [
+        {
+          "header_path": "<path-redacted>",
+          "index": 1,
+          "level": "H1",
+          "linked_images": [],
+          "preview": "# Operating Policy",
+          "title": "Operating Policy",
+          "virtual_path": "<path-redacted>"
+        },
+        {
+          "header_path": "<path-redacted>",
+          "index": 2,
+          "level": "H2",
+          "linked_images": [],
+          "preview": "## Retention Policy The retention policy keeps published evidence for 30 days.",
+          "title": "Retention Policy",
+          "virtual_path": "<path-redacted>"
+        },
+        {
+          "header_path": "<path-redacted>",
+          "index": 3,
+          "level": "H2",
+          "linked_images": [],
+          "preview": "## Escalation Escalate unresolved incidents to the duty owner.",
+          "title": "Escalation",
+          "virtual_path": "<path-redacted>"
+        }
+      ],
+      "parser": "MarkdownNodeParser"
+    },
+    "missing_query": {
+      "answer_context": "未找到相关内容。",
+      "answer_context_digest": "sha256:187bddd5a86b3644414cfa1c66e28afd0a50f8c119c4e58bdc9686fbd873a3cd",
+      "source_count": 0,
+      "sources": []
+    },
+    "query": {
+      "answer_context": "## Retention Policy\n\nThe retention policy keeps published evidence for 30 days.",
+      "answer_context_digest": "sha256:d133df345871fad1184b836bb602c80e4244270ae20aaf85836b4f80b06e3bc6",
+      "source_count": 1,
+      "sources": [
+        {
+          "chunk_id": "chunk_retention_policy",
+          "document_id": "doc_golden_rag",
+          "metadata": {
+            "chunk_id": "chunk_retention_policy",
+            "document_id": "doc_golden_rag",
+            "file_name": "operating-policy.md",
+            "header_path": "Operating Policy > Retention Policy",
+            "modality": "text",
+            "virtual_path": "<path-redacted>"
+          },
+          "quote": "## Retention Policy\n\nThe retention policy keeps published evidence for 30 days.",
+          "source_id": "src_433cb9e1b11d3970",
+          "source_type": "knowledge_base",
+          "title": "operating-policy.md",
+          "uri": "<path-redacted>"
+        }
+      ]
+    }
+  },
+  "sanitized_fixture_manifest": {
+    "fixtures": [
+      "docs/knowledge-platform/golden-fixtures/document_rag.json"
+    ]
+  },
+  "source_revision": "sha256:0b07be09ae0b02a2b9eb1866bf5041f32a68ffc55f9d5e52807c85e6eb632c0c"
+}

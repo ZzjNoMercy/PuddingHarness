@@ -1,0 +1,19 @@
+{
+  "format": "agent-knowledge-platform-golden-fixture/semantic-assets-authoring/v1",
+  "sanitized": true,
+  "scenario": {
+    "logical_path": "semantic-assets/measures/golden-measure/measure.md",
+    "session_id": "session-golden-authoring",
+    "candidate_markdown": "---\nname: 成交均价\ndescription: 每个售出单位对应的净成交金额\naliases: [平均成交价, ASP]\ntags: [销售]\nversion: 0.1.0\n---\n\n# 成交均价\n\n## 业务含义\n\n成交均价表示每个售出单位对应的净成交金额。\n\n## 计算口径与颗粒度\n\n先汇总成交金额和销量，再计算 `SUM(成交金额) / SUM(销量)`。默认按车系颗粒度展示。\n\n## 数据来源\n\n成交金额和销量来自已确认的销售事实语义输入。\n\n## 业务规则\n\n销量为零时返回空值，退货按负数计入。币种与时间口径沿用输入数据，不跨币种或周期混算。\n重复事实按来源唯一键去重。\n\n## 验收案例\n\n- 正常示例：总成交金额除以总销量。\n- 边界示例：净销量为零时返回空值。\n- 反例：不得对行级价格直接取平均。\n",
+    "brief": {
+      "kind": "measure",
+      "goal": "定义成交均价",
+      "observed": ["销售事实提供成交金额和销量语义输入"],
+      "confirmed": ["先分别汇总成交金额和销量再相除", "销量为零返回空值"],
+      "unresolved": [],
+      "evidence": ["semantic-input:sales-facts"],
+      "reviewed_topics": ["business_meaning", "sources", "calculation", "grain", "rules", "unit_and_time", "duplicates", "examples"],
+      "body_outline": ["业务含义", "数据来源", "计算口径与颗粒度", "业务规则", "验收案例"]
+    }
+  }
+}

@@ -1,0 +1,261 @@
+{
+  "format": "agent-native-knowledge-platform-runtime-call-graph-report/v1",
+  "observation_only": true,
+  "probes": [
+    {
+      "edges": [
+        {
+          "callee_function": "claim_next",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "claim_next_job",
+          "caller_module": "knowledge.import_jobs"
+        },
+        {
+          "callee_function": "writes_allowed",
+          "callee_module": "runtime_control",
+          "caller_function": "claim_next_job",
+          "caller_module": "knowledge.import_jobs"
+        },
+        {
+          "callee_function": "require_lease",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "mark_job_failed",
+          "caller_module": "knowledge.import_jobs"
+        },
+        {
+          "callee_function": "assert_writes_allowed",
+          "callee_module": "runtime_control",
+          "caller_function": "retry_import_job",
+          "caller_module": "knowledge.import_jobs"
+        },
+        {
+          "callee_function": "claim_next",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "claim_next_semantic_dimension_build_job",
+          "caller_module": "knowledge.semantic_dimension_jobs"
+        },
+        {
+          "callee_function": "writes_allowed",
+          "callee_module": "runtime_control",
+          "caller_function": "claim_next_semantic_dimension_build_job",
+          "caller_module": "knowledge.semantic_dimension_jobs"
+        },
+        {
+          "callee_function": "observe",
+          "callee_module": "scripts.phase0a_lease_jobs_observer",
+          "caller_function": "capture_runtime_call_graph",
+          "caller_module": "knowledge_platform.baseline.runtime_graph"
+        },
+        {
+          "callee_function": "db_now_expr",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "_ensure_row",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "db_lease_expiry_expr",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "acquire_maintenance",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "db_now_expr",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "acquire_maintenance",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "lease_bind_params",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "acquire_maintenance",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "db_lease_expiry_expr",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "enter_maintenance",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "db_now_expr",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "enter_maintenance",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "lease_bind_params",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "enter_maintenance",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "db_now_expr",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "release_maintenance",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "db_lease_expiry_expr",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "renew_maintenance",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "db_now_expr",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "renew_maintenance",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "lease_bind_params",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "renew_maintenance",
+          "caller_module": "runtime_control"
+        },
+        {
+          "callee_function": "claim_next_job",
+          "callee_module": "knowledge.import_jobs",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "get_import_job",
+          "callee_module": "knowledge.import_jobs",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "mark_job_failed",
+          "callee_module": "knowledge.import_jobs",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "retry_import_job",
+          "callee_module": "knowledge.import_jobs",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "heartbeat",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "require_lease",
+          "callee_module": "knowledge.queue_repository",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "claim_next_semantic_dimension_build_job",
+          "callee_module": "knowledge.semantic_dimension_jobs",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "acquire_maintenance",
+          "callee_module": "runtime_control",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "enter_maintenance",
+          "callee_module": "runtime_control",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "release_maintenance",
+          "callee_module": "runtime_control",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "renew_maintenance",
+          "callee_module": "runtime_control",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        },
+        {
+          "callee_function": "writes_allowed",
+          "callee_module": "runtime_control",
+          "caller_function": "_observe",
+          "caller_module": "scripts.phase0a_lease_jobs_observer"
+        }
+      ],
+      "format": "agent-knowledge-platform-runtime-call-graph/v1",
+      "graph_digest": "sha256:1f9e0d83fce37f88a7f3c12fedad176c0f6bff3110bf966414ed40cd2cb5d1d4",
+      "loaded_modules": [
+        "analytics",
+        "analytics.nl2sql",
+        "analytics.nl2sql.entity_candidates",
+        "analytics.nl2sql.improve",
+        "analytics.nl2sql.improve.clients",
+        "analytics.nl2sql.improve.clients.embedding_providers",
+        "analytics.nl2sql.improve.clients.vanna_client",
+        "analytics.nl2sql.runtime",
+        "analytics.nl2sql.training",
+        "analytics.semantic_assets",
+        "analytics.semantic_assets.registry",
+        "knowledge",
+        "knowledge.database_sources",
+        "knowledge.import_jobs",
+        "knowledge.indexer",
+        "knowledge.mineru_client",
+        "knowledge.models",
+        "knowledge.parsers",
+        "knowledge.parsers.cloud_common",
+        "knowledge.parsers.contracts",
+        "knowledge.parsers.dependency_installer",
+        "knowledge.parsers.llama_parse_cloud",
+        "knowledge.parsers.llamaindex_reader",
+        "knowledge.parsers.mineru_cloud",
+        "knowledge.parsers.mineru_local",
+        "knowledge.parsers.native_file",
+        "knowledge.parsers.registry",
+        "knowledge.parsers.unstructured_local",
+        "knowledge.paths",
+        "knowledge.queue_repository",
+        "knowledge.semantic_dimension_jobs",
+        "knowledge.service",
+        "knowledge_platform",
+        "knowledge_platform.baseline",
+        "knowledge_platform.baseline.fixtures",
+        "knowledge_platform.baseline.normalizer",
+        "knowledge_platform.baseline.runtime_graph",
+        "knowledge_platform.baseline.runtime_registry",
+        "knowledge_platform.baseline.snapshot",
+        "runtime_control",
+        "scripts",
+        "scripts.phase0a_lease_jobs_observer",
+        "vanna",
+        "vanna.base",
+        "vanna.base.base",
+        "vanna.exceptions",
+        "vanna.milvus",
+        "vanna.milvus.milvus_vector",
+        "vanna.openai",
+        "vanna.openai.openai_chat",
+        "vanna.openai.openai_embeddings",
+        "vanna.types",
+        "vanna.utils"
+      ],
+      "module_prefixes": [
+        "analytics",
+        "catalog_migration",
+        "graph",
+        "knowledge",
+        "knowledge_contracts",
+        "knowledge_platform",
+        "runtime_control",
+        "scripts",
+        "tools",
+        "vanna"
+      ],
+      "observation_only": true,
+      "probe_reference": "scripts.phase0a_lease_jobs_observer:observe"
+    }
+  ]
+}

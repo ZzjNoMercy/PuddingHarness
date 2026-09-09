@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingknowledge.dev/contracts/phase10-platform-dependency-closure-shadow/v1",
+  "title": "Agent-native Knowledge Platform Phase 10 static dependency closure shadow",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "status",
+    "activation_allowed",
+    "execution_allowed",
+    "source_roots",
+    "scanned_file_count",
+    "import_edge_count",
+    "local_edge_count",
+    "external_import_roots",
+    "findings",
+    "finding_count",
+    "replay_consistent",
+    "dependency_resolution",
+    "network_contacted",
+    "independent_repository_verified",
+    "runtime_dependencies_verified",
+    "scope",
+    "report_digest"
+  ],
+  "properties": {
+    "format": { "const": "agent-knowledge-platform-phase10-platform-dependency-closure/v1" },
+    "status": {
+      "enum": [
+        "PHASE10_PLATFORM_DEPENDENCY_CLOSURE_SHADOW_PASS_NOT_ACTIVATABLE",
+        "PHASE10_PLATFORM_DEPENDENCY_CLOSURE_SHADOW_BLOCKED"
+      ]
+    },
+    "activation_allowed": { "const": false },
+    "execution_allowed": { "const": false },
+    "source_roots": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "path"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+          "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._*/-]+$" }
+        }
+      }
+    },
+    "scanned_file_count": { "type": "integer", "minimum": 1 },
+    "import_edge_count": { "type": "integer", "minimum": 0 },
+    "local_edge_count": { "type": "integer", "minimum": 0 },
+    "external_import_roots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["root", "edge_count"],
+        "properties": {
+          "root": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+          "edge_count": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "line", "rule_id", "target"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$" },
+          "line": { "type": "integer", "minimum": 1 },
+          "rule_id": { "enum": ["forbidden_import", "unresolved_local_import"] },
+          "target": { "type": "string", "pattern": "^[A-Za-z0-9_.]+$" }
+        }
+      }
+    },
+    "finding_count": { "type": "integer", "minimum": 0 },
+    "replay_consistent": { "type": "boolean" },
+    "dependency_resolution": { "const": "static_imports_only" },
+    "network_contacted": { "const": false },
+    "independent_repository_verified": { "const": false },
+    "runtime_dependencies_verified": { "const": false },
+    "scope": { "type": "string", "const": "same-checkout AST import closure only; versions, lockfiles, runtime loading, and release proof are pending" },
+    "report_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

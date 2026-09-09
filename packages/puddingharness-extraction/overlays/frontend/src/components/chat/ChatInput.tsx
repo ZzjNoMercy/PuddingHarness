@@ -1,0 +1,1428 @@
+/* Target Harness ChatInput overlay: generic attachments, Goal, review, and HITL controls. */
+"use client";
+
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  FolderKanban,
+  FolderPlus,
+  Square,
+  XCircle,
+  Activity,
+  Brain,
+  FileArchive,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  ImagePlus,
+  Paperclip,
+  Plus,
+  ShieldCheck,
+  Target,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { useApp } from "@/lib/store";
+import {
+  isSessionSubmitting,
+  rebindSessionScopedLock,
+} from "@/lib/sessionConcurrency";
+import { useProjectFolderPicker } from "@/components/projects/useProjectFolderPicker";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import {
+  listSkills,
+  getSessionTokenCount,
+  uploadAgentAttachments,
+  type AgentAttachment,
+  type ApprovalMode,
+  type RunReviewPolicy,
+} from "@/lib/api";
+import {
+  getProviders,
+  type ProviderRegistry,
+  type ThinkingLevel,
+} from "@/lib/settingsApi";
+
+function formatTokens(n: number): string {
+  return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k`;
+}
+
+function formatContextPercentage(percentage: number, used: number): string {
+  if (used > 0 && percentage < 1) return "<1%";
+  return `${percentage.toFixed(0)}%`;
+}
+import SlashCommandMenu from "./SlashCommandMenu";
+
+type AttachmentKind = AgentAttachment["type"];
+type OpenPopover = null | "plus" | "project" | "approval" | "llm" | "review-policy";
+type SelectedSkillHint = { name: string; start: number; end: number };
+
+const thinkingLevelLabels: Record<ThinkingLevel, string> = {
+  low: "低",
+  high: "高",
+  max: "最大",
+};
+
+const terminalRunStatuses = new Set([
+  "completed",
+  "cancelled",
+  "failed",
+  "blocked",
+  "budget_exceeded",
+  "verification_failed",
+]);
+
+function formatFileSize(size?: number): string {
+  if (!size) return "";
+  if (size < 1024) return `${size}B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)}KB`;
+  return `${(size / 1024 / 1024).toFixed(size < 10 * 1024 * 1024 ? 1 : 0)}MB`;
+}
+
+const attachmentStyles: Record<AttachmentKind, { cls: string; label: string; Icon: LucideIcon }> = {
+  image: {
+    cls: "border-[#002fa7]/15 bg-[#e8edff] text-[#002fa7]",
+    label: "图片",
+    Icon: FileImage,
+  },
+  pdf: {
+    cls: "border-rose-500/15 bg-rose-50 text-rose-700",
+    label: "PDF",
+    Icon: FileText,
+  },
+  spreadsheet: {
+    cls: "border-emerald-500/15 bg-emerald-50 text-emerald-700",
+    label: "表格",
+    Icon: FileSpreadsheet,
+  },
+  markdown: {
+    cls: "border-violet-500/15 bg-violet-50 text-violet-700",
+    label: "MD",
+    Icon: FileText,
+  },
+  text: {
+    cls: "border-sky-500/15 bg-sky-50 text-sky-700",
+    label: "文本",
+    Icon: FileText,
+  },
+  document: {
+    cls: "border-amber-500/15 bg-amber-50 text-amber-700",
+    label: "文档",
+    Icon: FileText,
+  },
+  file: {
+    cls: "border-slate-500/15 bg-slate-100 text-slate-700",
+    label: "文件",
+    Icon: FileArchive,
+  },
+};
+
+export default function ChatInput() {
+  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const {
+    sendMessage,
+    stopStreaming,
+    isStreaming,
+    isCompressing,
+    compactCurrentAgentSession,
+    sessionHistoryLoading,
+    sessionId,
+    setSessionId,
+    createSession,
+    messages,
+    contextUsage,
+    setContextUsage,
+    pendingInput,
+    setPendingInput,
+    getInputDraft,
+    setInputDraft,
+    runtimeMode,
+    runtimeReady,
+    projectsLoaded,
+    setRuntimeMode,
+    currentProjectId,
+    setCurrentProjectId,
+    projects,
+    registerProject,
+    trustProject,
+    llmModelId,
+    thinkingLevel,
+    credentialName,
+    setLlmSelection,
+      goalModeEnabled,
+    setGoalModeEnabled,
+    runReviewPolicy,
+    setRunReviewPolicy,
+    activeGoal,
+    cancelActiveGoal,
+    currentRun,
+    hasActiveRun,
+    approvalMode,
+    approvalModeSaving,
+    approvalModeError,
+    setApprovalMode,
+    setInspectorOpen,
+    setInspectorActiveTab,
+    activeAttachmentPreview,
+    closeAttachmentPreview,
+  } = useApp();
+  // Initialize from the per-session draft so typed text survives page
+  // navigation (the store outlives this component; local state does not).
+  const [text, setText] = useState(() => getInputDraft(sessionId));
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const runReviewPolicyLabel: Record<RunReviewPolicy, string> = {
+    off: "关闭",
+    shadow: "后台",
+    blocking_one_shot: "发布前",
+  };
+  const selectedRunReviewPolicyLabel = runReviewPolicy === null
+    ? "跟随设置"
+    : runReviewPolicyLabel[runReviewPolicy];
+  const controlsMenuRef = useRef<HTMLDivElement>(null);
+  const submitInFlightSessionsRef = useRef<Set<string>>(new Set());
+  const currentSessionIdRef = useRef(sessionId);
+  const contextUsageRequestRef = useRef(0);
+  const [openPopover, setOpenPopover] = useState<OpenPopover>(null);
+  const openPopoverRef = useRef<OpenPopover>(null);
+  const [submittingSessionIds, setSubmittingSessionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [inputError, setInputError] = useState<string | null>(null);
+  const [goalCancelPending, setGoalCancelPending] = useState(false);
+  const [goalCancelConfirmationOpen, setGoalCancelConfirmationOpen] = useState(false);
+  const [projectTrustConfirmationOpen, setProjectTrustConfirmationOpen] = useState(false);
+  const [projectTrustPending, setProjectTrustPending] = useState(false);
+  const [resumeAfterProjectTrust, setResumeAfterProjectTrust] = useState(false);
+  const isUploading = uploadingCount > 0;
+  const approvalLocked =
+    hasActiveRun ||
+    approvalModeSaving ||
+    Boolean(currentRun && !terminalRunStatuses.has(currentRun.status));
+  const isSubmitting = isSessionSubmitting(submittingSessionIds, sessionId);
+  const disabled = !projectsLoaded || sessionHistoryLoading || isStreaming || isCompressing || approvalModeSaving || isSubmitting || isUploading || currentRun?.status === "waiting_hitl";
+  const configurationBusy = isSubmitting || isUploading;
+  const [providerRegistry, setProviderRegistry] = useState<ProviderRegistry | null>(null);
+  const detectedImagePaths = useMemo(() => {
+    const matches = text.match(/(?:~|\/|[A-Za-z]:[\\/])(?:[^\s'"<>]|\\ )+\.(?:png|jpe?g|webp|gif|bmp|tiff?)/gi);
+    return Array.from(new Set(matches || [])).slice(0, 4);
+  }, [text]);
+
+  useEffect(() => {
+    currentSessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  // Attachment drafts are Session-owned. Never carry a selected/uploaded file
+  // into a different conversation when the user switches quickly.
+  useEffect(() => {
+    setAttachments([]);
+    setInputError(null);
+    if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+  }, [sessionId]);
+
+  // Per-session input draft: restore the target session's draft when
+  // switching sessions; otherwise persist every text change under the
+  // current session id. Cleared on send via setText("").
+  const draftSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (draftSessionRef.current === sessionId) {
+      setInputDraft(sessionId, text);
+      return;
+    }
+    draftSessionRef.current = sessionId;
+    setText(getInputDraft(sessionId));
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, text]);
+
+  // Fetch token count on mount, when the Session changes, during a long
+  // streaming Run as an SSE recovery path, and again after the Run finishes.
+  // Keep the same full-context definition as the live context_usage events:
+  // system prompt + messages + tool outputs (or the recorded runtime peak).
+  const refreshContextUsage = useCallback(() => {
+    if (!sessionId) return;
+    // Wait for the persisted workspace context to hydrate before querying the
+    // placeholder Session. Product conversations are always Agent-mode now.
+    if (sessionId === "default" && !runtimeReady) return;
+    const requestedSessionId = sessionId;
+    const requestId = contextUsageRequestRef.current + 1;
+    contextUsageRequestRef.current = requestId;
+    getSessionTokenCount(requestedSessionId, runtimeMode)
+      .then((data) => {
+        // Initial page restoration briefly mounts with the default session.
+        // Its slower response must never overwrite the token meter after the
+        // persisted real session has already been restored. The sequence check
+        // also prevents older same-session refreshes from winning a race.
+        if (
+          currentSessionIdRef.current !== requestedSessionId ||
+          contextUsageRequestRef.current !== requestId
+        ) {
+          return;
+        }
+        const used = data.total_tokens;
+        const total = data.compaction_trigger;
+        const percentage = Math.min(100, data.percentage);
+        setContextUsage({
+          used,
+          total,
+          percentage,
+          measured: data.measured,
+        });
+      })
+      .catch(() => {});
+  }, [runtimeMode, runtimeReady, sessionId, setContextUsage]);
+
+  useEffect(() => {
+    refreshContextUsage();
+  }, [refreshContextUsage]);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      refreshContextUsage();
+    }
+  }, [isStreaming, messages.length, refreshContextUsage]);
+
+  useEffect(() => {
+    if (!isStreaming) return;
+    // Live SSE is the fast path. This low-frequency refresh is the recovery
+    // path when a provider/runtime drops custom middleware events while a
+    // long-running Agent continues through multiple model/tool rounds.
+    refreshContextUsage();
+    const timer = window.setInterval(refreshContextUsage, 4000);
+    return () => window.clearInterval(timer);
+  }, [isStreaming, refreshContextUsage]);
+
+  // Slash command state
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashQuery, setSlashQuery] = useState("");
+  const [selectedMenuIndex, setSelectedMenuIndex] = useState(0);
+  const [skills, setSkills] = useState<Array<{ name: string; description: string }>>([]);
+  const selectedSkillHintsBySessionRef = useRef<Map<string, SelectedSkillHint[]>>(new Map());
+  // Track the position of the `/` that triggered the menu, for replacement on select
+  const slashStartPosRef = useRef<number>(-1);
+  // Pending cursor position to set after React re-render (fixes I-2: rAF race)
+  const pendingCursorRef = useRef<number | null>(null);
+
+  // Preload skills on mount
+  useEffect(() => {
+    listSkills().then(setSkills).catch(() => {});
+  }, []);
+
+  // Built-in lifecycle commands and installed Skills share one slash picker,
+  // but only Skill rows become backend skill_hints.
+  const filteredSlashItems = useMemo(
+    () => [
+      ...(runtimeMode === "agent"
+        ? [{
+            name: "compact",
+            description: "压缩 Agent 模型上下文；不删除聊天、Goal、Todo、Artifact 或 Evidence",
+            kind: "command" as const,
+          }]
+        : []),
+      ...skills.map((skill) => ({ ...skill, kind: "skill" as const })),
+    ].filter((item) =>
+      item.name.toLowerCase().includes(slashQuery) ||
+      item.description.toLowerCase().includes(slashQuery)
+    ),
+    [runtimeMode, skills, slashQuery]
+  );
+
+  // Ref to let global Escape handler know if slash menu is open (fixes I-2)
+  const showSlashMenuRef = useRef(false);
+  useEffect(() => { showSlashMenuRef.current = showSlashMenu; }, [showSlashMenu]);
+
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.project_id === currentProjectId) || null,
+    [projects, currentProjectId]
+  );
+  const conversationModels = useMemo(() => {
+    if (!providerRegistry) return [];
+    return providerRegistry.providers.flatMap((provider) =>
+      provider.models
+        .filter((model) => {
+          const endpoint = provider.endpoints.find((item) => item.id === model.endpoint_id);
+          return model.capability === "llm"
+            && model.categories?.includes("llm")
+            && Boolean(endpoint)
+            && provider.api_keys.some(
+              (credential) => credential.credential_configured && credential.credential_readable !== false,
+            );
+        })
+        .map((model) => ({ provider, model }))
+    );
+  }, [providerRegistry]);
+  const defaultConversationModel = useMemo(() => {
+    const defaultModelId = providerRegistry?.bindings.agent;
+    return conversationModels.find(({ model }) => model.id === defaultModelId)
+      || conversationModels[0]
+      || null;
+  }, [conversationModels, providerRegistry]);
+  const selectedConversationModel = useMemo(
+    () => conversationModels.find(({ model }) => model.id === llmModelId)
+      || defaultConversationModel,
+    [conversationModels, defaultConversationModel, llmModelId],
+  );
+  const selectedThinkingProfile = selectedConversationModel?.model.thinking_profile;
+  const effectiveThinkingLevel = thinkingLevel
+    ?? selectedThinkingProfile?.default_level
+    ?? null;
+  const selectedProviderCredentials = useMemo(
+    () => selectedConversationModel?.provider.api_keys.filter(
+      (item) => item.credential_configured && item.credential_readable !== false,
+    ) || [],
+    [selectedConversationModel],
+  );
+  const effectiveCredentialName = credentialName || "default";
+
+  useEffect(() => {
+    if (runtimeMode !== "agent") return;
+    const refreshProviderRegistry = () => {
+      getProviders()
+        .then((registry) => setProviderRegistry(registry))
+        .catch(() => setProviderRegistry(null));
+    };
+    refreshProviderRegistry();
+    window.addEventListener("puddingclaw:provider-bindings-changed", refreshProviderRegistry);
+    return () => {
+      window.removeEventListener("puddingclaw:provider-bindings-changed", refreshProviderRegistry);
+    };
+  }, [runtimeMode]);
+
+  useEffect(() => {
+    openPopoverRef.current = openPopover;
+    if (!openPopover) return;
+    const handler = (event: PointerEvent) => {
+      if (controlsMenuRef.current && !controlsMenuRef.current.contains(event.target as Node)) {
+        setOpenPopover(null);
+      }
+    };
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
+  }, [openPopover]);
+
+  const togglePopover = useCallback((popover: Exclude<OpenPopover, null>) => {
+    setShowSlashMenu(false);
+    setOpenPopover((current) => current === popover ? null : popover);
+  }, []);
+
+  // Track IME composition so Enter to confirm pinyin/hiragana doesn't submit (fixes IME-1)
+  const isComposingRef = useRef(false);
+
+  // Prefill input from external actions (e.g. "create skill" button in /skills)
+  useEffect(() => {
+    if (pendingInput && textareaRef.current) {
+      setText(pendingInput);
+      setPendingInput(null);
+      textareaRef.current.focus();
+      // Auto-resize to fit prefilled text
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [pendingInput, setPendingInput]);
+
+  // Apply pending cursor position after React re-renders textarea with new text
+  useEffect(() => {
+    if (pendingCursorRef.current !== null && textareaRef.current) {
+      textareaRef.current.setSelectionRange(pendingCursorRef.current, pendingCursorRef.current);
+      pendingCursorRef.current = null;
+    }
+  }, [text]);
+
+  const executeCompactCommand = useCallback(async (
+    submittedText: string,
+    focus: string,
+  ) => {
+    if (runtimeMode !== "agent") {
+      setInputError("/compact 只适用于 Agent Session。");
+      return;
+    }
+    if (attachments.length > 0) {
+      setInputError("/compact 不接受附件；请先移除附件再执行。");
+      return;
+    }
+    const submittedSessionId = sessionId;
+    if (submitInFlightSessionsRef.current.has(submittedSessionId)) return;
+    submitInFlightSessionsRef.current.add(submittedSessionId);
+    setSubmittingSessionIds((current) => new Set(current).add(submittedSessionId));
+    // Treat a local lifecycle command like a sent message: clear it as soon as
+    // the request is accepted, then restore it only if compaction fails.
+    setText("");
+    selectedSkillHintsBySessionRef.current.delete(submittedSessionId);
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+    setInputError(null);
+    setOpenPopover(null);
+    setShowSlashMenu(false);
+    try {
+      await compactCurrentAgentSession(focus);
+      if (currentSessionIdRef.current === submittedSessionId) {
+        setText("");
+        setPendingInput(null);
+        selectedSkillHintsBySessionRef.current.delete(submittedSessionId);
+        if (textareaRef.current) textareaRef.current.style.height = "auto";
+      }
+    } catch (error) {
+      if (currentSessionIdRef.current === submittedSessionId) {
+        setText((current) => current || submittedText);
+        setInputError(error instanceof Error ? error.message : "Agent 上下文压缩失败。");
+      }
+    } finally {
+      submitInFlightSessionsRef.current.delete(submittedSessionId);
+      setSubmittingSessionIds((current) => {
+        const next = new Set(current);
+        next.delete(submittedSessionId);
+        return next;
+      });
+    }
+  }, [attachments.length, compactCurrentAgentSession, runtimeMode, sessionId, setPendingInput]);
+
+  const handleSubmit = useCallback(async () => {
+    if (
+      (!text.trim() && attachments.length === 0) ||
+      disabled ||
+      submitInFlightSessionsRef.current.has(sessionId)
+    ) return;
+    const submittedText = text;
+    const compactMatch = submittedText.trim().match(/^\/compact(?:\s+([\s\S]*))?$/i);
+    if (compactMatch) {
+      await executeCompactCommand(submittedText.trim(), compactMatch[1] || "");
+      return;
+    }
+    if (selectedProject && selectedProject.trust_state !== "trusted") {
+      setProjectTrustConfirmationOpen(true);
+      return;
+    }
+    const submittedAttachments = attachments;
+    const submittedSkillHintRecords = (
+      selectedSkillHintsBySessionRef.current.get(sessionId) || []
+    ).filter((hint) => text.slice(hint.start, hint.end) === `/${hint.name}`);
+    const submittedSkillHints = Array.from(
+      new Set(submittedSkillHintRecords.map((hint) => hint.name)),
+    );
+    const submittedSessionId = sessionId;
+    let trackedSubmissionSessionId = submittedSessionId;
+    submitInFlightSessionsRef.current.add(submittedSessionId);
+    setSubmittingSessionIds((current) => new Set(current).add(submittedSessionId));
+    setInputError(null);
+    setOpenPopover(null);
+    setText("");
+    selectedSkillHintsBySessionRef.current.delete(submittedSessionId);
+    setAttachments([]);
+    setPendingInput(null);
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+    if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    try {
+      const accepted = await sendMessage(submittedText.trim(), submittedAttachments, {
+        skillHints: submittedSkillHints,
+        onSessionResolved: (resolvedSessionId) => {
+          if (trackedSubmissionSessionId === resolvedSessionId) return;
+          const previousSessionId = trackedSubmissionSessionId;
+          trackedSubmissionSessionId = resolvedSessionId;
+          submitInFlightSessionsRef.current = rebindSessionScopedLock(
+            submitInFlightSessionsRef.current,
+            previousSessionId,
+            resolvedSessionId,
+          );
+          setSubmittingSessionIds((current) => rebindSessionScopedLock(
+            current,
+            previousSessionId,
+            resolvedSessionId,
+          ));
+        },
+      });
+      if (!accepted && currentSessionIdRef.current === submittedSessionId) {
+        setText((current) => current || submittedText);
+        setAttachments((current) => current.length > 0 ? current : submittedAttachments);
+        selectedSkillHintsBySessionRef.current.set(submittedSessionId, submittedSkillHintRecords);
+        setInputError("消息未发出，已恢复输入内容，请重试。");
+      }
+    } catch (error) {
+      if (currentSessionIdRef.current === submittedSessionId) {
+        setText((current) => current || submittedText);
+        setAttachments((current) => current.length > 0 ? current : submittedAttachments);
+        selectedSkillHintsBySessionRef.current.set(submittedSessionId, submittedSkillHintRecords);
+        setInputError(error instanceof Error ? error.message : "消息发送失败，已恢复输入内容。");
+      }
+    } finally {
+      submitInFlightSessionsRef.current.delete(trackedSubmissionSessionId);
+      setSubmittingSessionIds((current) => {
+        const next = new Set(current);
+        next.delete(trackedSubmissionSessionId);
+        return next;
+      });
+    }
+  }, [
+    attachments,
+    disabled,
+    executeCompactCommand,
+    selectedProject,
+    sendMessage,
+    sessionId,
+    setPendingInput,
+    text,
+  ]);
+
+  useEffect(() => {
+    if (!resumeAfterProjectTrust || selectedProject?.trust_state !== "trusted") return;
+    setResumeAfterProjectTrust(false);
+    void handleSubmit();
+  }, [handleSubmit, resumeAfterProjectTrust, selectedProject?.trust_state]);
+
+  const handleAttachmentFiles = useCallback(async (files: FileList | File[] | null, source: "upload" | "paste" = "upload") => {
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files).slice(0, 8);
+    setUploadingCount((count) => count + 1);
+    setInputError(null);
+    let targetSessionId = sessionId;
+    try {
+      targetSessionId = sessionId === "default" ? (await createSession() || "") : sessionId;
+      if (!targetSessionId) throw new Error("无法创建会话，附件尚未上传。");
+      const next = await uploadAgentAttachments(fileList, targetSessionId, source);
+      if (currentSessionIdRef.current !== targetSessionId) return;
+      setAttachments((current) => [...current, ...next].slice(0, 8));
+    } catch (error) {
+      if (currentSessionIdRef.current === targetSessionId) {
+        setInputError(error instanceof Error ? error.message : "附件上传失败，请重试。");
+      }
+    } finally {
+      setUploadingCount((count) => Math.max(0, count - 1));
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    }
+  }, [createSession, sessionId]);
+
+  const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.files || []);
+    const itemFiles = Array.from(event.clipboardData.items || [])
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+    const pastedFiles = files.length ? files : itemFiles;
+    if (pastedFiles.length === 0) return;
+    event.preventDefault();
+    void handleAttachmentFiles(pastedFiles, "paste");
+  }, [handleAttachmentFiles]);
+
+  const handleProjectPathSelected = useCallback(async (path: string) => {
+    const project = await registerProject(path.trim());
+    if (!project) {
+      return false;
+    }
+    setRuntimeMode("agent");
+    setCurrentProjectId(project.project_id);
+    setSessionId("default");
+    setOpenPopover(null);
+    return true;
+  }, [registerProject, setCurrentProjectId, setRuntimeMode, setSessionId]);
+
+  const { openProjectFolderPicker, projectFolderDialog } = useProjectFolderPicker({
+    onPathSelected: handleProjectPathSelected,
+  });
+
+  const handleRegisterProject = useCallback(async () => {
+    await openProjectFolderPicker();
+  }, [openProjectFolderPicker]);
+
+  const handleSlashSelect = useCallback((item: {
+    name: string;
+    kind: "command" | "skill";
+  }) => {
+    const skillName = item.name;
+    // Use textarea DOM value as source of truth to avoid stale closure (fixes I-1)
+    const currentText = textareaRef.current?.value ?? "";
+    const startPos = slashStartPosRef.current;
+    let insertedStart = 0;
+    let adjustedHints: SelectedSkillHint[] = [];
+    if (startPos >= 0) {
+      const cursorPos = textareaRef.current?.selectionStart ?? currentText.length;
+      const before = currentText.slice(0, startPos);
+      const after = currentText.slice(cursorPos);
+      const inserted = `/${skillName} `;
+      insertedStart = startPos;
+      const delta = inserted.length - (cursorPos - startPos);
+      adjustedHints = (selectedSkillHintsBySessionRef.current.get(sessionId) || []).flatMap((hint) => {
+        if (hint.end <= startPos) return [hint];
+        if (hint.start >= cursorPos) {
+          return [{ ...hint, start: hint.start + delta, end: hint.end + delta }];
+        }
+        return [];
+      });
+      const newText = before + inserted + after;
+      setText(newText);
+      // Schedule cursor placement after React re-render (fixes I-2)
+      pendingCursorRef.current = startPos + inserted.length;
+    } else {
+      setText(`/${skillName} `);
+    }
+    setShowSlashMenu(false);
+    selectedSkillHintsBySessionRef.current.set(
+      sessionId,
+      item.kind === "skill"
+        ? [
+            ...adjustedHints.filter((hint) => hint.name !== skillName),
+            { name: skillName, start: insertedStart, end: insertedStart + skillName.length + 1 },
+          ]
+        : adjustedHints,
+    );
+    slashStartPosRef.current = -1;
+    textareaRef.current?.focus();
+  }, [sessionId]);
+
+  // Escape closes the nearest transient UI before it can stop a Run.
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (activeAttachmentPreview?.sessionId === currentSessionIdRef.current) {
+        e.preventDefault();
+        closeAttachmentPreview();
+        setInspectorOpen(false);
+        return;
+      }
+      if (openPopoverRef.current) {
+        e.preventDefault();
+        setOpenPopover(null);
+        return;
+      }
+      if (isStreaming && !showSlashMenuRef.current) {
+        e.preventDefault();
+        stopStreaming();
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [activeAttachmentPreview, closeAttachmentPreview, isStreaming, setInspectorOpen, stopStreaming]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showSlashMenu) {
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedMenuIndex((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedMenuIndex((prev) => Math.min(prev + 1, Math.max(0, filteredSlashItems.length - 1)));
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (filteredSlashItems.length > 0) {
+          const idx = Math.min(selectedMenuIndex, filteredSlashItems.length - 1);
+          const item = filteredSlashItems[idx];
+          handleSlashSelect(item);
+          if (item.kind === "command" && item.name === "compact" && !disabled) {
+            void executeCompactCommand("/compact", "");
+          }
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowSlashMenu(false);
+        return;
+      }
+    }
+    // Original submit logic — ignore Enter while IME is composing so users can
+    // confirm candidate characters (or type English directly) without sending.
+    if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  const handleInput = () => {
+    const el = textareaRef.current;
+    if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 160) + "px"; }
+  };
+
+  return (
+    <>
+    <div className="relative z-30 px-3 pb-4 pt-2 sm:px-6">
+      <div className="glass-input relative mx-auto flex w-full max-w-[900px] flex-col gap-2 rounded-3xl px-3 py-3 transition-shadow hover:shadow-lg sm:px-4">
+        <SlashCommandMenu
+          visible={showSlashMenu}
+          filteredItems={filteredSlashItems}
+          selectedIndex={selectedMenuIndex}
+          onSelect={handleSlashSelect}
+          onClose={() => setShowSlashMenu(false)}
+        />
+        {(attachments.length > 0 || detectedImagePaths.length > 0) && (
+          <div className="flex flex-wrap gap-1.5 px-1">
+            {attachments.map((item, index) => (
+              <AttachmentChip
+                key={`${item.id || item.name || "attachment"}-${index}`}
+                item={item}
+                onRemove={() => setAttachments((current) => current.filter((_, i) => i !== index))}
+              />
+            ))}
+            {detectedImagePaths.map((path) => (
+              <span
+                key={path}
+                className="inline-flex max-w-[260px] items-center gap-1.5 rounded-full border border-emerald-500/10 bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-700"
+                title="后端会识别这个本地图片路径并传给多模态模型"
+              >
+                <ImagePlus className="h-3 w-3 shrink-0" />
+                <span className="truncate">本地图片：{path}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {(isUploading || inputError) && (
+          <div className="px-1 text-[11px]" aria-live="polite">
+            {isUploading && <span className="text-[#002fa7]">正在上传附件，请稍候…</span>}
+            {inputError && <span role="alert" className="text-rose-600">{inputError}</span>}
+          </div>
+        )}
+        <textarea
+          ref={textareaRef}
+          value={text}
+          onChange={(e) => {
+            const val = e.target.value;
+            const cursorPos = e.target.selectionStart ?? val.length;
+            setText(val);
+            handleInput();
+
+            // Slash command detection: scan backwards from cursor for `/`
+            // Trigger when `/` is at start of text or preceded by a space/newline,
+            // and there's no space between `/` and cursor (i.e. still typing the command name)
+            let slashPos = -1;
+            for (let i = cursorPos - 1; i >= 0; i--) {
+              const ch = val[i];
+              if (ch === " " || ch === "\n") break; // hit whitespace before finding `/`
+              if (ch === "/") {
+                // Valid if at start or preceded by space/newline
+               if (i === 0 || val[i - 1] === " " || val[i - 1] === "\n") {
+                 slashPos = i;
+               }
+               break;
+              }
+            }
+
+            if (slashPos >= 0) {
+              setOpenPopover(null);
+              const query = val.slice(slashPos + 1, cursorPos).toLowerCase();
+              setShowSlashMenu(true);
+              setSlashQuery(query);
+              setSelectedMenuIndex(0);
+              slashStartPosRef.current = slashPos;
+            } else {
+              setShowSlashMenu(false);
+              slashStartPosRef.current = -1;
+            }
+          }}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onCompositionStart={() => { isComposingRef.current = true; }}
+          onCompositionEnd={() => { isComposingRef.current = false; }}
+          placeholder="输入消息，或用 / 调用扩展能力"
+          rows={1}
+          className="max-h-40 min-h-12 w-full resize-none bg-transparent px-1 py-1 text-[14px] leading-relaxed outline-none placeholder:text-gray-400"
+        />
+
+        {runtimeMode === "agent" && (
+          <input
+            ref={attachmentInputRef}
+            type="file"
+            accept="image/*,.pdf,.md,.markdown,.txt,.csv,.tsv,.xls,.xlsx,.doc,.docx,.ppt,.pptx,.json,.yaml,.yml"
+            multiple
+            className="hidden"
+            onChange={(event) => handleAttachmentFiles(event.target.files, "upload")}
+          />
+        )}
+
+        <div
+          ref={controlsMenuRef}
+          className="relative flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+        >
+          <div className={`flex w-full min-w-0 flex-wrap items-center gap-1.5 sm:w-auto sm:flex-1 sm:gap-2 ${configurationBusy ? "pointer-events-none opacity-60" : ""}`}>
+            {runtimeMode === "agent" && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => togglePopover("plus")}
+                  aria-expanded={openPopover === "plus"}
+                  aria-haspopup="menu"
+                  aria-label="添加附件或目标"
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-all ${
+                    openPopover === "plus"
+                      ? "border-[#002fa7]/15 bg-[#e8edff] text-[#002fa7]"
+                      : "border-black/[0.06] bg-white/50 text-gray-600 hover:bg-white/80 hover:text-gray-950"
+                  }`}
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+
+                {openPopover === "plus" && (
+                  <div
+                    role="menu"
+                    className="absolute bottom-full left-0 z-50 mb-2 w-full max-w-[22rem] rounded-2xl border border-black/[0.10] bg-white p-2 shadow-2xl shadow-slate-900/15 animate-fade-in-scale"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setOpenPopover(null);
+                        attachmentInputRef.current?.click();
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] text-gray-700 hover:bg-black/[0.04]"
+                    >
+                      <Paperclip className="h-4 w-4" />
+                      <span className="flex-1">添加文件和图片</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={goalModeEnabled}
+                      onClick={() => {
+                        setOpenPopover(null);
+                        setGoalModeEnabled(!goalModeEnabled);
+                      }}
+                      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] hover:bg-black/[0.04] ${
+                        goalModeEnabled ? "text-emerald-700" : "text-gray-700"
+                      }`}
+                    >
+                      <Target className="h-4 w-4" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block">目标</span>
+                        <span className="block text-[11px] text-gray-400">
+                          {goalModeEnabled
+                            ? "下次发送将开启 Goal"
+                            : "默认关闭；仅对下次发送生效"}
+                        </span>
+                      </span>
+                      {goalModeEnabled && <Check className="h-4 w-4" />}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {runtimeMode === "agent" && (
+              <div className="relative">
+                <button
+                  type="button"
+                  disabled={goalModeEnabled}
+                  onClick={() => togglePopover("review-policy")}
+                  aria-expanded={openPopover === "review-policy"}
+                  aria-haspopup="menu"
+                  aria-label="选择普通 Run 质量复核"
+                  className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] transition-all ${
+                    goalModeEnabled
+                      ? "cursor-not-allowed border-black/[0.04] bg-black/[0.02] text-gray-300"
+                      : openPopover === "review-policy"
+                        ? "border-[#002fa7]/15 bg-[#e8edff] text-[#002fa7]"
+                        : "border-black/[0.06] bg-white/50 text-gray-600 hover:bg-white/80 hover:text-gray-950"
+                  }`}
+                  title={goalModeEnabled ? "Goal Run 不使用普通 Run 复核" : "普通 Run 质量复核"}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">复核 · {selectedRunReviewPolicyLabel}</span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                {openPopover === "review-policy" && !goalModeEnabled && (
+                  <div role="menu" className="absolute bottom-full left-0 z-50 mb-2 w-64 rounded-2xl border border-black/[0.10] bg-white p-2 shadow-2xl shadow-slate-900/15 animate-fade-in-scale">
+                    <div className="px-3 pb-2 pt-1.5">
+                      <p className="text-[12px] font-semibold text-gray-700">普通 Run 质量复核</p>
+                      <p className="mt-0.5 text-[11px] text-gray-400">仅对下次普通 Run 生效</p>
+                    </div>
+                    {([
+                      [null, "跟随设置", "使用设置页中的默认策略"],
+                      ["off", "关闭复核", "不进行独立质量复核"],
+                      ["shadow", "后台质量复核", "先发布回答，再异步核对"],
+                      ["blocking_one_shot", "发布前复核", "实验性：复核后再发布"],
+                    ] as Array<[RunReviewPolicy | null, string, string]>).map(([policy, label, description]) => (
+                      <button
+                        key={policy || "inherit"}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={runReviewPolicy === policy}
+                        onClick={() => {
+                          setRunReviewPolicy(policy);
+                          setOpenPopover(null);
+                        }}
+                        className={`flex w-full items-start gap-2 rounded-xl px-3 py-2 text-left ${runReviewPolicy === policy ? "bg-[#002fa7]/[0.07] text-[#002fa7]" : "text-gray-700 hover:bg-black/[0.04]"}`}
+                      >
+                        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[13px] font-medium">{label}</span>
+                          <span className="block text-[11px] text-gray-400">{description}</span>
+                        </span>
+                        {runReviewPolicy === policy && <Check className="mt-0.5 h-4 w-4" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {runtimeMode === "agent" && (
+              <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => togglePopover("project")}
+                  aria-expanded={openPopover === "project"}
+                  aria-haspopup="menu"
+                  className={`flex h-8 max-w-[13rem] items-center gap-1.5 rounded-full border px-3 text-[12px] transition-all sm:max-w-[16rem] ${
+                    selectedProject
+                      ? "border-[#002fa7]/15 bg-[#e8edff] text-[#002fa7] hover:bg-[#dfe7ff]"
+                      : "border-black/[0.06] bg-white/42 text-gray-600 hover:bg-white/70 hover:text-gray-900"
+                  }`}
+                  title={selectedProject?.path || "选择 Agent 工作项目"}
+                >
+                  <FolderKanban className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{selectedProject ? selectedProject.name : "项目目录"}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                </button>
+                {openPopover === "project" && (
+                  <div role="menu" className="absolute bottom-full left-0 z-50 mb-2 w-full max-w-[22rem] rounded-2xl border border-black/[0.10] bg-white p-2 shadow-2xl shadow-slate-900/15 animate-fade-in-scale">
+                    <div className="px-3 pb-2 pt-1">
+                      <p className="text-[11px] font-semibold text-gray-500">Agent 工作项目</p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-gray-400">项目目录决定工作目录、相对路径和项目配置发现，不是智能模式的文件权限边界；Docker 模式会将其挂载到 /workspace。</p>
+                    </div>
+                    <div className="max-h-52 overflow-y-auto py-1">
+                      {projects.map((project) => (
+                        <button
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={currentProjectId === project.project_id}
+                          key={project.project_id}
+                          onClick={() => {
+                            setRuntimeMode("agent");
+                            setCurrentProjectId(project.project_id);
+                            setSessionId("default");
+                            setOpenPopover(null);
+                          }}
+                          className={`flex w-full items-start gap-2 rounded-xl px-3 py-2 text-left transition-colors ${
+                            currentProjectId === project.project_id
+                              ? "bg-[#002fa7]/[0.07] text-[#002fa7]"
+                              : "text-gray-700 hover:bg-black/[0.04]"
+                          }`}
+                        >
+                          <FolderKanban className="mt-0.5 h-4 w-4 shrink-0" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-medium">{project.name}</span>
+                            <span className="block truncate text-[11px] text-gray-400">{project.path}</span>
+                          </span>
+                          {currentProjectId === project.project_id && <Check className="mt-0.5 h-4 w-4" />}
+                        </button>
+                      ))}
+                      {projects.length === 0 && <p className="px-3 py-3 text-[12px] text-gray-400">还没有项目，先登记一个本地文件夹。</p>}
+                    </div>
+                    <div className="my-1 h-px bg-black/[0.06]" />
+                    <button type="button" onClick={handleRegisterProject} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-gray-700 hover:bg-black/[0.04]">
+                      <FolderPlus className="h-4 w-4" />使用现有文件夹…
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentProjectId(null);
+                        setSessionId("default");
+                        setOpenPopover(null);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-gray-500 hover:bg-black/[0.04]"
+                    >
+                      <XCircle className="h-4 w-4" />不使用项目
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {runtimeMode === "agent" && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => togglePopover("approval")}
+                  aria-expanded={openPopover === "approval"}
+                  aria-haspopup="menu"
+                  className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] transition-all ${
+                    approvalMode === "smart"
+                      ? "border-emerald-600/15 bg-emerald-50 text-emerald-700"
+                      : "border-black/[0.06] bg-white/42 text-gray-600 hover:bg-white/70"
+                  }`}
+                  title="选择本 Session 的授权模式"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  <span>{approvalMode === "smart" ? "智能审批" : "严格审批"}</span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                {openPopover === "approval" && (
+                  <div role="menu" className="absolute bottom-full left-0 z-50 mb-2 w-full max-w-[27rem] rounded-2xl border border-black/[0.10] bg-white p-2 shadow-2xl shadow-slate-900/15 animate-fade-in-scale">
+                    <div className="px-3 pb-2 pt-1">
+                      <p className="text-[12px] font-semibold text-gray-700">授权模式</p>
+                      <p className="mt-1 text-[11px] leading-relaxed text-gray-400">模式属于当前 Session，并在 Run 开始时冻结；Run 进行中不可切换。</p>
+                    </div>
+                    <div className="mx-1 mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-amber-950">
+                      <p className="text-[12px] font-semibold">智能模式的本地文件范围</p>
+                      <p className="mt-1 text-[11px] leading-relaxed text-amber-900/80">
+                        普通本地文件按当前系统用户权限访问，不受项目目录限制。敏感读取、持久化写入、联网、安装、破坏性操作和无法证明效果的动态 Shell 仍会按风险单独提示。
+                      </p>
+                    </div>
+                    {([
+                      ["strict", "严格审批", "所有需要授权的操作都由你确认。"],
+                      ["smart", "智能审批", "普通本地文件直接按 OS 权限处理；仅对高风险影响请求授权。"],
+                    ] as Array<[ApprovalMode, string, string]>).map(([mode, label, description]) => (
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={approvalMode === mode}
+                        disabled={approvalLocked}
+                        key={mode}
+                        onClick={async () => {
+                          if (await setApprovalMode(mode)) setOpenPopover(null);
+                        }}
+                        className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                          approvalMode === mode ? "bg-[#002fa7]/[0.07] text-[#002fa7]" : "text-gray-700 hover:bg-black/[0.04]"
+                        }`}
+                      >
+                        <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${approvalMode === mode ? "border-[#002fa7]" : "border-gray-300"}`}>
+                          {approvalMode === mode && <span className="h-2 w-2 rounded-full bg-[#002fa7]" />}
+                        </span>
+                        <span className="min-w-0">
+                          <span className={`block text-[13px] font-semibold ${approvalMode === mode ? "text-[#002fa7]" : "text-gray-700"}`}>{label}</span>
+                          <span className="mt-0.5 block text-[11px] leading-relaxed text-gray-500">{description}</span>
+                        </span>
+                      </button>
+                    ))}
+                    {approvalModeSaving && <p className="px-3 py-2 text-[11px] text-[#002fa7]">正在保存授权模式…</p>}
+                    {approvalModeError && <p role="alert" className="px-3 py-2 text-[11px] text-rose-600">{approvalModeError}</p>}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {runtimeMode === "agent"
+              && (goalModeEnabled || (activeGoal && activeGoal.status !== "completed"))
+              && (
+              <div className="flex h-8 items-center rounded-full border border-emerald-600/15 bg-emerald-50 text-[12px] text-emerald-700 transition-all hover:bg-emerald-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!goalModeEnabled && activeGoal) {
+                      setInspectorOpen(true);
+                      setInspectorActiveTab("goal");
+                    }
+                  }}
+                  className="flex h-full items-center gap-1.5 rounded-l-full pl-3 pr-1.5"
+                  title={goalModeEnabled ? "已为下次发送启用目标" : "查看当前目标"}
+                >
+                  <Target className="h-3.5 w-3.5" />
+                  <span>目标</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={goalCancelPending}
+                  onClick={() => {
+                    if (goalModeEnabled) {
+                      setGoalModeEnabled(false);
+                      return;
+                    }
+                    if (activeGoal) setGoalCancelConfirmationOpen(true);
+                  }}
+                  className="mr-1 flex h-6 w-6 items-center justify-center rounded-full text-emerald-700/70 hover:bg-emerald-200/70 hover:text-emerald-900 disabled:cursor-wait disabled:opacity-40"
+                  title={goalModeEnabled ? "关闭目标模式" : "结束当前 Goal"}
+                  aria-label={goalModeEnabled ? "关闭目标模式" : "结束当前 Goal"}
+                >
+                  {goalCancelPending
+                    ? <Activity className="h-3.5 w-3.5 animate-spin" />
+                    : <X className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div
+            className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:ml-auto sm:w-auto sm:gap-2"
+          >
+            {runtimeMode === "agent" && (
+              <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
+                <div className="flex h-8 items-center overflow-hidden rounded-full border border-black/[0.07] bg-white/55 shadow-sm shadow-black/[0.02]">
+                  <button
+                    type="button"
+                    onClick={() => togglePopover("llm")}
+                    aria-expanded={openPopover === "llm"}
+                    className="flex h-full max-w-[15rem] items-center gap-1.5 px-3 text-[12px] text-gray-700 transition hover:bg-white/80 hover:text-gray-950"
+                    title={selectedConversationModel ? `${selectedConversationModel.provider.name} · ${selectedConversationModel.model.name} · ${effectiveCredentialName}` : "选择对话模型"}
+                  >
+                    <span className="truncate">
+                      {selectedConversationModel
+                        ? `${selectedConversationModel.model.name}${credentialName && credentialName !== "default" ? ` · ${credentialName}` : ""}`
+                        : "选择模型"}
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                  </button>
+                  <span className="h-4 w-px bg-black/[0.08]" />
+                  <button
+                    type="button"
+                    disabled={selectedThinkingProfile?.strength_control !== "levels"}
+                    onClick={() => togglePopover("llm")}
+                    className="flex h-full min-w-[4.25rem] items-center justify-center gap-1.5 px-2.5 text-[12px] text-[#002fa7] transition hover:bg-[#e8edff] disabled:cursor-not-allowed disabled:bg-black/[0.025] disabled:text-gray-400"
+                    title={selectedThinkingProfile?.strength_control === "disabled" ? "该模型使用固定思考模式，不支持选择推理强度" : "选择推理强度"}
+                  >
+                    <Brain className="h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      {selectedThinkingProfile?.strength_control === "levels" && effectiveThinkingLevel
+                        ? thinkingLevelLabels[effectiveThinkingLevel]
+                        : selectedThinkingProfile?.disabled_label || "默认"}
+                    </span>
+                  </button>
+                </div>
+
+                {openPopover === "llm" && (
+                  <div role="menu" className="absolute bottom-full right-0 z-50 mb-2 w-[min(26rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-black/[0.10] bg-white p-2 shadow-2xl shadow-slate-900/15 animate-fade-in-scale">
+                    <div className="px-3 pb-2 pt-1">
+                      <p className="text-[12px] font-semibold text-gray-800">对话模型</p>
+                      <p className="mt-0.5 text-[11px] text-gray-400">未手动选择时跟随设置中的默认模型；发送时冻结本次 Run 的选择。</p>
+                    </div>
+                    <div className="max-h-52 overflow-y-auto py-1">
+                      {conversationModels.map(({ provider, model }) => {
+                        const selected = model.id === selectedConversationModel?.model.id;
+                        const inheritedDefault = selected && !llmModelId;
+                        return (
+                          <button
+                            key={model.id}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={selected}
+                            onClick={() => setLlmSelection(
+                              model.id,
+                              model.thinking_profile?.default_level ?? null,
+                              provider.id === selectedConversationModel?.provider.id ? credentialName : null,
+                            )}
+                            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${selected ? "bg-[#002fa7]/[0.07] text-[#002fa7]" : "text-gray-700 hover:bg-black/[0.04]"}`}
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-medium">{model.name}</span>
+                              <span className="block truncate text-[11px] text-gray-400">{provider.name}</span>
+                            </span>
+                            {inheritedDefault && (
+                              <span className="rounded-full bg-[#002fa7]/[0.08] px-2 py-0.5 text-[9px] font-semibold text-[#002fa7]">
+                                默认
+                              </span>
+                            )}
+                            {selected && <Check className="h-4 w-4 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                      {conversationModels.length === 0 && (
+                        <p className="px-3 py-5 text-center text-[12px] text-gray-400">请先在设置中登记对话模型。</p>
+                      )}
+                    </div>
+                    {selectedConversationModel && (
+                      <div className="border-t border-black/[0.06] px-3 pb-2 pt-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[12px] font-semibold text-gray-800">推理强度</p>
+                            <p className="mt-0.5 text-[11px] text-gray-400">
+                              {selectedThinkingProfile?.strength_control === "levels"
+                                ? "按模型能力映射为 Provider 请求参数"
+                                : "该模型使用固定思考模式"}
+                            </p>
+                          </div>
+                          {selectedThinkingProfile?.strength_control === "levels" ? (
+                            <div className="flex rounded-xl bg-slate-100 p-1">
+                              {selectedThinkingProfile.levels.map((level) => (
+                                <button
+                                  key={level}
+                                  type="button"
+                                  onClick={() => setLlmSelection(selectedConversationModel.model.id, level, credentialName)}
+                                  className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition ${effectiveThinkingLevel === level ? "bg-white text-[#002fa7] shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
+                                >
+                                  {thinkingLevelLabels[level]}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-[11px] font-medium text-gray-400">
+                              {selectedThinkingProfile?.disabled_label || "默认"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {selectedConversationModel && selectedProviderCredentials.length > 1 && (
+                      <div className="border-t border-black/[0.06] px-3 pb-2 pt-3">
+                        <p className="text-[12px] font-semibold text-gray-800">API Key</p>
+                        <p className="mt-0.5 text-[11px] text-gray-400">仅当前 Provider 有多个 Key 时显示；未选择使用 default。</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {selectedProviderCredentials.map((credential) => (
+                            <button
+                              key={credential.name}
+                              type="button"
+                              onClick={() => setLlmSelection(
+                                selectedConversationModel.model.id,
+                                thinkingLevel,
+                                credential.is_default ? null : credential.name,
+                              )}
+                              className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition ${effectiveCredentialName === credential.name ? "bg-[#002fa7] text-white" : "bg-slate-100 text-gray-600 hover:text-gray-900"}`}
+                            >
+                              {credential.name}{credential.is_default ? " · 默认" : ""}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <ContextUsageTooltip usage={contextUsage} />
+            {isStreaming ? (
+              <button onClick={stopStreaming} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-500 text-white transition-all hover:bg-red-600 active:scale-95" title="停止生成 (Esc)" aria-label="停止生成">
+                <Square className="h-3.5 w-3.5 fill-current" />
+              </button>
+            ) : (
+              <button onClick={handleSubmit} disabled={(!text.trim() && attachments.length === 0) || disabled} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#002fa7] text-white transition-all hover:bg-[#001f7a] active:scale-95 disabled:bg-gray-300 disabled:opacity-80" aria-label="发送消息">
+                <ArrowUp className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <p className="viewport-center-axis mt-1 text-center text-[10px] text-gray-400/45">
+        Powered by DeepSeek · PuddingClaw v0.1
+      </p>
+    </div>
+    <ConfirmDialog
+      open={projectTrustConfirmationOpen}
+      title="信任此项目？"
+      description={selectedProject
+        ? `信任“${selectedProject.name}”（${selectedProject.path}）后，Agent 才能读取项目 AGENTS.md、使用项目文件作为工作区，并按当前权限策略执行工具。`
+        : "需要先选择并信任项目，Agent 才能在该项目中运行。"}
+      confirmLabel="信任并继续"
+      busy={projectTrustPending}
+      tone="trust"
+      onClose={() => {
+        if (projectTrustPending) return;
+        setProjectTrustConfirmationOpen(false);
+        setResumeAfterProjectTrust(false);
+      }}
+      onConfirm={() => {
+        if (!selectedProject || projectTrustPending) return;
+        setProjectTrustPending(true);
+        setInputError(null);
+        void trustProject(selectedProject.project_id, "trusted")
+          .then((project) => {
+            if (project.trust_state !== "trusted") {
+              throw new Error("项目未能进入可信状态，请重试。");
+            }
+            setResumeAfterProjectTrust(true);
+            setProjectTrustConfirmationOpen(false);
+          })
+          .catch((error) => {
+            setInputError(error instanceof Error ? error.message : "项目信任失败，请重试。");
+          })
+          .finally(() => setProjectTrustPending(false));
+      }}
+    />
+    <ConfirmDialog
+      open={goalCancelConfirmationOpen}
+      title="结束当前 Goal？"
+      description={
+        activeGoal?.current_run_id
+          ? "当前 Goal 和正在执行的 Run 都将停止，已完成的进度和产物记录仍会保留。"
+          : "当前 Goal 将停止，已完成的进度和产物记录仍会保留。"
+      }
+      confirmLabel="结束 Goal"
+      busy={goalCancelPending}
+      onClose={() => setGoalCancelConfirmationOpen(false)}
+      onConfirm={() => {
+        setGoalCancelPending(true);
+        setInputError(null);
+        void cancelActiveGoal()
+          .catch((error) => {
+            setInputError(error instanceof Error ? error.message : "Goal 取消失败");
+          })
+          .finally(() => {
+            setGoalCancelPending(false);
+            setGoalCancelConfirmationOpen(false);
+          });
+      }}
+    />
+    {projectFolderDialog}
+    </>
+  );
+}
+
+function AttachmentChip({ item, onRemove }: { item: AgentAttachment; onRemove: () => void }) {
+  const kind = item.type || "file";
+  const style = attachmentStyles[kind] || attachmentStyles.file;
+  const Icon = style.Icon;
+  const size = formatFileSize(item.size);
+
+  return (
+    <span
+      className={`inline-flex max-w-[260px] items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${style.cls}`}
+      title={`${style.label}${item.mime_type ? ` · ${item.mime_type}` : ""}${size ? ` · ${size}` : ""}`}
+    >
+      <Icon className="h-3 w-3 shrink-0" />
+      <span className="shrink-0 rounded-full bg-white/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase leading-none">
+        {style.label}
+      </span>
+      <span className="truncate">{item.name || item.id || "attachment"}</span>
+      {size && <span className="shrink-0 text-[10px] opacity-65">{size}</span>}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="rounded-full p-0.5 hover:bg-black/10"
+        aria-label="移除附件"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
+
+function ContextUsageTooltip({
+  usage,
+}: {
+  usage: { used: number; total: number; percentage: number; measured: boolean };
+}) {
+  const [open, setOpen] = useState(false);
+  const formattedPercentage = usage.measured
+    ? formatContextPercentage(usage.percentage, usage.used)
+    : "待测量";
+  const color =
+    usage.measured && usage.percentage >= 90
+      ? "text-red-500"
+      : usage.measured && usage.percentage >= 70
+        ? "text-amber-500"
+        : "text-gray-400";
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        className={`flex h-7 items-center gap-1 rounded-full border border-black/[0.06] bg-white/50 px-2.5 text-[11px] font-medium transition-colors hover:bg-white/80 ${color}`}
+      >
+        <Activity className="h-3 w-3" />
+        {formattedPercentage}
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 mb-2 w-56 rounded-xl bg-[#1f2937] px-3.5 py-2.5 text-[12px] text-white shadow-xl animate-fade-in-scale z-50">
+          <p className="font-medium text-gray-200">背景信息窗口</p>
+          <p className="mt-1 text-[16px] font-semibold">
+            {usage.measured ? `${formattedPercentage} 已用` : "等待首轮上下文"}
+          </p>
+          {usage.measured && (
+            <p className="mt-1 text-[11px] text-gray-400">
+              已用 {formatTokens(usage.used)}，共 {formatTokens(usage.total)}
+            </p>
+          )}
+          <div className="absolute bottom-[-5px] right-4 h-2.5 w-2.5 rotate-45 bg-[#1f2937]" />
+        </div>
+      )}
+    </div>
+  );
+}

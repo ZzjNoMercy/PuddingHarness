@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puddingknowledge.dev/contracts/phase10-package-build-shadow/v1",
+  "title": "Agent-native Knowledge Platform Phase 10 package build shadow",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "status",
+    "activation_allowed",
+    "release_execution_allowed",
+    "source_repository",
+    "source_revision",
+    "package_roots",
+    "commands",
+    "command_count",
+    "all_commands_passed",
+    "archive_observations",
+    "archive_manifest_verified",
+    "replay_consistent",
+    "staged_tree_digest",
+    "test_commands_executed",
+    "network_contacted",
+    "independent_repository_verified",
+    "release_artifact_generated",
+    "scope"
+  ],
+  "properties": {
+    "format": { "const": "agent-knowledge-platform-phase10-package-build-shadow/v1" },
+    "status": {
+      "enum": [
+        "PHASE10_PACKAGE_BUILD_SHADOW_PASS_NOT_ACTIVATABLE",
+        "PHASE10_PACKAGE_BUILD_SHADOW_BLOCKED"
+      ]
+    },
+    "activation_allowed": { "const": false },
+    "release_execution_allowed": { "const": false },
+    "source_repository": { "const": "PuddingClaw" },
+    "source_revision": { "type": "string", "pattern": "^[A-Za-z0-9._:/+@-]{1,256}$" },
+    "package_roots": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "path"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+          "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._*/-]+$" }
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": { "$ref": "#/$defs/command" }
+    },
+    "command_count": { "const": 9 },
+    "all_commands_passed": { "type": "boolean" },
+    "archive_observations": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/archive" }
+    },
+    "archive_manifest_verified": { "const": true },
+    "replay_consistent": { "type": "boolean" },
+    "staged_tree_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "test_commands_executed": { "const": true },
+    "network_contacted": { "const": false },
+    "independent_repository_verified": { "const": false },
+    "release_artifact_generated": { "const": false },
+    "scope": { "type": "string", "const": "temporary staged package tree only; not an extracted repository, RC, SBOM, or release artifact" }
+  },
+  "$defs": {
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "command", "returncode", "stdout_digest", "stderr_digest"],
+      "properties": {
+        "package": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        "command": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "type": "string", "minLength": 1, "pattern": "^(?!/Users/)(?!/private/)(?!file://).+$" }
+        },
+        "returncode": { "type": "integer" },
+        "stdout_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "stderr_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "name", "version", "files", "file_count", "bundled_dependency_count"],
+      "properties": {
+        "package": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        "name": { "type": "string", "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)?$" },
+        "version": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,127}$" },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "bytes"],
+            "properties": {
+              "path": { "type": "string", "pattern": "^(?!\\.)(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._*/-]+$" },
+              "bytes": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "file_count": { "type": "integer", "minimum": 1 },
+        "bundled_dependency_count": { "const": 0 }
+      }
+    }
+  }
+}

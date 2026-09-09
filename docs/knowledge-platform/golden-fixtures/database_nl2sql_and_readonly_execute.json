@@ -1,0 +1,22 @@
+{
+  "format": "agent-knowledge-platform-golden-fixture/database-nl2sql-readonly/v1",
+  "sanitized": true,
+  "scenario": {
+    "question": "按品牌汇总销量并按销量降序排列",
+    "database_source_id": "dbs_golden_sql",
+    "table_name": "sales_facts",
+    "source_name": "Golden PostgreSQL source",
+    "database_name": "golden",
+    "rows": [
+      {"brand": "比亚迪", "sales": 30},
+      {"brand": "蔚来", "sales": 5},
+      {"brand": "比亚迪", "sales": 12}
+    ],
+    "expected_sql": "SELECT brand, SUM(sales) AS total_sales FROM sales_facts GROUP BY brand ORDER BY total_sales DESC",
+    "expected_answer_rows": [
+      {"brand": "比亚迪", "total_sales": 42},
+      {"brand": "蔚来", "total_sales": 5}
+    ],
+    "limit": 100
+  }
+}
