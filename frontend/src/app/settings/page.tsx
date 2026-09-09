@@ -384,7 +384,7 @@ export default function SettingsPage() {
   });
   const runtimeExtensions = useRuntimeProfile();
   const harnessSettingsExtensions = runtimeExtensions
-    ? { ...runtimeExtensions, analytics: false, knowledge: false }
+    ? runtimeExtensions
     : runtimeExtensions;
   const activeCategory = settingsCategoryEnabled(category, harnessSettingsExtensions) ? category : "ai";
   useEffect(() => {
@@ -443,7 +443,7 @@ export default function SettingsPage() {
   const [databaseMode, setDatabaseMode] = useState<"sqlite" | "bundled" | "external">("sqlite");
   const [databaseHost, setDatabaseHost] = useState("127.0.0.1");
   const [databasePort, setDatabasePort] = useState("5432");
-  const [databaseName, setDatabaseName] = useState("puddingclaw");
+  const [databaseName, setDatabaseName] = useState("puddingharness");
   const [databaseUsername, setDatabaseUsername] = useState("pet");
   const [databasePassword, setDatabasePassword] = useState("");
   const [databasePasswordError, setDatabasePasswordError] = useState("");
@@ -495,7 +495,7 @@ export default function SettingsPage() {
     enabled: boolean;
     statement: string;
     required: boolean;
-    verifier: "analytics" | "llm_grader";
+    verifier: "llm_grader";
   }>>([]);
   const [goalsEnabled, setGoalsEnabled] = useState(true);
   const [goalMaxRounds, setGoalMaxRounds] = useState("8");
@@ -564,8 +564,8 @@ export default function SettingsPage() {
         setDatabaseAppliedProvider(loadedDatabaseMode === "sqlite" ? "sqlite" : "postgresql");
         setDatabaseHost(s.database?.host || "127.0.0.1");
         setDatabasePort(String(s.database?.port || 5432));
-        setDatabaseName(s.database?.database || "puddingclaw");
-        setDatabaseUsername(s.database?.username || "puddingclaw");
+        setDatabaseName(s.database?.database || "puddingharness");
+        setDatabaseUsername(s.database?.username || "puddingharness");
         // Passwords are write-only. An empty field means "keep the stored
         // credential" when the rest of the settings form is saved.
         setDatabasePassword("");
@@ -633,7 +633,7 @@ export default function SettingsPage() {
           Array.isArray(rubric?.custom_rules)
             ? rubric.custom_rules.map((rule) => ({
                 ...rule,
-                verifier: rule.verifier === "analytics" ? "analytics" : "llm_grader",
+                verifier: "llm_grader",
               }))
             : []
         );
@@ -961,8 +961,8 @@ export default function SettingsPage() {
           source: databaseMode === "sqlite" ? "local_file" : "external",
           host: databaseHost || "127.0.0.1",
           port: positiveIntOrNull(databasePort) ?? 5432,
-          database: databaseName || "puddingclaw",
-          username: databaseUsername || "puddingclaw",
+          database: databaseName || "puddingharness",
+          username: databaseUsername || "puddingharness",
           password: databasePassword,
           // sqlite 模式下不发送 url 字段：空串会清掉 config.json 里用户手配的完整连接 URL。
           ...(databaseMode === "sqlite" ? {} : { url: "" }),
@@ -1078,15 +1078,15 @@ export default function SettingsPage() {
     setDatabasePort("5432");
     if (mode === "sqlite") {
       // SQLite 不使用数据库名字段（输入框禁用），回填合理默认而非文件名。
-      setDatabaseName("puddingclaw");
+      setDatabaseName("puddingharness");
       setDatabaseUsername("");
       setDatabasePassword("");
     } else if (mode === "bundled") {
-      setDatabaseName("puddingclaw");
-      setDatabaseUsername("puddingclaw");
+      setDatabaseName("puddingharness");
+      setDatabaseUsername("puddingharness");
       setDatabasePassword("");
     } else if (mode === "external") {
-      setDatabaseName("puddingclaw");
+      setDatabaseName("puddingharness");
       setDatabaseUsername("");
       setDatabasePassword("");
     }
@@ -1096,8 +1096,8 @@ export default function SettingsPage() {
     mode: databaseMode,
     host: databaseHost || "127.0.0.1",
     port: positiveIntOrNull(databasePort) ?? 5432,
-    database: databaseName || "puddingclaw",
-    username: databaseUsername || "puddingclaw",
+    database: databaseName || "puddingharness",
+    username: databaseUsername || "puddingharness",
     password: databasePassword,
     create_if_missing: createIfMissing,
   }), [databaseHost, databaseMode, databaseName, databasePassword, databasePort, databaseUsername]);
@@ -1137,7 +1137,7 @@ export default function SettingsPage() {
       } else if (result.database_missing && result.can_create) {
         setDatabaseTesting(false);
         const shouldCreate = window.confirm(
-          `数据库 “${databaseName || "puddingclaw"}” 不存在。是否现在创建？`
+          `数据库 “${databaseName || "puddingharness"}” 不存在。是否现在创建？`
         );
         if (!shouldCreate) {
           setDatabaseTestResult({ ok: false, msg: "数据库不存在，已取消创建" });
@@ -1683,7 +1683,7 @@ export default function SettingsPage() {
                             onChange={(e) => setDatabaseName(e.target.value)}
                             disabled={databaseEnvOverride}
                             className="form-input disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
-                            placeholder="puddingclaw"
+                            placeholder="puddingharness"
                           />
                         </FormField>
                         <FormField label="用户名">
@@ -1692,7 +1692,7 @@ export default function SettingsPage() {
                             onChange={(e) => setDatabaseUsername(e.target.value)}
                             disabled={databaseEnvOverride}
                             className="form-input disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
-                            placeholder="puddingclaw"
+                            placeholder="puddingharness"
                           />
                         </FormField>
                         <FormField label="密码">
@@ -2315,7 +2315,6 @@ export default function SettingsPage() {
                                                 ? {
                                                     ...item,
                                                     verifier: event.target.value as
-                                                      | "analytics"
                                                       | "llm_grader",
                                                   }
                                                 : item
@@ -2325,7 +2324,6 @@ export default function SettingsPage() {
                                         className="form-select"
                                       >
                                         <option value="llm_grader">LLM Grader</option>
-                                        <option value="analytics">Analytics Check</option>
                                       </select>
                                     </FormField>
                                     <label className="flex items-center gap-2 pt-6 text-[12px] text-gray-600">

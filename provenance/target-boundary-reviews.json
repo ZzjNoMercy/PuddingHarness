@@ -1,0 +1,30 @@
+[
+  {
+    "path": "backend/evaluation/contracts.py",
+    "kind": "business_protocol_symbol",
+    "target": "analytics_model_id",
+    "sha256": "605fd08402d7dfe674cd9e41c28f8eed6265b85ea0d4bf1675236f95bb2f561b",
+    "rationale": "Protocol 1.0 in-memory projection drops the retired selector; no provider routing or source rewrite. New protocol rejects it."
+  },
+  {
+    "path": "backend/harness/__init__.py",
+    "kind": "dynamic_import_review",
+    "target": "<dynamic-import-review>",
+    "sha256": "9a43d8cebaa5fd7393749fc4a913c3b77c7eb40e93cd0885b9ffbaa829721c59",
+    "rationale": "Lazy compatibility exports resolve exclusively through a literal owned-module registry; unknown names raise before import."
+  },
+  {
+    "path": "backend/harness/legacy_artifacts.py",
+    "kind": "business_protocol_symbol",
+    "target": "analytics_model_id",
+    "sha256": "2e15573817a0fbd0796798d68af6ee7c7888f044d4fd2cef06a5dc6d51e7a324",
+    "rationale": "Read-only schema-owned legacy projection and rejection of retired controls. User messages and evidence remain opaque."
+  },
+  {
+    "path": "backend/tools/__init__.py",
+    "kind": "dynamic_import_review",
+    "target": "<dynamic-import-review>",
+    "sha256": "08f1a65203f1fd754d0cc6a3005fb3e938abb1b20a939cf0011540351ddf3151",
+    "rationale": "Tool modules resolve exclusively through GENERIC_TOOL_FACTORIES; unknown module names return before import, and factories must belong to that module."
+  }
+]

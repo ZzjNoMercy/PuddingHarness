@@ -189,13 +189,6 @@ _VALIDATOR_WORK_RE = re.compile(
     r"|(?:浏览器|browser|html|javascript|js).{0,12}(?:验证器|validator|结构验证|运行时验证)",
     re.IGNORECASE,
 )
-_QUERY_WORK_RE = re.compile(
-    r"(?:查询|检索|拉取|获取|刷新|执行).{0,18}"
-    r"(?:数据|指标|数据库|sql|query|dataset|metric|analytics)",
-    re.IGNORECASE,
-)
-
-
 def _control_plane_completion_contract(
     content: str,
     run: dict[str, Any] | None,
@@ -217,8 +210,6 @@ def _control_plane_completion_contract(
     normalized = " ".join(str(content or "").strip().split())
     if "code" in packs and _VALIDATOR_WORK_RE.search(normalized):
         return "validation_receipt"
-    if "analytics" in packs and _QUERY_WORK_RE.search(normalized):
-        return "query_result"
     if "artifact" in packs and _ARTIFACT_WORK_RE.search(normalized):
         return "artifact_receipt"
     return None
@@ -606,9 +597,6 @@ def _todo_rejection_message(
 
 
 _QUERY_RESULT_TOOLS = {
-    "database_sql_execute",
-    "database_knowledge_query",
-    "pandas_knowledge_query",
     "execute",
     "python_repl",
 }
@@ -676,10 +664,7 @@ def _available_todo_evidence(
                     available["validation_receipt"].add(receipt_id)
             if ref.get("kind") == "artifact_write" and ref.get("artifact_id"):
                 available["artifact_receipt"].add(str(ref["artifact_id"]))
-            if ref.get("kind") == "analytics_result" or (
-                ref.get("kind") == "tool_result"
-                and str(ref.get("tool_name") or "") in _QUERY_RESULT_TOOLS
-            ):
+            if ref.get("kind") == "tool_result" and str(ref.get("tool_name") or "") in _QUERY_RESULT_TOOLS:
                 result_id = ref.get("result_id") or ref.get("ref") or ref.get("output_digest")
                 if result_id:
                     available["query_result"].add(str(result_id))

@@ -63,9 +63,7 @@ puddingharness-api = "puddingharness_cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# The staging script replaces this list with the actual top-level files and
-# packages copied into a particular artifact. It is intentionally not a
-# source-checkout package list.
+# Explicit owned runtime modules and resources for the independent wheel.
 [tool.hatch.build.targets.wheel]
 only-include = [
     "api",
@@ -105,3 +103,9 @@ only-include = [
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

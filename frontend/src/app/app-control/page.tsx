@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowRight,
-  BarChart3,
-  BookOpen,
   Bot,
   CheckCircle2,
   ChevronDown,
@@ -23,17 +21,6 @@ import type {
 } from "@/types/electron";
 
 type BackendStatus = { status: string; error: string | null; url: string };
-type InfraStatus = {
-  owner: "knowledge-platform";
-  platform: string;
-  home: string;
-  docker: boolean;
-  postgres: string;
-  milvus: string;
-  status: string;
-  error: string | null;
-};
-
 const PROFILE_OPTIONS: Array<{
   id: OnboardingProfileId;
   title: string;
@@ -47,26 +34,10 @@ const PROFILE_OPTIONS: Array<{
     id: "harness",
     title: "Harness 模式",
     eyebrow: "轻量起步",
-    description: "专注 Agent、工具、上下文、任务与本地文件，不安装知识库和问数依赖。",
+    description: "管理 Agent、工具、上下文、任务与本地文件。",
     features: ["Agent 对话与工具", "Goal / Todo / 验收", "本地文件与终端"],
     icon: Bot,
     recommended: true,
-  },
-  {
-    id: "knowledge",
-    title: "知识库模式",
-    eyebrow: "完整知识 Pipeline",
-    description: "覆盖知识接入、解析、切分、索引、检索与引用，并提供持续更新的 LLM Wiki。",
-    features: ["完整 Pipeline", "LLM Wiki", "溯源引用"],
-    icon: BookOpen,
-  },
-  {
-    id: "full",
-    title: "知识库 + 问数",
-    eyebrow: "完整工作台",
-    description: "在完整知识 Pipeline 与 LLM Wiki 之上，增加文件、数据库和分析问数能力。",
-    features: ["完整 Pipeline", "LLM Wiki", "智能问数"],
-    icon: BarChart3,
   },
 ];
 
@@ -74,8 +45,6 @@ const GROUP_LABELS: Record<ProfileDependency["group"], string> = {
   core: "必需运行环境",
   configuration: "进入后配置",
   optional: "可选增强",
-  knowledge: "知识库依赖",
-  analytics: "问数依赖",
 };
 
 const STATUS_META: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
@@ -87,10 +56,8 @@ const STATUS_META: Record<string, { label: string; className: string; icon: type
 };
 
 function webPreviewInspection(profile: OnboardingProfileId): ProfileInspection {
-  const knowledge = profile === "knowledge" || profile === "full";
-  const analytics = profile === "full";
   const dependencies: ProfileDependency[] = [
-    { id: "runtime.cli", label: "PuddingClaw 客户端组件", group: "core", required: true, status: "available", detail: "桌面客户端运行环境已就绪", remediation: [], source: "cli" },
+    { id: "runtime.cli", label: "PuddingHarness 客户端组件", group: "core", required: true, status: "available", detail: "桌面客户端运行环境已就绪", remediation: [], source: "cli" },
     { id: "runtime.node", label: "Node.js 20+ Runtime", group: "core", required: true, status: "available", detail: "示例：客户端内置 Node.js Runtime", remediation: [], source: "cli" },
     { id: "runtime.python", label: "Python 3.11 / 3.12", group: "core", required: true, status: "available", detail: "示例：Python 3.12 · 客户端受管理环境", remediation: [], source: "cli" },
     { id: "runtime.uv", label: "uv 依赖管理器", group: "core", required: true, status: "available", detail: "示例：uv 已就绪", remediation: [], source: "cli" },
@@ -98,19 +65,6 @@ function webPreviewInspection(profile: OnboardingProfileId): ProfileInspection {
     { id: "provider.agent", label: "Agent 模型 Provider", group: "configuration", required: false, status: "not_configured", detail: "进入设置后绑定模型与凭据", remediation: ["在模型服务设置中完成绑定"], source: "cli" },
     { id: "runtime.docker", label: "Docker 沙箱", group: "optional", required: false, status: "optional_unavailable", detail: "可选；不可用时回退到内核沙箱", remediation: ["需要容器隔离时启动 Docker Desktop"], source: "cli" },
   ];
-  if (knowledge) {
-    dependencies.push(
-      { id: "provider.multimodal", label: "Embedding / 多模态模型", group: "knowledge", required: false, status: "not_configured", detail: "启用图文向量检索时配置；精确检索不依赖", remediation: ["需要语义检索时再绑定"], source: "cli" },
-      { id: "knowledge.milvus", label: "Milvus 向量库", group: "knowledge", required: false, status: "optional_unavailable", detail: "可选；不可用时仍可使用文件与精确检索", remediation: ["如需向量检索，可稍后在知识库设置中启用"], source: "cli" },
-      { id: "knowledge.mineru", label: "MinerU 富文档解析", group: "knowledge", required: false, status: "optional_unavailable", detail: "可选；只影响 PDF/Office 高质量解析", remediation: ["需要时启动 MinerU"], source: "cli" },
-    );
-  }
-  if (analytics) {
-    dependencies.push(
-      { id: "analytics.datasource", label: "问数数据源", group: "analytics", required: false, status: "not_configured", detail: "支持文件数据；数据库连接可在进入应用后添加", remediation: ["导入文件或配置只读数据库连接"], source: "cli" },
-      { id: "analytics.postgres_driver", label: "PostgreSQL 数据源驱动", group: "analytics", required: false, status: "not_configured", detail: "只有连接 PostgreSQL 业务数据源时需要", remediation: ["连接 PostgreSQL 数据源时按需准备"], source: "cli" },
-    );
-  }
   return {
     schema_version: 1,
     status: "ready",
@@ -118,7 +72,7 @@ function webPreviewInspection(profile: OnboardingProfileId): ProfileInspection {
     label: PROFILE_OPTIONS.find((item) => item.id === profile)?.title || profile,
     initialized: false,
     current_profile: null,
-    extensions: { knowledge, analytics, headless_worker: true },
+    extensions: { headless_worker: true },
     dependency_profile: profile,
     dependencies,
     blocking: [],
@@ -225,7 +179,7 @@ function ProfileSetup({
               <Terminal className="h-3.5 w-3.5" />
               {preview ? "Web 只读预览" : "首次启动 · 环境检测"}
             </div>
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">选择你的 PuddingClaw 工作模式</h1>
+            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">选择你的 PuddingHarness 工作模式</h1>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
               先选择要使用的产品能力。客户端会检查对应环境；详细依赖按需展开，后续仍可修改模式。
             </p>
@@ -422,8 +376,7 @@ export default function AppControlPage() {
   const [applying, setApplying] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
-  const [infraStatus, setInfraStatus] = useState<InfraStatus | null>(null);
-  const [loading, setLoading] = useState({ backend: false, infra: false });
+  const [loading, setLoading] = useState({ backend: false });
   const inspectionRequest = useRef(0);
 
   const inspect = async (profile: OnboardingProfileId) => {
@@ -462,11 +415,7 @@ export default function AppControlPage() {
 
     void window.electron?.getOnboardingState().then((state) => {
       setOnboarding(state);
-      const visibleProfile: OnboardingProfileId = state.profile === "knowledge"
-        ? "knowledge"
-        : state.profile === "full" || state.profile === "analytics"
-          ? "full"
-          : "harness";
+      const visibleProfile: OnboardingProfileId = "harness";
       setSelectedProfile(visibleProfile);
       setShowProfileSetup(!state.initialized);
       void inspect(visibleProfile);
@@ -475,7 +424,19 @@ export default function AppControlPage() {
           setBackendStatus(status);
           if (status.status !== "running") {
             setLoading((previous) => ({ ...previous, backend: true }));
-            void window.electron?.startBackend().finally(() => {
+            void window.electron?.startBackend().then((result) => {
+              setBackendStatus((previous) => ({
+                status: result.status,
+                error: result.status === "error" ? result.message : null,
+                url: previous?.url || status.url,
+              }));
+            }).catch((error) => {
+              setBackendStatus((previous) => ({
+                status: "error",
+                error: error instanceof Error ? error.message : "Backend 启动失败",
+                url: previous?.url || status.url,
+              }));
+            }).finally(() => {
               setLoading((previous) => ({ ...previous, backend: false }));
             });
           }
@@ -483,15 +444,11 @@ export default function AppControlPage() {
       }
     });
     void window.electron?.getBackendStatus().then(setBackendStatus);
-    void window.electron?.getInfraStatus().then(setInfraStatus);
 
     const handleBackendStatus = (_event: unknown, status: unknown) => setBackendStatus(status as BackendStatus);
-    const handleInfraStatus = (_event: unknown, status: unknown) => setInfraStatus(status as InfraStatus);
     window.electron?.onBackendStatusChange(handleBackendStatus);
-    window.electron?.onInfraStatusChange(handleInfraStatus);
     return () => {
       window.electron?.removeAllListeners("backend-status-change");
-      window.electron?.removeAllListeners("infra-status-change");
     };
   }, []);
 
@@ -518,7 +475,7 @@ export default function AppControlPage() {
         extensions: result.extensions,
         home: onboarding?.home || result.config_path,
       });
-      setBackendStatus({ status: result.backend.status, error: result.backend.status === "error" ? result.backend.message : null, url: "http://127.0.0.1:8888" });
+      setBackendStatus({ status: result.backend.status, error: result.backend.status === "error" ? result.backend.message : null, url: (await window.electron.getBackendStatus()).url });
       setInspection(result.inspection);
       setShowProfileSetup(false);
     } catch (error) {
@@ -528,25 +485,46 @@ export default function AppControlPage() {
     }
   };
 
+  const handleStartBackend = async () => {
+    if (!window.electron) return;
+    setLoading((previous) => ({ ...previous, backend: true }));
+    try {
+      const result = await window.electron.startBackend();
+      setBackendStatus((previous) => ({
+        status: result.status,
+        error: result.status === "error" ? result.message : null,
+        url: previous?.url || "",
+      }));
+    } catch (error) {
+      setBackendStatus((previous) => ({
+        status: "error",
+        error: error instanceof Error ? error.message : "Backend 启动失败",
+        url: previous?.url || "",
+      }));
+    } finally {
+      setLoading((previous) => ({ ...previous, backend: false }));
+    }
+  };
+
   const handleStopBackend = async () => {
     if (!window.electron) return;
     setLoading((previous) => ({ ...previous, backend: true }));
-    await window.electron.stopBackend();
-    setLoading((previous) => ({ ...previous, backend: false }));
-  };
-
-  const handleStartInfra = async () => {
-    if (!window.electron) return;
-    setLoading((previous) => ({ ...previous, infra: true }));
-    await window.electron.startInfra();
-    setLoading((previous) => ({ ...previous, infra: false }));
-  };
-
-  const handleStopInfra = async () => {
-    if (!window.electron) return;
-    setLoading((previous) => ({ ...previous, infra: true }));
-    await window.electron.stopInfra();
-    setLoading((previous) => ({ ...previous, infra: false }));
+    try {
+      const result = await window.electron.stopBackend();
+      setBackendStatus((previous) => ({
+        status: result.status,
+        error: result.status === "error" ? result.message : null,
+        url: previous?.url || "",
+      }));
+    } catch (error) {
+      setBackendStatus((previous) => ({
+        status: "error",
+        error: error instanceof Error ? error.message : "Backend 停止失败",
+        url: previous?.url || "",
+      }));
+    } finally {
+      setLoading((previous) => ({ ...previous, backend: false }));
+    }
   };
 
   if (isElectron === null || (isElectron && onboarding === null)) {
@@ -557,7 +535,7 @@ export default function AppControlPage() {
       <div className="flex h-full overflow-y-auto items-center justify-center bg-gray-50 p-8">
         <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 text-center shadow-sm">
           <h1 className="mb-2 text-lg font-semibold text-gray-900">请在 Electron 中运行</h1>
-          <p className="text-sm text-gray-600">首次模式选择需要在 PuddingClaw 桌面客户端中完成。</p>
+          <p className="text-sm text-gray-600">首次模式选择需要在 PuddingHarness 桌面客户端中完成。</p>
         </div>
       </div>
     );
@@ -606,40 +584,26 @@ export default function AppControlPage() {
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">PuddingClaw Backend</h2>
-            {backendStatus && <span className={`rounded-full border px-3 py-1 text-xs font-medium ${statusColor[backendStatus.status] || statusColor.unknown}`}>{loading.backend && backendStatus.status !== "running" ? "启动中..." : backendStatus.status}</span>}
+            <h2 className="text-lg font-semibold text-gray-900">PuddingHarness Backend</h2>
+            {backendStatus && <span className={`rounded-full border px-3 py-1 text-xs font-medium ${statusColor[backendStatus.status] || statusColor.unknown}`}>{(loading.backend || backendStatus.status === "starting") && backendStatus.status !== "running" ? "启动中..." : backendStatus.status}</span>}
           </div>
           {backendStatus && (
             <div className="mb-4 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-gray-600">API 地址</span><span className="font-mono text-gray-900">{backendStatus.url}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600">API 地址</span><span className="font-mono text-gray-900">{backendStatus.url || "待确认"}</span></div>
               {backendStatus.error && <div className="mt-2 text-xs text-red-600">{backendStatus.error}</div>}
             </div>
           )}
-          <button onClick={() => void handleStopBackend()} disabled={loading.backend || backendStatus?.status === "stopped"} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40">停止 Backend</button>
-        </div>
-
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">Knowledge Platform 基础设施</h2>
-            {infraStatus && <span className={`rounded-full border px-3 py-1 text-xs font-medium ${statusColor[infraStatus.status] || statusColor.unknown}`}>{infraStatus.status}</span>}
-          </div>
-          {infraStatus && (
-            <div className="mb-4 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-gray-600">生命周期所有者</span><span>Knowledge Platform</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">Platform Home</span><span className="max-w-[65%] truncate font-mono text-xs text-gray-900">{infraStatus.home}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">监督器状态</span><span>{infraStatus.platform}</span></div>
-              {infraStatus.error && <div className="mt-2 text-xs text-gray-500">{infraStatus.error}</div>}
-            </div>
+          {backendStatus?.status === "running" ? (
+            <button onClick={() => void handleStopBackend()} disabled={loading.backend} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40">停止 Backend</button>
+          ) : (
+            <button onClick={() => void handleStartBackend()} disabled={loading.backend || backendStatus?.status === "starting"} className="rounded-lg border border-[#002fa7]/30 bg-white px-4 py-2 text-sm font-medium text-[#002fa7] hover:bg-[#002fa7]/5 disabled:opacity-40">
+              {backendStatus?.status === "error" ? "重新启动 Backend" : backendStatus?.status === "starting" ? "启动中..." : "启动 Backend"}
+            </button>
           )}
-          <div className="flex gap-3">
-            <button onClick={() => void handleStartInfra()} disabled={loading.infra} className="rounded-lg bg-[#002fa7] px-4 py-2 text-sm font-medium text-white hover:bg-[#001f7a] disabled:opacity-40">{loading.infra ? "处理中..." : "启动 Platform"}</button>
-            <button onClick={() => void handleStopInfra()} disabled={loading.infra} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40">停止 Platform</button>
-          </div>
-          <p className="mt-3 text-xs text-gray-500">PuddingClaw 只转交 Platform supervisor，不探测或管理其内部数据库、向量库及解析服务。</p>
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <button onClick={() => router.push("/")} disabled={backendStatus?.status !== "running"} className="w-full rounded-lg bg-[#002fa7] px-4 py-3 text-sm font-medium text-white hover:bg-[#001f7a] disabled:cursor-not-allowed disabled:opacity-40">进入 PuddingClaw</button>
+          <button onClick={() => router.push("/")} disabled={backendStatus?.status !== "running"} className="w-full rounded-lg bg-[#002fa7] px-4 py-3 text-sm font-medium text-white hover:bg-[#001f7a] disabled:cursor-not-allowed disabled:opacity-40">进入 PuddingHarness</button>
           {backendStatus?.status !== "running" && <p className="mt-2 text-center text-xs text-gray-500">等待 Backend 启动完成...</p>}
         </div>
       </div>

@@ -1,27 +1,11 @@
 export interface ElectronAPI {
   // 文件夹选择
   selectProjectFolder: () => Promise<string | null>;
-  selectKnowledgeFile: () => Promise<string | null>;
-  selectKnowledgeFolder: () => Promise<string | null>;
 
   // Backend 管理
   startBackend: () => Promise<{ status: string; message: string }>;
   stopBackend: () => Promise<{ status: string; message: string }>;
   getBackendStatus: () => Promise<{ status: string; error: string | null; url: string }>;
-
-  // Platform supervisor 管理（兼容旧 IPC 名称）
-  startInfra: () => Promise<{ status: string; message: string }>;
-  stopInfra: () => Promise<{ status: string; message: string }>;
-  getInfraStatus: () => Promise<{
-    owner: "knowledge-platform";
-    platform: string;
-    home: string;
-    docker: boolean;
-    postgres: string;
-    milvus: string;
-    status: string;
-    error: string | null;
-  }>;
 
   // 首次启动模式选择
   getOnboardingState: () => Promise<OnboardingState>;
@@ -31,11 +15,10 @@ export interface ElectronAPI {
   // 事件监听
   onBackendLog: (callback: (event: unknown, log: string) => void) => void;
   onBackendStatusChange: (callback: (event: unknown, status: unknown) => void) => void;
-  onInfraStatusChange: (callback: (event: unknown, status: unknown) => void) => void;
   removeAllListeners: (channel: string) => void;
 }
 
-export type OnboardingProfileId = "harness" | "knowledge" | "full";
+export type OnboardingProfileId = "harness";
 
 export interface OnboardingState {
   available: boolean;
@@ -49,7 +32,7 @@ export interface OnboardingState {
 export interface ProfileDependency {
   id: string;
   label: string;
-  group: "core" | "configuration" | "optional" | "knowledge" | "analytics";
+  group: "core" | "configuration" | "optional";
   required: boolean;
   status: "available" | "planned" | "needs_action" | "not_configured" | "optional_unavailable";
   detail: string;

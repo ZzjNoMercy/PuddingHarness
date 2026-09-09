@@ -10,6 +10,7 @@ No Platform-specific virtual directory is resolved here.
 
 from __future__ import annotations
 
+import base64
 import json
 import inspect
 from collections.abc import Callable, Mapping, Sequence
@@ -226,7 +227,20 @@ class ReadResourceTool(BaseTool):
                         if "text" in item:
                             parts.append(str(item["text"]))
                         elif "blob" in item:
-                            parts.append(str(item["blob"]))
+                            encoded = str(item["blob"])
+                            mime = str(item.get("mimeType") or "").split(";", 1)[0].strip().lower()
+                            textual = mime.startswith("text/") or mime in {
+                                "application/json", "application/xml", "application/javascript",
+                            } or mime.endswith(("+json", "+xml"))
+                            if textual:
+                                if len(encoded) > ((MAX_MCP_RESOURCE_TEXT_BYTES + 2) * 4 // 3 + 4):
+                                    _raise_mcp_tool_error("MCP Resource exceeds the local size limit")
+                                try:
+                                    parts.append(base64.b64decode(encoded, validate=True).decode("utf-8"))
+                                except (ValueError, UnicodeError):
+                                    _raise_mcp_tool_error("MCP Resource contains invalid encoded text")
+                            else:
+                                parts.append(encoded)
                 if parts:
                     return "\n".join(parts)
             return json.dumps(dict(payload), ensure_ascii=False, default=str)

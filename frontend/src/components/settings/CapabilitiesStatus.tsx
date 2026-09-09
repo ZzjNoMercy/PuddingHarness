@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Database,
-  FileText,
   Loader2,
   Terminal,
   XCircle,
@@ -46,30 +45,7 @@ const SERVICE_META: Record<
     details: [
       { label: "功能", value: "Core 状态 / 扩展目录 / 任务与引用元数据" },
       { label: "模式", value: "本地默认 SQLite；服务端/共享部署可选 PostgreSQL" },
-      { label: "边界", value: "与 gbrain/pgvector、外部业务数据源相互独立" },
-    ],
-  },
-  pgvector: {
-    label: "pgvector 数据库扩展",
-    description: "gbrain / LLM Wiki 的向量字段与相似度检索（独立可选运行时）",
-    icon: Database,
-    color: "#0891b2",
-    details: [
-      { label: "归属", value: "gbrain 向量运行时，独立于 Core 数据库" },
-      { label: "依赖级别", value: "PostgreSQL 必备服务端扩展，不由 uv 管理" },
-      { label: "macOS", value: "brew install pgvector" },
-      { label: "Docker", value: "Bundled PostgreSQL 镜像已默认包含 pgvector" },
-    ],
-  },
-  external_datasources: {
-    label: "外部数据源",
-    description: "Analytics / 知识库连接外部业务数据库的能力",
-    icon: Database,
-    color: "#b45309",
-    details: [
-      { label: "用途", value: "数据库问答 / 知识数据源的外部 PostgreSQL 连接" },
-      { label: "检测对象", value: "asyncpg 驱动是否可用，不探测具体数据源连通性" },
-      { label: "依赖安装", value: "pip install puddingclaw-backend[postgres]" },
+      { label: "边界", value: "保存 Harness 会话、任务与运行状态" },
     ],
   },
   docker: {
@@ -83,35 +59,13 @@ const SERVICE_META: Record<
       { label: "降级策略", value: "不可用时，自动模式回退到内核沙箱" },
     ],
   },
-  milvus: {
-    label: "Milvus 向量库",
-    description: "语义检索与多模态向量存储",
-    icon: Database,
-    color: "#7c3aed",
-    details: [
-      { label: "功能", value: "向量检索 / 记忆相似度匹配" },
-      { label: "检测地址", value: "grpc://localhost:19530" },
-      { label: "降级策略", value: "不可用时，关闭向量检索，使用完整上下文" },
-    ],
-  },
-  mineru: {
-    label: "MinerU PDF 解析",
-    description: "高质量 PDF/Office 版面解析",
-    icon: FileText,
-    color: "#10b981",
-    details: [
-      { label: "功能", value: "PDF 结构化提取 / 版面还原" },
-      { label: "检测地址", value: "http://localhost:8002/health" },
-      { label: "降级策略", value: "不可用时，跳过版面解析，仅处理文本内容" },
-    ],
-  },
   cli: {
-    label: "PuddingClaw CLI",
+    label: "PuddingHarness CLI",
     description: "本地终端调用 Headless API 的命令行客户端",
     icon: Terminal,
     color: "#002fa7",
     details: [
-      { label: "用途", value: "puddingclaw agent run / doctor / agent models list" },
+      { label: "用途", value: "Agent / Headless API 的命令行操作" },
       { label: "安装方式", value: "后端启动时按安装策略检测或后台安装" },
     ],
   },
@@ -275,11 +229,7 @@ export default function CapabilitiesStatus({
   const [lastChecked, setLastChecked] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<CapabilityServiceKey, boolean>>({
     core_database: false,
-    pgvector: false,
-    external_datasources: false,
     docker: false,
-    milvus: false,
-    mineru: false,
     cli: false,
   });
 
@@ -294,6 +244,12 @@ export default function CapabilitiesStatus({
         data.core_database = data.database;
       }
       delete data.database;
+      const knownStatuses = Object.entries(data).filter(([key]) =>
+        Object.prototype.hasOwnProperty.call(SERVICE_META, key));
+      if (knownStatuses.length === 0 || knownStatuses.some(([, value]) =>
+        !value || typeof value.available !== "boolean")) {
+        throw new Error("后端未返回有效的 Harness 服务状态");
+      }
       setCapabilities(data);
       onChange?.(data);
       setLastChecked(
@@ -351,7 +307,7 @@ export default function CapabilitiesStatus({
   const visibleEntries = (Object.entries(capabilities) as [CapabilityServiceKey, CapabilityStatus][])
     .filter(([key]) => !includeKeys || includeKeys.includes(key))
     .filter(([key]) => !excludeKeys?.includes(key))
-    .filter(([key]) => extensions?.knowledge || !["pgvector", "milvus", "mineru"].includes(key));
+    .filter(([key]) => Object.prototype.hasOwnProperty.call(SERVICE_META, key));
 
   return (
     <div className="space-y-4">
@@ -375,9 +331,7 @@ export default function CapabilitiesStatus({
         ))}
       </div>
       <p className="text-[11px] text-gray-500 leading-relaxed px-1">
-        {extensions?.knowledge
-          ? "Core 默认使用本地 SQLite，PostgreSQL 为服务端/共享部署可选项；gbrain/pgvector 是独立可选运行时，其状态不影响 Core 健康。外部数据源条目仅反映连接驱动能力，不代表具体数据源连通性。"
-          : "Core 默认使用本地 SQLite，PostgreSQL 为服务端/共享部署可选项；知识库专属的 pgvector、Milvus 与 MinerU 不探测也不显示。"}
+        Core 默认使用本地 SQLite，PostgreSQL 为可选服务端存储。
         模型请求统一通过内部网关路由，不参与外部服务健康检测。
       </p>
     </div>

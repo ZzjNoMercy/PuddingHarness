@@ -1,5 +1,5 @@
 /**
- * Navigation configuration for PuddingClaw multi-page app.
+ * Navigation configuration for PuddingHarness multi-page app.
  */
 
 export interface NavItem {
@@ -14,16 +14,6 @@ export const NAV_ITEMS: NavItem[] = [
     label: "对话",
     href: "/",
     icon: "MessageSquare",
-  },
-  {
-    label: "知识库",
-    href: "/knowledge",
-    icon: "Database",
-  },
-  {
-    label: "智能问数",
-    href: "/analytics",
-    icon: "BarChart3",
   },
   {
     label: "扩展",
@@ -51,8 +41,6 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const ROUTE_TITLES: Record<string, string> = {
   "/": "对话",
-  "/knowledge": "知识库",
-  "/analytics": "智能问数",
   "/extension/connectors": "连接器",
   "/extension/skills": "技能",
   "/extension/mcp": "MCP 服务",

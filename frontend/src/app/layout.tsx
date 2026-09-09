@@ -3,7 +3,7 @@ import "./globals.css";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "PuddingClaw",
+  title: "PuddingHarness",
   description: "A lightweight, transparent AI Agent system",
 };
 

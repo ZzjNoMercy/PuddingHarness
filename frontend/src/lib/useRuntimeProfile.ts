@@ -3,14 +3,10 @@
 import { useEffect, useState } from "react";
 
 export type RuntimeExtensions = {
-  knowledge: boolean;
-  analytics: boolean;
   headless_worker: boolean;
 };
 
 const HARNESS_DEFAULTS: RuntimeExtensions = {
-  knowledge: false,
-  analytics: false,
   headless_worker: true,
 };
 
@@ -28,7 +24,7 @@ function loadRuntimeProfile(): Promise<RuntimeExtensions> {
       return response.json() as Promise<{ extensions?: Partial<RuntimeExtensions> }>;
     })
     .then((payload) => {
-      cachedRuntimeExtensions = { ...HARNESS_DEFAULTS, ...payload.extensions };
+      cachedRuntimeExtensions = { headless_worker: payload.extensions?.headless_worker ?? HARNESS_DEFAULTS.headless_worker };
       return cachedRuntimeExtensions;
     })
     .catch(() => cachedRuntimeExtensions);

@@ -43,11 +43,7 @@ async def _assert_database_settings_write_allowed() -> None:
 class SettingsUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    rag: dict[str, Any] | None = None
-    vanna: dict[str, Any] | None = None
-    analytics: dict[str, Any] | None = None
     database: dict[str, Any] | None = None
-    knowledge: dict[str, Any] | None = None
     compression: dict[str, Any] | None = None
     harness: dict[str, Any] | None = None
     subagents: dict[str, Any] | None = None
@@ -201,8 +197,8 @@ class DatabaseConnectionRequest(BaseModel):
     mode: str = "external"
     host: str = "127.0.0.1"
     port: int = 5432
-    database: str = "puddingclaw"
-    username: str = "puddingclaw"
+    database: str = "puddingharness"
+    username: str = "puddingharness"
     password: str = ""
     create_if_missing: bool = False
 
@@ -259,7 +255,7 @@ async def _test_database_connection(request: DatabaseConnectionRequest) -> dict[
             status_code=400,
             detail=(
                 "asyncpg 未安装：PostgreSQL 连接测试需要可选依赖，"
-                "请安装 postgres extra（pip install 'puddingclaw-backend[postgres]' 或 uv sync --extra postgres）。"
+                "请安装 postgres extra（pip install 'puddingharness-backend[postgres]' 或 uv sync --extra postgres）。"
             ),
         ) from exc
 

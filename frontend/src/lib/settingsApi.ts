@@ -1,96 +1,8 @@
 /**
- * Settings API client for PuddingClaw backend.
+ * Settings API client for PuddingHarness backend.
  */
 
 const API_BASE = "/api";
-
-export interface RagSettings {
-  top_k: number;
-  similarity_threshold: number;
-  hybrid?: {
-    enabled: boolean;
-    mode: string;
-    text_vector_weight: number;
-    image_vector_weight: number;
-    bm25_weight: number;
-    candidate_top_k: number;
-  };
-  rerank?: {
-    enabled: boolean;
-    provider?: string;
-    model: string;
-    top_n: number;
-    candidate_top_k: number;
-  };
-}
-
-export interface VannaSettings {
-  enabled: boolean;
-  default_database_source_id: string;
-  default_dialect: string;
-  query: {
-    entity_top_k_default: number;
-    entity_top_k_by_type: Record<string, number>;
-  };
-}
-
-export interface DatabaseQaSettings {
-  full_rows_token_budget: number;
-  preview_rows_token_budget: number;
-  profile_token_budget: number;
-  full_rows_hard_row_cap: number;
-  full_rows_hard_column_cap: number;
-  max_cell_chars_for_llm: number;
-  result_materialization_row_cap: number;
-  query_timeout_ms: number;
-  sql_generation_timeout_ms: number;
-  result_store_enabled: boolean;
-  result_store_ttl_hours: number;
-  default_page_size: number;
-  max_page_size: number;
-  export_enabled: boolean;
-  profile_enabled: boolean;
-  database_agent_sql_fallback_enabled: boolean;
-}
-
-export interface AnalyticsSettings {
-  database_qa: DatabaseQaSettings;
-}
-
-export interface KnowledgeSettings {
-  root_dir: string;
-  configured_by?: string;
-  environment_override?: boolean;
-  llm_wiki?: {
-    compiler_agent?: {
-      model_id: string;
-    };
-    retrieval?: {
-      hybrid_enabled: boolean;
-    };
-    gbrain?: {
-      enabled: boolean;
-      embedding_model_id: string;
-      think_model_id: string;
-    };
-  };
-  mineru?: {
-    base_url: string;
-    runtime_output_dir: string;
-    keep_runtime_output: boolean;
-  };
-  multimodal_index: {
-    enabled: boolean;
-    vector_store: string;
-    milvus_uri: string;
-    text_collection: string;
-    legacy_text_collection?: string;
-    image_collection: string;
-    bm25_enabled?: boolean;
-    embedding_batch_size?: number;
-    overwrite?: boolean;
-  };
-}
 
 export interface DatabaseSettings {
   mode: "sqlite" | "bundled" | "external";
@@ -175,7 +87,7 @@ export interface HarnessSettings {
         enabled: boolean;
         statement: string;
         required: boolean;
-        verifier: "analytics" | "llm_grader";
+        verifier: "llm_grader";
       }>;
     };
   };
@@ -214,11 +126,7 @@ export interface SubAgentSettings {
 }
 
 export interface SystemSettings {
-  rag: RagSettings;
-  vanna?: VannaSettings;
-  analytics?: AnalyticsSettings;
   database: DatabaseSettings;
-  knowledge: KnowledgeSettings;
   compression: CompressionSettings;
   harness: HarnessSettings;
   subagents: SubAgentSettings;
@@ -424,22 +332,6 @@ export async function addProviderModel(providerId: string, model: {
   }
 }
 
-export interface ResetKnowledgeVectorResult {
-  ok: boolean;
-  milvus_uri: string;
-  dropped: string[];
-  missing: string[];
-}
-
-export async function resetKnowledgeVectorCollections(): Promise<ResetKnowledgeVectorResult> {
-  const resp = await fetch(`${API_BASE}/knowledge/vector/reset`, { method: "POST" });
-  if (!resp.ok) {
-    const data = await resp.json().catch(() => ({}));
-    throw new Error(data.detail || `Failed to reset vector collections: ${resp.status}`);
-  }
-  return resp.json();
-}
-
 export interface TestDatabaseConnectionResult {
   success: boolean;
   created: boolean;
@@ -489,13 +381,7 @@ export interface CapabilityStatus {
 export interface Capabilities {
   /** Core Catalog 数据库：默认本地 SQLite，PostgreSQL 为服务端可选（scope=core） */
   core_database: CapabilityStatus;
-  /** gbrain / LLM Wiki 向量运行时（scope=gbrain） */
-  pgvector: CapabilityStatus;
-  /** Analytics / 知识数据源连接外部业务数据库的能力（scope=datasource） */
-  external_datasources: CapabilityStatus;
   docker: CapabilityStatus;
-  milvus: CapabilityStatus;
-  mineru: CapabilityStatus;
   cli: CapabilityStatus;
   /** @deprecated 旧版后端响应中 core_database 的别名，仅为兼容保留 */
   database?: CapabilityStatus;

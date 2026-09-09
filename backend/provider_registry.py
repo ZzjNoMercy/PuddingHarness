@@ -603,8 +603,6 @@ def _default_registry() -> dict[str, Any]:
             "text_embedding": "dashscope:dashscope-compatible:text-embedding-v4:text_embedding",
             "multimodal_embedding": "dashscope:dashscope-native-mm:qwen3-vl-embedding:multimodal_embedding",
             "rerank": "dashscope:dashscope-native-mm:qwen3-vl-rerank:rerank",
-            "vanna_llm": "deepseek:deepseek-openai:deepseek-v4-pro:llm",
-            "vanna_embedding": "dashscope:dashscope-compatible:text-embedding-v4:text_embedding",
         },
     }
     raw = os.getenv("PUDDINGHARNESS_INITIAL_PROVIDER", "").strip()
@@ -834,7 +832,14 @@ class ProviderRegistry:
             for model in provider.get("models", [])
             if isinstance(model, dict)
         }
+        # Historical business bindings are projected out of owned control data.
+        # Do not rewrite the registry merely to perform this read projection.
+        for retired_binding in ("vanna_llm", "vanna_embedding"):
+            payload["bindings"].pop(retired_binding, None)
         required_bindings = set(_default_registry()["bindings"])
+        unknown_bindings = set(payload["bindings"]) - required_bindings
+        if unknown_bindings:
+            raise ValueError(f"Unsupported Harness bindings: {', '.join(sorted(unknown_bindings))}")
         missing_bindings = sorted(required_bindings - set(payload["bindings"]))
         if missing_bindings:
             raise ValueError(f"Provider Registry is missing bindings: {', '.join(missing_bindings)}")
@@ -1158,11 +1163,13 @@ class ProviderRegistry:
         return self.display()
 
     def set_binding(self, binding: str, model_id: str) -> None:
+        if binding not in _default_registry()["bindings"]:
+            raise ValueError(f"Unsupported Harness binding: {binding}")
         payload = self._payload()
         model = next((model for provider in payload["providers"] for model in provider.get("models", []) if model.get("id") == model_id), None)
         if not model:
             raise ValueError("Unknown model")
-        expected = {"agent": "llm", "image_analyzer": "llm", "text_embedding": "text_embedding", "multimodal_embedding": "multimodal_embedding", "rerank": "rerank", "vanna_llm": "llm", "vanna_embedding": "text_embedding"}.get(binding)
+        expected = {"agent": "llm", "image_analyzer": "llm", "text_embedding": "text_embedding", "multimodal_embedding": "multimodal_embedding", "rerank": "rerank"}.get(binding)
         if expected and model.get("capability") != expected:
             raise ValueError(f"{binding} requires a {expected} model")
         payload["bindings"][binding] = model_id
