@@ -40,6 +40,7 @@ from harness.evidence_ledger import (
     resolve_evidence_ref,
 )
 from observability import emit_harness_metric
+from harness.legacy_artifacts import project_legacy_session, project_legacy_trace, reject_legacy_selectors
 
 logger = logging.getLogger(__name__)
 
@@ -179,16 +180,22 @@ class SessionManager:
 
         return self._sessions_dir is not None
 
+    @staticmethod
+    def _validated_session_id(session_id: str) -> str:
+        if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", session_id):
+            raise ValueError("Invalid Session id")
+        return session_id
+
     def _session_path(self, session_id: str) -> Path:
         """根据 session_id 生成对应的 JSON 文件路径"""
         assert self._sessions_dir is not None  # 确保已初始化
-        safe_id = "".join(c for c in session_id if c.isalnum() or c in "-_")  # 过滤特殊字符防路径注入
+        safe_id = self._validated_session_id(session_id)
         return self._sessions_dir / f"{safe_id}.json"  # 返回完整文件路径
 
     def _trace_path(self, session_id: str) -> Path:
         """Return the sidecar path used for heavyweight execution traces."""
         assert self._traces_dir is not None
-        safe_id = "".join(c for c in session_id if c.isalnum() or c in "-_")
+        safe_id = self._validated_session_id(session_id)
         return self._traces_dir / f"{safe_id}.json"
 
     @staticmethod
@@ -273,23 +280,19 @@ class SessionManager:
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                return data if isinstance(data, dict) else {}
+                if isinstance(data, dict):
+                    return data
             except Exception:
-                return {}
+                pass
         if migrate:
-            # Reading the main file here is only a legacy fallback. New sessions
-            # never touch session.json when a trace is requested or updated.
-            self._read_file(session_id)
-            if path.exists():
-                return self._read_trace_file(session_id, migrate=False)
+            return project_legacy_trace(self._read_file(session_id))
         return {}
 
     def _write_trace_file(self, session_id: str, data: dict[str, Any]) -> None:
         self._atomic_write_json(self._trace_path(session_id), data)
 
-    @_session_write_locked
     def _read_file(self, session_id: str) -> dict[str, Any]:
-        """从磁盘读取会话文件，自动兼容 v1(纯列表) → v2(带元数据的字典) 格式"""
+        """Read and project historical Session data without modifying stored bytes."""
         path = self._session_path(session_id)  # 获取文件路径
         if not path.exists():  # 文件不存在返回空字典
             return {}
@@ -304,10 +307,12 @@ class SessionManager:
                     "messages": data,  # 原始消息列表保留
                 }
             if isinstance(data, dict):
-                migrated = self._migrate_legacy_traces(session_id, data)
-                migrated = self._repair_legacy_model_call_counts(data) or migrated
-                if migrated:
-                    self._write_file(session_id, data)
+                data = project_legacy_session(data)
+                self._repair_legacy_model_call_counts(data)
+                if "loaded_skill_ids" not in data:
+                    inferred = self._loaded_skill_ids_from_traces(project_legacy_trace(data))
+                    if inferred:
+                        data["loaded_skill_ids"] = sorted(inferred)
             return data  # v2 格式直接返回
         except (json.JSONDecodeError, Exception):  # JSON 解析失败返回空
             return {}
@@ -393,7 +398,7 @@ class SessionManager:
         """原子写入会话数据，避免读者观察到半截 JSON。"""
         data["updated_at"] = time.time()  # 每次写入都刷新更新时间
         path = self._session_path(session_id)  # 获取文件路径
-        self._atomic_write_json(path, data, indent=2)
+        self._atomic_write_json(path, project_legacy_session(data), indent=2)
 
     @staticmethod
     def _effective_permission_snapshot(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -442,6 +447,7 @@ class SessionManager:
             },
         }
         if metadata:
+            reject_legacy_selectors(metadata)
             # Permission state is a control-plane authority and may not be
             # injected through generic metadata.
             data.update({key: value for key, value in metadata.items() if key != "permissions"})
@@ -462,7 +468,6 @@ class SessionManager:
             "project_path",
             "workspace_type",
             "workspace_path",
-            "analytics_model_id",
             "llm_model_id",
             "thinking_level",
             "credential_name",
@@ -576,7 +581,6 @@ class SessionManager:
             "project_path",
             "workspace_type",
             "workspace_path",
-            "analytics_model_id",
             "llm_model_id",
             "thinking_level",
             "credential_name",
@@ -609,7 +613,7 @@ class SessionManager:
     def session_exists(self, session_id: str) -> bool:
         """Return whether an authoritative Session JSON exists."""
 
-        safe_id = "".join(c for c in session_id if c.isalnum() or c in "-_")
+        safe_id = self._validated_session_id(session_id)
         return bool(safe_id == session_id and self._session_path(session_id).is_file())
 
     @staticmethod
@@ -2913,256 +2917,6 @@ class SessionManager:
         }
 
     @_session_write_locked
-    def record_sql_generation(
-        self,
-        session_id: str,
-        generation_id: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Persist a server-authored SQL generation for Run/Goal recovery."""
-
-        data = self._read_file(session_id)
-        if not data:
-            raise FileNotFoundError(f"Session {session_id} not found")
-        harness = data.setdefault("harness", {})
-        ledger = harness.setdefault("sql_generation_ledger", {})
-        existing = ledger.get(generation_id)
-        if isinstance(existing, dict) and existing != payload:
-            raise ValueError(f"SQL generation {generation_id} is immutable")
-        ledger[generation_id] = deepcopy(payload)
-        self._write_file(session_id, data)
-        return deepcopy(ledger[generation_id])
-
-    def get_sql_generation(
-        self,
-        session_id: str,
-        generation_id: str,
-    ) -> dict[str, Any] | None:
-        data = self._read_file(session_id)
-        harness = data.get("harness") if data else None
-        ledger = harness.get("sql_generation_ledger") if isinstance(harness, dict) else None
-        item = ledger.get(generation_id) if isinstance(ledger, dict) else None
-        return deepcopy(item) if isinstance(item, dict) else None
-
-    def list_sql_generations(self, session_id: str) -> list[dict[str, Any]]:
-        """List immutable generation ledger records for server-side derivation."""
-
-        data = self._read_file(session_id)
-        harness = data.get("harness") if data else None
-        ledger = harness.get("sql_generation_ledger") if isinstance(harness, dict) else None
-        if not isinstance(ledger, dict):
-            return []
-        return [deepcopy(item) for item in ledger.values() if isinstance(item, dict)]
-
-    @_session_write_locked
-    def record_sql_submission(
-        self,
-        session_id: str,
-        submission_id: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Persist an Agent-authored SQL submission as an immutable ledger entry."""
-
-        data = self._read_file(session_id)
-        if not data:
-            raise FileNotFoundError(f"Session {session_id} not found")
-        harness = data.setdefault("harness", {})
-        ledger = harness.setdefault("sql_submission_ledger", {})
-        existing = ledger.get(submission_id)
-        if isinstance(existing, dict) and existing != payload:
-            raise ValueError(f"SQL submission {submission_id} is immutable")
-        ledger[submission_id] = deepcopy(payload)
-        self._write_file(session_id, data)
-        return deepcopy(ledger[submission_id])
-
-    def get_sql_submission(self, session_id: str, submission_id: str) -> dict[str, Any] | None:
-        data = self._read_file(session_id)
-        harness = data.get("harness") if data else None
-        ledger = harness.get("sql_submission_ledger") if isinstance(harness, dict) else None
-        item = ledger.get(submission_id) if isinstance(ledger, dict) else None
-        return deepcopy(item) if isinstance(item, dict) else None
-
-    @_session_write_locked
-    def record_database_evidence(
-        self,
-        session_id: str,
-        evidence_id: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Persist an immutable Agent database-evidence envelope."""
-
-        data = self._read_file(session_id)
-        if not data:
-            raise FileNotFoundError(f"Session {session_id} not found")
-        harness = data.setdefault("harness", {})
-        ledger = harness.setdefault("database_evidence_ledger", {})
-        existing = ledger.get(evidence_id)
-        if isinstance(existing, dict) and existing != payload:
-            raise ValueError(f"Database evidence {evidence_id} is immutable")
-        ledger[evidence_id] = deepcopy(payload)
-        self._write_file(session_id, data)
-        return deepcopy(ledger[evidence_id])
-
-    def get_database_evidence(self, session_id: str, evidence_id: str) -> dict[str, Any] | None:
-        data = self._read_file(session_id)
-        harness = data.get("harness") if data else None
-        ledger = harness.get("database_evidence_ledger") if isinstance(harness, dict) else None
-        item = ledger.get(evidence_id) if isinstance(ledger, dict) else None
-        return deepcopy(item) if isinstance(item, dict) else None
-
-    @_session_write_locked
-    def record_database_schema_evidence(
-        self,
-        session_id: str,
-        receipt_id: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Persist a schema/profile Receipt for process-restart recovery."""
-
-        data = self._read_file(session_id)
-        if not data:
-            raise FileNotFoundError(f"Session {session_id} not found")
-        harness = data.setdefault("harness", {})
-        ledger = harness.setdefault("database_schema_evidence_ledger", {})
-        existing = ledger.get(receipt_id)
-        if isinstance(existing, dict) and existing != payload:
-            raise ValueError(f"Database schema evidence {receipt_id} is immutable")
-        ledger[receipt_id] = deepcopy(payload)
-        self._write_file(session_id, data)
-        return deepcopy(ledger[receipt_id])
-
-    def get_database_schema_evidence(self, session_id: str, receipt_id: str) -> dict[str, Any] | None:
-        data = self._read_file(session_id)
-        harness = data.get("harness") if data else None
-        ledger = harness.get("database_schema_evidence_ledger") if isinstance(harness, dict) else None
-        item = ledger.get(receipt_id) if isinstance(ledger, dict) else None
-        return deepcopy(item) if isinstance(item, dict) else None
-
-    @_session_write_locked
-    def record_database_path_event(
-        self,
-        session_id: str,
-        event_id: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Persist one immutable Agent/legacy database path transition."""
-
-        data = self._read_file(session_id)
-        if not data:
-            raise FileNotFoundError(f"Session {session_id} not found")
-        harness = data.setdefault("harness", {})
-        ledger = harness.setdefault("database_path_events", {})
-        existing = ledger.get(event_id)
-        if isinstance(existing, dict) and existing != payload:
-            raise ValueError(f"Database path event {event_id} is immutable")
-        ledger[event_id] = deepcopy(payload)
-        self._write_file(session_id, data)
-        return deepcopy(ledger[event_id])
-
-    def list_database_path_events(
-        self,
-        session_id: str,
-        *,
-        query_id: str = "",
-        run_id: str = "",
-        goal_id: str = "",
-        goal_revision: int | None = None,
-    ) -> list[dict[str, Any]]:
-        data = self._read_file(session_id)
-        harness = data.get("harness") if data else None
-        ledger = harness.get("database_path_events") if isinstance(harness, dict) else None
-        if not isinstance(ledger, dict):
-            return []
-        return sorted(
-            (
-                deepcopy(item)
-                for item in ledger.values()
-                if isinstance(item, dict)
-                and (not query_id or str(item.get("query_id") or "") == str(query_id))
-                and (not run_id or str(item.get("run_id") or "") == str(run_id))
-                and (not goal_id or str(item.get("goal_id") or "") == str(goal_id))
-                and (goal_revision is None or item.get("goal_revision") == goal_revision)
-            ),
-            key=lambda item: float(item.get("created_at") or 0),
-        )
-
-    @_session_write_locked
-    def record_sql_validation_receipt(
-        self,
-        session_id: str,
-        receipt_id: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Persist an immutable SQL validator receipt bound to one SQL hash."""
-
-        data = self._read_file(session_id)
-        if not data:
-            raise FileNotFoundError(f"Session {session_id} not found")
-        harness = data.setdefault("harness", {})
-        receipts = harness.setdefault("sql_validation_receipts", {})
-        existing = receipts.get(receipt_id)
-        if isinstance(existing, dict) and existing != payload:
-            raise ValueError(f"SQL validation receipt {receipt_id} is immutable")
-        receipts[receipt_id] = deepcopy(payload)
-        self._write_file(session_id, data)
-        return deepcopy(receipts[receipt_id])
-
-    def get_sql_validation_receipt(
-        self,
-        session_id: str,
-        receipt_id: str,
-    ) -> dict[str, Any] | None:
-        data = self._read_file(session_id)
-        harness = data.get("harness") if data else None
-        receipts = harness.get("sql_validation_receipts") if isinstance(harness, dict) else None
-        item = receipts.get(receipt_id) if isinstance(receipts, dict) else None
-        return deepcopy(item) if isinstance(item, dict) else None
-
-    def list_sql_validation_receipts(self, session_id: str) -> list[dict[str, Any]]:
-        """List immutable validation receipts for server-side plan reuse."""
-
-        data = self._read_file(session_id)
-        harness = data.get("harness") if data else None
-        receipts = harness.get("sql_validation_receipts") if isinstance(harness, dict) else None
-        if not isinstance(receipts, dict):
-            return []
-        return [deepcopy(item) for item in receipts.values() if isinstance(item, dict)]
-
-    @_session_write_locked
-    def record_sql_execution_attestation(
-        self,
-        session_id: str,
-        validation_receipt_id: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Persist successful execution of one immutable validation receipt."""
-
-        data = self._read_file(session_id)
-        if not data:
-            raise FileNotFoundError(f"Session {session_id} not found")
-        harness = data.setdefault("harness", {})
-        attestations = harness.setdefault("sql_execution_attestations", {})
-        existing = attestations.get(validation_receipt_id)
-        if isinstance(existing, dict) and (
-            existing.get("generation_id") != payload.get("generation_id")
-            or existing.get("sql_sha256") != payload.get("sql_sha256")
-        ):
-            raise ValueError(f"SQL execution attestation {validation_receipt_id} is immutable")
-        if isinstance(existing, dict):
-            return deepcopy(existing)
-        attestations[validation_receipt_id] = deepcopy(payload)
-        self._write_file(session_id, data)
-        return deepcopy(payload)
-
-    def list_sql_execution_attestations(self, session_id: str) -> list[dict[str, Any]]:
-        data = self._read_file(session_id)
-        harness = data.get("harness") if data else None
-        attestations = harness.get("sql_execution_attestations") if isinstance(harness, dict) else None
-        if not isinstance(attestations, dict):
-            return []
-        return [deepcopy(item) for item in attestations.values() if isinstance(item, dict)]
-
-    @_session_write_locked
     def upsert_run_state(
         self,
         session_id: str,
@@ -3215,7 +2969,6 @@ class SessionManager:
                 "objective",
                 "goal_id",
                 "project_id",
-                "analytics_model_id",
                 "verification_enabled",
                 "task_profile",
                 "declared_verification_contract",
@@ -3944,9 +3697,6 @@ class SessionManager:
         refs = [item for item in refs if cls._is_safe_handoff_evidence(data, item)]
         refs = list({ref_key(item): item for item in refs}.values())
         artifact_refs = [item for item in refs if item.get("type") in {"artifact", "external_mutation"}]
-        sql_refs = [
-            item for item in refs if item.get("type") in {"analytics_result", "sql_generation", "sql_validation"}
-        ]
         report = run.verification_report
         durable_facts = []
         if report is not None and report.status.value in {"satisfied", "not_required"}:
@@ -3963,7 +3713,6 @@ class SessionManager:
             durable_facts=durable_facts,
             evidence_refs=refs[-100:],
             artifact_refs=artifact_refs[-40:],
-            sql_generation_refs=sql_refs[-40:],
             unresolved_gaps=(list(report.gaps) if report is not None else []),
         )
 
@@ -5750,8 +5499,7 @@ class SessionManager:
                 continue
             raw: Any = None
             try:
-                # Reuse the canonical reader so legacy embedded traces are
-                # migrated once instead of slowing every sidebar refresh.
+                # Project historical data in memory; listing never migrates stored bytes.
                 raw = self._read_file(f.stem)
                 if isinstance(raw, dict) and isinstance(raw.get("messages"), list):  # v2 格式
                     title = raw.get("title", f.stem)  # 取标题，缺省用文件名
@@ -5779,7 +5527,6 @@ class SessionManager:
                     "project_path",
                     "workspace_type",
                     "workspace_path",
-                    "analytics_model_id",
                     "llm_model_id",
                     "thinking_level",
                     "credential_name",
@@ -6111,19 +5858,6 @@ class SessionManager:
             "estimated_tokens": self._tool_context_tokens(output),
         }
 
-    @staticmethod
-    def _tool_context_result_id(output: str) -> str | None:
-        patterns = (
-            r'"result_id"\s*:\s*"([^"\\]+)"',
-            r"\bresult[_ -]?id\s*[：:=]\s*([A-Za-z0-9_.:-]+)",
-            r"\b(result-[A-Za-z0-9_-]+)\b",
-        )
-        for pattern in patterns:
-            match = re.search(pattern, output, flags=re.IGNORECASE)
-            if match:
-                return str(match.group(1))
-        return None
-
     @classmethod
     def _tool_context_raw_ref(
         cls,
@@ -6138,7 +5872,6 @@ class SessionManager:
         workspace_path: str = "",
         output_complete: bool = True,
     ) -> dict[str, Any]:
-        result_id = cls._tool_context_result_id(output)
         session_ref = {
             "kind": "session_tool_call",
             "session_id": session_id,
@@ -6148,41 +5881,6 @@ class SessionManager:
         }
         if source_query_id:
             session_ref["source_query_id"] = source_query_id
-        normalized_tool = str(tool_name or "").lower().replace("-", "_")
-        if result_id and (
-            not normalized_tool
-            or normalized_tool
-            in {
-                "database_sql_execute",
-                "database_knowledge_query",
-            }
-        ):
-            # The Session record only contains the preview/profile emitted by
-            # database_sql_execute. It remains useful after expiry, but is not
-            # a truthful fallback for the complete materialized JSONL result.
-            sql_ref: dict[str, Any] = {
-                "kind": "sql_query_result",
-                "result_id": result_id,
-                "session_id": session_id,
-                "tool_call_id": tool_call_id,
-                "source_query_id": source_query_id,
-                "artifact_format": "jsonl",
-                "source_hash": source_hash,
-                "source_hash_scope": source_hash_scope,
-                "fallback": {**session_ref, "output_complete": False},
-            }
-            field_patterns = {
-                "generation_id": r"\bgeneration_id\s*[：:=]\s*([A-Za-z0-9_.:-]+)",
-                "validation_receipt_id": r"\bvalidation_receipt_id\s*[：:=]\s*([A-Za-z0-9_.:-]+)",
-                "sql_sha256": r"\bsql_sha256\s*[：:=]\s*([A-Za-z0-9_.:-]+)",
-                "expires_at": r"(?:过期时间|expires_at)\s*[：:=]\s*([^）)\s]+)",
-                "artifact_sha256": r"\bartifact_sha256\s*[：:=]\s*(sha256:[A-Fa-f0-9]{64})",
-            }
-            for key, pattern in field_patterns.items():
-                match = re.search(pattern, output, flags=re.IGNORECASE)
-                if match:
-                    sql_ref[key] = str(match.group(1))
-            return sql_ref
         if re.search(r"(?:^|\s)/large_tool_results/[^\s`]+", output):
             workspace_digest = (
                 hashlib.sha256(
@@ -7014,47 +6712,6 @@ class SessionManager:
                 kind=kind,
             )
         return result
-
-    def session_references_result_id(self, session_id: str, result_id: str) -> bool:
-        """Whether a live Session Evidence ledger still owns a SQL artifact."""
-
-        data = self._read_file(session_id)
-        if not data:
-            return False
-        logical = deepcopy(data)
-        logical["messages"] = deepcopy(self.load_session(session_id))
-        self._ensure_evidence_metadata(session_id, logical)
-        index = logical.get("evidence_index")
-        if not isinstance(index, dict):
-            return False
-        return any(
-            isinstance(item, dict)
-            and isinstance(item.get("raw_output_ref"), dict)
-            and item["raw_output_ref"].get("kind") == "sql_query_result"
-            and str(item["raw_output_ref"].get("result_id") or "") == result_id
-            for item in index.values()
-        )
-
-    def result_owner_tool_call(self, session_id: str, result_id: str) -> dict[str, str] | None:
-        """Resolve one legacy SQL result to exactly one persisted ToolCall occurrence."""
-
-        data = {"messages": self.load_session(session_id)}
-        matches: list[dict[str, str]] = []
-        for _, _, message, tool_call in self._iter_persisted_tool_calls(data):
-            tool_name = str(tool_call.get("tool") or tool_call.get("name") or "")
-            if tool_name not in {"database_sql_execute", "database_knowledge_query"}:
-                continue
-            tool_call_id = str(tool_call.get("id") or "")
-            if tool_call_id and self._tool_context_result_id(self._tool_context_source(tool_call)) == result_id:
-                matches.append(
-                    {
-                        "tool_call_id": tool_call_id,
-                        "source_query_id": str(message.get("query_id") or ""),
-                        "source_run_id": str(tool_call.get("source_run_id") or ""),
-                        "source_hash": str(tool_call.get("source_hash") or ""),
-                    }
-                )
-        return matches[0] if len(matches) == 1 else None
 
     def begin_tool_context_job(
         self,
@@ -8275,8 +7932,16 @@ class SessionManager:
         self._write_file(session_id, data)
         return deepcopy(saved)
 
-    @_session_write_locked
     def audit_legacy_external_leases(
+        self, session_id: str, *, migrate: bool = True, release_id: str | None = None,
+    ) -> dict[str, Any]:
+        if migrate or release_id:
+            with self._tool_context_lock(session_id):
+                with self._session_process_lock(session_id):
+                    return self._audit_legacy_external_leases(session_id, migrate=migrate, release_id=release_id)
+        return self._audit_legacy_external_leases(session_id, migrate=False)
+
+    def _audit_legacy_external_leases(
         self,
         session_id: str,
         *,

@@ -1,11 +1,4 @@
-"""MCP Client Factory.
-
-MCP discovery can be noticeably more expensive than constructing the local
-Agent tool list, especially for stdio servers such as ``gbrain serve``.  The
-returned LangChain tools open a fresh MCP session when they are invoked, so
-their discovery metadata is safe to reuse across Agent instances in the same
-backend process.
-"""
+"""Generic MCP client factory and discovery cache for PuddingHarness."""
 
 from __future__ import annotations
 
@@ -30,7 +23,8 @@ _discovery_cache_lock = threading.Lock()
 
 
 def create_mcp_client(enabled_names: list[str] | None = None) -> MultiServerMCPClient:
-    """根据启用的服务器列表创建 MCP 客户端."""
+    """Create a client for the explicitly enabled user MCP servers."""
+
     cfg = build_mcp_servers_config(enabled_names)
     if not cfg:
         raise ValueError("No MCP servers enabled or configured")
@@ -38,7 +32,7 @@ def create_mcp_client(enabled_names: list[str] | None = None) -> MultiServerMCPC
 
 
 def _file_signature(path: Path) -> dict[str, Any]:
-    """Return cheap metadata that invalidates discovery after runtime changes."""
+    """Return cheap metadata for an absolute local command executable."""
 
     try:
         stat = path.stat()
@@ -53,7 +47,7 @@ def _file_signature(path: Path) -> dict[str, Any]:
 
 
 def _runtime_signatures(cfg: dict[str, Any]) -> list[dict[str, Any]]:
-    """Capture files whose contents affect the exposed MCP tool schema."""
+    """Capture generic local command files that affect server discovery."""
 
     signatures: list[dict[str, Any]] = []
     for server_name, server in cfg.items():
@@ -68,37 +62,13 @@ def _runtime_signatures(cfg: dict[str, Any]) -> list[dict[str, Any]]:
                     **_file_signature(Path(command)),
                 }
             )
-        environment = server.get("env")
-        if not isinstance(environment, dict):
-            continue
-        # The active gbrain configuration and Schema Pack determine the MCP
-        # tool descriptions. Include their file metadata so saving either one
-        # automatically forces a fresh discovery without restarting backend.
-        gbrain_home = str(environment.get("GBRAIN_HOME") or "").strip()
-        if gbrain_home:
-            home = Path(gbrain_home).expanduser()
-            pack_name = str(environment.get("GBRAIN_SCHEMA_PACK") or "puddingclaw-wiki").strip()
-            for kind, path in (
-                ("gbrain_config", home / ".gbrain" / "config.json"),
-                ("gbrain_schema_pack", home / ".gbrain" / "schema-packs" / pack_name / "pack.yaml"),
-            ):
-                signatures.append(
-                    {
-                        "server": server_name,
-                        "kind": kind,
-                        **_file_signature(path),
-                    }
-                )
     return signatures
 
 
 def _discovery_fingerprint(cfg: dict[str, Any]) -> str:
     """Hash effective connection data without retaining or logging secrets."""
 
-    payload = {
-        "servers": cfg,
-        "runtime_files": _runtime_signatures(cfg),
-    }
+    payload = {"servers": cfg, "runtime_files": _runtime_signatures(cfg)}
     canonical = json.dumps(
         payload,
         ensure_ascii=False,
@@ -110,7 +80,7 @@ def _discovery_fingerprint(cfg: dict[str, Any]) -> str:
 
 
 def invalidate_mcp_tool_cache() -> None:
-    """Invalidate cached discovery metadata for subsequent Agent builds."""
+    """Invalidate cached discovery metadata for subsequent agent builds."""
 
     global _discovery_cache_generation
     with _discovery_cache_lock:
@@ -151,13 +121,7 @@ async def load_filtered_mcp_tools(
     *,
     force_refresh: bool = False,
 ) -> list[BaseTool]:
-    """Load prefixed, allowlisted MCP tools for the DeepAgents runtime.
-
-    The adapter-backed tools create a fresh MCP session per invocation, so no
-    session stack has to outlive Agent construction. Discovery metadata is
-    cached per effective server configuration. Concurrent Agent builds share
-    one in-flight discovery instead of spawning duplicate stdio servers.
-    """
+    """Discover and cache all tools from explicitly enabled MCP servers."""
 
     cfg = build_mcp_servers_config(enabled_names)
     if not cfg:
@@ -184,6 +148,11 @@ async def load_filtered_mcp_tools(
                 name=f"mcp-discovery-{fingerprint[:12]}",
             )
             _discovery_inflight[inflight_key] = task
-    # One cancelled request must not cancel discovery awaited by another Agent
-    # build or the startup warm-up task.
     return list(await asyncio.shield(task))
+
+
+__all__ = [
+    "create_mcp_client",
+    "invalidate_mcp_tool_cache",
+    "load_filtered_mcp_tools",
+]

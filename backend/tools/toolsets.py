@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from extensions import extension_enabled
 
 # DeepAgents injects the native tools itself.  They are recorded here for a
 # complete, inspectable runtime inventory, but are not created by tools/.
@@ -49,15 +48,14 @@ UNCONDITIONAL_EXTENSION_TOOLSETS: dict[str, frozenset[str]] = {
         "commit_external_directory",
         "validate_artifact_contract",
     }),
-    "web_research": frozenset({"web_search", "fetch_url"}),
+    "web_research": frozenset({"web_search", "fetch_url", "deep_research"}),
     # WebBridge is enabled by the connector control plane, not by a Skill.
     # ToolsetMiddleware applies the runtime enabled gate before exposing it.
     "webbridge_browser": frozenset({"browser"}),
     "package_management": frozenset({"install_packages", "request_skill_runtime"}),
-    "read_later_capture": frozenset({"read_later_save_url"}),
 }
 
-# PuddingClaw tools are opt-in business capabilities.  A name must occur in
+# Optional Skill management capabilities retain the existing registry API.  A name must occur in
 # exactly one toolset; this makes accidental expansion of the model tool
 # surface visible in review and tests.
 BUSINESS_TOOLSETS: dict[str, frozenset[str]] = {
@@ -68,71 +66,7 @@ BUSINESS_TOOLSETS: dict[str, frozenset[str]] = {
         "prepare_skill_update",
         "update_skill",
     }),
-    "knowledge_analysis": frozenset({"llamaindex_knowledge_query", "pandas_knowledge_query"}),
-    "feishu_bitable": frozenset({"feishu_bitable_list_sources", "feishu_bitable_describe", "feishu_bitable_query"}),
-    "llm_wiki": frozenset(
-        {
-            "llm_wiki_context",
-            "llm_wiki_lint",
-            "llm_wiki_query",
-            "llm_wiki_compile",
-            "llm_wiki_conversation_documents",
-            "llm_wiki_create_raw",
-            "llm_wiki_start_ingest",
-            "llm_wiki_retire_pages",
-        }
-    ),
-    "gbrain_query": frozenset(
-        {
-            "gbrain_get_page",
-            "gbrain_list_pages",
-            "gbrain_search",
-            "gbrain_query",
-            "gbrain_think",
-            "gbrain_get_links",
-            "gbrain_get_backlinks",
-            "gbrain_traverse_graph",
-            "gbrain_get_timeline",
-            "gbrain_get_stats",
-            "gbrain_get_health",
-            "gbrain_resolve_slugs",
-            "gbrain_get_chunks",
-            "gbrain_get_active_schema_pack",
-            "gbrain_schema_stats",
-            "gbrain_schema_graph",
-            "gbrain_schema_explain_type",
-        }
-    ),
-    "database_analysis": frozenset({
-        "database_evidence_search",
-        "database_schema_inspect",
-        "database_sql_generate",
-        "database_sql_validate_legacy",
-        "database_sql_validate",
-        "database_sql_execute",
-        "database_query_trace_inspect",
-        "database_query_result_page",
-        "database_query_result_source",
-    }),
-    "semantic_lookup": frozenset({"semantic_entity_lookup"}),
-    "semantic_dimension_build": frozenset({
-        "inspect_dimension_build_input",
-        "request_dimension_build_rule",
-        "enqueue_semantic_dimension_build",
-        "get_semantic_dimension_build_job",
-        "publish_semantic_dimension_build",
-    }),
-    "semantic_steward": frozenset({
-        "discover_semantic_definitions",
-        "prepare_semantic_markdown",
-        "publish_semantic_markdown",
-    }),
-    "logical_dataset": frozenset({
-        "ensure_attachment_table_asset",
-        "list_logical_dataset_candidates",
-        "request_logical_dataset_rule",
-        "apply_logical_dataset_rule",
-    }),
+
 }
 
 TOOLSETS: dict[str, frozenset[str]] = {
@@ -262,6 +196,7 @@ TOOL_CONTROL_DESCRIPTORS: dict[str, ToolControlDescriptor] = {
     "edit_file": _WORKSPACE_WRITE,
     "execute": _DYNAMIC_EXECUTION,
     "task": _DELEGATION,
+    "deep_research": _DELEGATION,
     # Harness file protocol.
     "inspect_file_version": _READ_ONLY,
     "copy_file": _WORKSPACE_WRITE,
@@ -298,9 +233,6 @@ TOOL_CONTROL_DESCRIPTORS: dict[str, ToolControlDescriptor] = {
         approval_scope="action",
         policy="webbridge_policy",
     ),
-    # The Tool only queues an idempotent internal bookmark mutation. The
-    # worker performs the separately sandboxed public-network fetch later.
-    "read_later_save_url": _INTERNAL_MUTATION,
     "install_packages": _PACKAGE_INSTALL,
     # Skill management.
     "inspect_skill": _READ_ONLY,
@@ -308,70 +240,7 @@ TOOL_CONTROL_DESCRIPTORS: dict[str, ToolControlDescriptor] = {
     "install_skill": _SKILL_COMMIT,
     "prepare_skill_update": _SKILL_PREPARE,
     "update_skill": _SKILL_COMMIT,
-    # Read-only business analysis.
-    "llamaindex_knowledge_query": _READ_ONLY,
-    "pandas_knowledge_query": _READ_ONLY,
-    "feishu_bitable_describe": _PRIVATE_EXTERNAL_READ,
-    "feishu_bitable_list_sources": _READ_ONLY,
-    "feishu_bitable_query": _PRIVATE_EXTERNAL_READ,
-    "llm_wiki_context": _READ_ONLY,
-    "llm_wiki_lint": _READ_ONLY,
-    "llm_wiki_query": _READ_ONLY,
-    "llm_wiki_compile": _INTERNAL_MUTATION,
-    "llm_wiki_publish": _INTERNAL_MUTATION,
-    "llm_wiki_conversation_documents": _READ_ONLY,
-    "llm_wiki_create_raw": _INTERNAL_MUTATION,
-    "llm_wiki_start_ingest": _INTERNAL_MUTATION,
-    "llm_wiki_retire_pages": _INTERNAL_MUTATION,
-    "gbrain_get_page": _READ_ONLY,
-    "gbrain_list_pages": _READ_ONLY,
-    "gbrain_search": _READ_ONLY,
-    "gbrain_query": _READ_ONLY,
-    "gbrain_think": _READ_ONLY,
-    "gbrain_get_links": _READ_ONLY,
-    "gbrain_get_backlinks": _READ_ONLY,
-    "gbrain_traverse_graph": _READ_ONLY,
-    "gbrain_get_timeline": _READ_ONLY,
-    "gbrain_get_stats": _READ_ONLY,
-    "gbrain_get_health": _READ_ONLY,
-    "gbrain_resolve_slugs": _READ_ONLY,
-    "gbrain_get_chunks": _READ_ONLY,
-    "gbrain_get_active_schema_pack": _READ_ONLY,
-    "gbrain_schema_stats": _READ_ONLY,
-    "gbrain_schema_graph": _READ_ONLY,
-    "gbrain_schema_explain_type": _READ_ONLY,
-    "database_schema_inspect": _READ_ONLY,
-    "database_evidence_search": _READ_ONLY,
-    # These tools may be business-read-only, but they create durable
-    # generations, validation receipts, and query-result artifacts.  Model
-    # control contracts describe observable control-plane mutation, not SQL
-    # verb semantics.
-    "database_sql_generate": _INTERNAL_MUTATION,
-    "database_sql_validate_legacy": _INTERNAL_MUTATION,
-    "database_sql_validate": _INTERNAL_MUTATION,
-    "database_sql_execute": _INTERNAL_MUTATION,
-    "database_query_trace_inspect": _READ_ONLY,
-    "database_query_result_page": _READ_ONLY,
-    "database_query_result_source": _INTERNAL_MUTATION,
-    "semantic_entity_lookup": _READ_ONLY,
-    "discover_semantic_definitions": _INTERNAL_MUTATION,
-    "inspect_dimension_build_input": _READ_ONLY,
-    "get_semantic_dimension_build_job": _READ_ONLY,
-    "list_logical_dataset_candidates": _READ_ONLY,
-    # Internal, idempotent control-plane mutations.
-    "request_dimension_build_rule": _INTERNAL_MUTATION,
-    "enqueue_semantic_dimension_build": _INTERNAL_MUTATION,
-    "publish_semantic_dimension_build": _INTERNAL_MUTATION,
-    "prepare_semantic_markdown": _INTERNAL_MUTATION,
-    "publish_semantic_markdown": ToolControlDescriptor(
-        side_effect="managed_definition_write",
-        idempotency="required",
-        approval_scope="call",
-        policy="digest_bound_user_confirmation",
-    ),
-    "ensure_attachment_table_asset": _INTERNAL_MUTATION,
-    "request_logical_dataset_rule": _INTERNAL_MUTATION,
-    "apply_logical_dataset_rule": _INTERNAL_MUTATION,
+
 }
 
 
@@ -396,24 +265,8 @@ def business_tool_names() -> frozenset[str]:
 
 
 def agent_custom_tool_names() -> frozenset[str]:
-    """Return the single-source registration set for PuddingClaw Agent tools."""
-    enabled_business = {"skill_management"}
-    if extension_enabled("knowledge"):
-        enabled_business.update({"knowledge_analysis", "feishu_bitable", "llm_wiki", "gbrain_query"})
-    if extension_enabled("analytics"):
-        enabled_business.update(
-            {
-                "database_analysis",
-                "semantic_lookup",
-                "semantic_dimension_build",
-                "semantic_steward",
-                "logical_dataset",
-            }
-        )
-    defaults = DEFAULT_CUSTOM_TOOL_NAMES
-    if not extension_enabled("knowledge"):
-        defaults = defaults - UNCONDITIONAL_EXTENSION_TOOLSETS["read_later_capture"]
-    return tools_for_toolsets(enabled_business) | defaults
+    """Return the generic built-in registration set for Harness Agent tools."""
+    return tools_for_toolsets({"skill_management"}) | DEFAULT_CUSTOM_TOOL_NAMES
 
 
 def validate_toolset_names(toolsets: Iterable[str]) -> list[str]:

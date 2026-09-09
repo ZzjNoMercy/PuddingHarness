@@ -437,7 +437,7 @@ class MacOSSeatbeltRunner:
                 workspace.mkdir()
                 scratch.mkdir()
                 secret = root / "must-not-read.txt"
-                marker = "PUDDINGCLAW_SEATBELT_DENY_PROBE"
+                marker = "PUDDINGHARNESS_SEATBELT_DENY_PROBE"
                 secret.write_text(marker, encoding="utf-8")
                 runner = cls(
                     SandboxGrantProfile.build(
@@ -820,7 +820,7 @@ class LinuxBwrapSeccompRunner:
                 scratch.mkdir()
                 secret_root.mkdir()
                 secret = secret_root / "must-not-read.txt"
-                marker = "PUDDINGCLAW_BWRAP_DENY_PROBE"
+                marker = "PUDDINGHARNESS_BWRAP_DENY_PROBE"
                 secret.write_text(marker, encoding="utf-8")
                 runner = cls(
                     SandboxGrantProfile.build(

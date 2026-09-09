@@ -27,7 +27,7 @@ from .swebench_adapter import (
 )
 
 SWEBENCH_PACKAGE = "swebench==4.1.0"
-SWEBENCH_ARCHITECTURE_ENV = "PUDDINGCLAW_SWEBENCH_ARCH"
+SWEBENCH_ARCHITECTURE_ENV = "PUDDINGHARNESS_SWEBENCH_ARCH"
 SUPPORTED_SWEBENCH_ARCHITECTURES = frozenset({"arm64", "x86_64"})
 MAX_PROCESS_LOG_BYTES = 20 * 1024 * 1024
 MAX_PROCESS_TAIL_BYTES = 200_000
@@ -44,13 +44,13 @@ def _puddingclaw_guarded_create(self, image, command=None, **kwargs):
     kwargs["cap_add"] = []
     kwargs["cap_drop"] = ["ALL"]
     kwargs["security_opt"] = ["no-new-privileges:true"]
-    kwargs["mem_limit"] = os.environ["PUDDINGCLAW_SWEBENCH_CONTAINER_MEMORY"]
-    kwargs["nano_cpus"] = int(os.environ["PUDDINGCLAW_SWEBENCH_CONTAINER_NANO_CPUS"])
-    kwargs["pids_limit"] = int(os.environ["PUDDINGCLAW_SWEBENCH_CONTAINER_PIDS"])
-    kwargs["storage_opt"] = {"size": os.environ["PUDDINGCLAW_SWEBENCH_CONTAINER_DISK"]}
+    kwargs["mem_limit"] = os.environ["PUDDINGHARNESS_SWEBENCH_CONTAINER_MEMORY"]
+    kwargs["nano_cpus"] = int(os.environ["PUDDINGHARNESS_SWEBENCH_CONTAINER_NANO_CPUS"])
+    kwargs["pids_limit"] = int(os.environ["PUDDINGHARNESS_SWEBENCH_CONTAINER_PIDS"])
+    kwargs["storage_opt"] = {"size": os.environ["PUDDINGHARNESS_SWEBENCH_CONTAINER_DISK"]}
     kwargs["init"] = True
     labels = dict(kwargs.get("labels") or {})
-    labels["com.puddingclaw.swebench.run_id"] = os.environ["PUDDINGCLAW_SWEBENCH_RUN_ID"]
+    labels["com.puddingclaw.swebench.run_id"] = os.environ["PUDDINGHARNESS_SWEBENCH_RUN_ID"]
     kwargs["labels"] = labels
     return _original_create(self, image, command, **kwargs)
 
@@ -67,7 +67,7 @@ from swebench.harness.test_spec import test_spec as test_spec_module
 if not getattr(ContainerCollection.create, "__puddingclaw_guarded__", False):
     raise RuntimeError("PuddingClaw Docker safety guard was not installed")
 
-architecture = os.environ.get("PUDDINGCLAW_SWEBENCH_ARCH", "")
+architecture = os.environ.get("PUDDINGHARNESS_SWEBENCH_ARCH", "")
 if architecture not in {"arm64", "x86_64"}:
     raise RuntimeError("PuddingClaw SWE-bench architecture is missing or unsupported")
 
@@ -103,7 +103,7 @@ def _bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
 
 
 def _bounded_memory() -> str:
-    value = os.getenv("PUDDINGCLAW_SWEBENCH_CONTAINER_MEMORY", "8g").lower()
+    value = os.getenv("PUDDINGHARNESS_SWEBENCH_CONTAINER_MEMORY", "8g").lower()
     match = re.fullmatch(r"([1-9][0-9]*)([gG])", value)
     if match is None:
         return "8g"
@@ -136,7 +136,7 @@ def _host_architecture() -> str:
 
 
 def _namespace(architecture: str | None = None) -> str:
-    configured = os.getenv("PUDDINGCLAW_SWEBENCH_NAMESPACE")
+    configured = os.getenv("PUDDINGHARNESS_SWEBENCH_NAMESPACE")
     if configured is not None:
         return configured or "none"
     selected = normalize_swebench_architecture(
@@ -232,7 +232,7 @@ async def _run_process(
         pid_payload = json.dumps(
             {
                 "pid": process.pid,
-                "run_id": environment.get("PUDDINGCLAW_SWEBENCH_RUN_ID"),
+                "run_id": environment.get("PUDDINGHARNESS_SWEBENCH_RUN_ID"),
                 "process_started_at": process_started_at,
             },
             separators=(",", ":"),
@@ -331,14 +331,14 @@ def _docker_backend_is_approved() -> bool:
         # deployments must point at a dedicated rootless/VM daemon explicitly.
         endpoint = os.getenv("DOCKER_HOST", "")
         return not endpoint or endpoint.startswith("unix://") or os.getenv(
-            "PUDDINGCLAW_SWEBENCH_ISOLATED_DOCKER"
+            "PUDDINGHARNESS_SWEBENCH_ISOLATED_DOCKER"
         ) == "1"
     if platform.system() == "Windows":
         # Python's subprocess API cannot guarantee Job Object tree termination
         # here yet, so fail closed until that implementation exists.
         return False
     endpoint = os.getenv("DOCKER_HOST", "")
-    return bool(endpoint) and os.getenv("PUDDINGCLAW_SWEBENCH_ISOLATED_DOCKER") == "1"
+    return bool(endpoint) and os.getenv("PUDDINGHARNESS_SWEBENCH_ISOLATED_DOCKER") == "1"
 
 
 def _official_environment() -> dict[str, str]:
@@ -398,7 +398,7 @@ async def probe_official_swebench_runtime() -> dict[str, Any]:
             "package": SWEBENCH_PACKAGE,
             "reason": (
                 "SWE-bench requires a dedicated rootless/VM Docker endpoint on Linux; "
-                "configure DOCKER_HOST and PUDDINGCLAW_SWEBENCH_ISOLATED_DOCKER=1 "
+                "configure DOCKER_HOST and PUDDINGHARNESS_SWEBENCH_ISOLATED_DOCKER=1 "
                 "(Windows is not supported until process-tree Job Object cleanup is available)"
             ),
         }
@@ -542,11 +542,11 @@ async def run_official_swebench_harness(
             "receipt": {**base_receipt, "status": "error", "docker_server_version": docker_detail, "reason": reason},
         }
 
-    test_timeout = _bounded_int("PUDDINGCLAW_SWEBENCH_TEST_TIMEOUT_SECONDS", 1_800, 60, 7_200)
-    max_workers = _bounded_int("PUDDINGCLAW_SWEBENCH_MAX_WORKERS", 1, 1, 4)
+    test_timeout = _bounded_int("PUDDINGHARNESS_SWEBENCH_TEST_TIMEOUT_SECONDS", 1_800, 60, 7_200)
+    max_workers = _bounded_int("PUDDINGHARNESS_SWEBENCH_MAX_WORKERS", 1, 1, 4)
     default_job_timeout = 1_800 + ((test_timeout + 1_800) * max(1, len(expected_ids)) // max_workers)
     job_timeout = _bounded_int(
-        "PUDDINGCLAW_SWEBENCH_JOB_TIMEOUT_SECONDS",
+        "PUDDINGHARNESS_SWEBENCH_JOB_TIMEOUT_SECONDS",
         default_job_timeout,
         600,
         24 * 3_600,
@@ -555,17 +555,17 @@ async def run_official_swebench_harness(
     environment.update(
         {
             "PYTHONPATH": str(harness_root),
-            "PUDDINGCLAW_SWEBENCH_RUN_ID": run_id,
+            "PUDDINGHARNESS_SWEBENCH_RUN_ID": run_id,
             SWEBENCH_ARCHITECTURE_ENV: architecture,
-            "PUDDINGCLAW_SWEBENCH_CONTAINER_MEMORY": _bounded_memory(),
-            "PUDDINGCLAW_SWEBENCH_CONTAINER_NANO_CPUS": str(
-                _bounded_int("PUDDINGCLAW_SWEBENCH_CONTAINER_CPUS", 4, 1, 16) * 1_000_000_000
+            "PUDDINGHARNESS_SWEBENCH_CONTAINER_MEMORY": _bounded_memory(),
+            "PUDDINGHARNESS_SWEBENCH_CONTAINER_NANO_CPUS": str(
+                _bounded_int("PUDDINGHARNESS_SWEBENCH_CONTAINER_CPUS", 4, 1, 16) * 1_000_000_000
             ),
-            "PUDDINGCLAW_SWEBENCH_CONTAINER_PIDS": str(
-                _bounded_int("PUDDINGCLAW_SWEBENCH_CONTAINER_PIDS", 1024, 64, 4096)
+            "PUDDINGHARNESS_SWEBENCH_CONTAINER_PIDS": str(
+                _bounded_int("PUDDINGHARNESS_SWEBENCH_CONTAINER_PIDS", 1024, 64, 4096)
             ),
-            "PUDDINGCLAW_SWEBENCH_CONTAINER_DISK": (
-                f'{_bounded_int("PUDDINGCLAW_SWEBENCH_CONTAINER_DISK_GB", 20, 4, 100)}G'
+            "PUDDINGHARNESS_SWEBENCH_CONTAINER_DISK": (
+                f'{_bounded_int("PUDDINGHARNESS_SWEBENCH_CONTAINER_DISK_GB", 20, 4, 100)}G'
             ),
         }
     )
@@ -664,10 +664,10 @@ async def run_official_swebench_harness(
             "network": "none",
             "cap_drop": ["ALL"],
             "no_new_privileges": True,
-            "memory": environment["PUDDINGCLAW_SWEBENCH_CONTAINER_MEMORY"],
-            "cpus": int(environment["PUDDINGCLAW_SWEBENCH_CONTAINER_NANO_CPUS"]) / 1_000_000_000,
-            "pids": int(environment["PUDDINGCLAW_SWEBENCH_CONTAINER_PIDS"]),
-            "writable_layer": environment["PUDDINGCLAW_SWEBENCH_CONTAINER_DISK"],
+            "memory": environment["PUDDINGHARNESS_SWEBENCH_CONTAINER_MEMORY"],
+            "cpus": int(environment["PUDDINGHARNESS_SWEBENCH_CONTAINER_NANO_CPUS"]) / 1_000_000_000,
+            "pids": int(environment["PUDDINGHARNESS_SWEBENCH_CONTAINER_PIDS"]),
+            "writable_layer": environment["PUDDINGHARNESS_SWEBENCH_CONTAINER_DISK"],
         },
         "run_id": run_id,
         "exit_code": process.exit_code,

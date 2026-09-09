@@ -1,0 +1,16 @@
+.venv/
+node_modules/
+.next*
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+.env.*
+artifacts/
+*.db
+*.sqlite*
+build/
+dist/
+*.egg-info/
+coverage/

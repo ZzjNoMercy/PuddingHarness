@@ -1,88 +1,161 @@
-"""Core Tools factory — auto-discovers all *_tool.py files in this package."""
+"""PuddingHarness extraction overlay for the local tool factory.
+
+This file is copied to ``backend/tools/__init__.py`` in the future target
+repository.  It deliberately does not scan the package directory.  A module
+and its factory must be reviewed and added to ``GENERIC_TOOL_FACTORIES``
+before it can be imported by this factory.
+
+The legacy PuddingClaw factory remains unchanged.  This overlay is a target
+repository preparation artifact, not a repository extraction or release.
+"""
+
+from __future__ import annotations
 
 import importlib
 import inspect
 from pathlib import Path
-from typing import List
+from typing import Final
 
 from langchain_core.tools import BaseTool
 
-from extensions import extension_enabled
 
-# 模块级工具实例缓存：避免动态加载路径每次请求重建工具对象
-# key = (module_name, base_dir)，value = List[BaseTool]
-# 保证 SearchKnowledgeBaseTool._index 等有状态缓存不丢失
-_tool_instance_cache: dict[tuple[str, str], List[BaseTool]] = {}
-
-KNOWLEDGE_TOOL_MODULES = {
-    "feishu_bitable_tools",
-    "llm_wiki_tools",
-    "mineru_tool",
-    "read_later_tool",
-    "search_knowledge_tool",
-}
-ANALYTICS_TOOL_MODULES = {
-    "database_knowledge_tool",
-    "inspect_dimension_build_input_tool",
-    "logical_dataset_tools",
-    "request_dimension_build_rule_tool",
-    "request_logical_dataset_rule_tool",
-    "semantic_dimension_build_tool",
-    "semantic_steward_tool",
-}
-SHARED_DATA_TOOL_MODULES = {"pandas_knowledge_tool"}
-
-
-def _extension_module_enabled(module_name: str) -> bool:
-    if module_name in KNOWLEDGE_TOOL_MODULES:
-        return extension_enabled("knowledge")
-    if module_name in ANALYTICS_TOOL_MODULES:
-        return extension_enabled("analytics")
-    if module_name in SHARED_DATA_TOOL_MODULES:
-        return extension_enabled("knowledge") or extension_enabled("analytics")
-    return True
-
-# 动态工具加载注册表：按意图类别分组，用于按需加载工具子集
-# core 类别始终加载；其他类别根据用户消息意图检测按需激活
-TOOL_CATEGORIES: dict[str, list[str]] = {
-    "core": ["read_file_tool", "write_file_tool", "terminal_tool", "task_manager_tool", "mineru_tool"],
-    "knowledge": ["search_knowledge_tool", "web_search_tool", "fetch_url_tool", "read_later_tool"],
-    "table": ["pandas_knowledge_tool", "database_knowledge_tool"],
-    # research 独立于 knowledge：deep_research 是 subagent 隔离工具，不是简单检索。
-    # 当前 ToolIntentRouter 默认不自动路由到 research，后续需要时再显式接入。
-    "research": ["deep_research_tool"],
-    "skill": ["execute_skill_tool", "create_skill_version_tool"],
-    "code_exec": ["python_repl_tool"],
+# Explicit module -> factory registration.  The registry is the discovery
+# boundary: files that happen to be present in the package are not tools.
+# Keep the values explicit so an imported ``create_*`` helper can never be
+# selected accidentally.
+GENERIC_TOOL_FACTORIES: Final[dict[str, str]] = {
+    "browser_tool": "create_browser_tool",
+    "create_skill_version_tool": "create_skill_version_tool",
+    "deep_research_tool": "create_deep_research_tool",
+    "fetch_url_tool": "create_fetch_url_tool",
+    "python_repl_tool": "create_python_repl_tool",
+    "read_evidence_tool": "create_read_evidence_tool",
+    "read_external_file_tool": "create_read_external_file_tool",
+    "read_file_tool": "create_read_file_tool",
+    "read_resource_tool": "create_read_resource_tool",
+    "request_skill_runtime_tool": "create_request_skill_runtime_tool",
+    "request_skill_secret_tool": "create_request_skill_secret_tool",
+    "request_user_input_tool": "create_request_user_input_tool",
+    "skill_inspection_tool": "create_skill_inspection_tool",
+    "skill_management_tool": "create_skill_management_tools",
+    "task_manager_tool": "create_task_manager_tool",
+    "terminal_tool": "create_terminal_tool",
+    "update_goal_tool": "create_update_goal_tool",
+    "update_memory_tool": "create_update_memory_tool",
+    "web_search_tool": "create_web_search_tool",
+    "write_file_tool": "create_write_file_tool",
 }
 
 
-def _load_tool_module(module_name: str, base_dir: Path) -> List[BaseTool]:
-    """加载单个工具模块并返回其创建的工具列表（带实例缓存）。
+# Category membership is also explicit.  Unknown categories are ignored;
+# this keeps the compatibility API while preventing a caller from turning a
+# business label into package-wide discovery.
+TOOL_CATEGORIES: Final[dict[str, tuple[str, ...]]] = {
+    "core": (
+        "read_evidence_tool",
+        "read_external_file_tool",
+        "read_file_tool",
+        "read_resource_tool",
+        "task_manager_tool",
+        "terminal_tool",
+        "update_goal_tool",
+        "update_memory_tool",
+        "write_file_tool",
+    ),
+    "skill": (
+        "create_skill_version_tool",
+        "request_skill_runtime_tool",
+        "request_skill_secret_tool",
+        "request_user_input_tool",
+        "skill_inspection_tool",
+        "skill_management_tool",
+    ),
+    "web": (
+        "browser_tool",
+        "fetch_url_tool",
+        "web_search_tool",
+    ),
+    "research": ("deep_research_tool",),
+    "code_exec": ("python_repl_tool",),
+}
 
-    内部辅助函数，被 get_all_tools() 和 get_tools_by_categories() 共用。
-    缓存工具实例，避免动态加载路径每次请求重建（保护 SearchKnowledgeBaseTool._index 等有状态缓存）。
+
+# Module-level instances retain the legacy cache behavior.  The base directory
+# is part of the key because file and skill tools bind to it at construction.
+_tool_instance_cache: dict[tuple[str, str], list[BaseTool]] = {}
+
+
+def _factory_parameters(factory: object) -> tuple[list[inspect.Parameter], list[inspect.Parameter]]:
+    """Return (all parameters, required parameters) for a registered factory."""
+
+    parameters = list(inspect.signature(factory).parameters.values())
+    required = [
+        parameter
+        for parameter in parameters
+        if parameter.default is inspect.Parameter.empty
+        and parameter.kind
+        not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    ]
+    return parameters, required
+
+
+def _invoke_registered_factory(factory: object, base_dir: Path) -> object:
+    """Call only the small set of constructor shapes used by this overlay.
+
+    Factories that need runtime-injected dependencies are intentionally skipped
+    here and remain attached by the runtime that owns those dependencies.  In
+    particular, this function never guesses arguments for an arbitrary
+    ``create_*`` function.
     """
+
+    parameters, required = _factory_parameters(factory)
+    base_parameter = next(
+        (
+            parameter
+            for parameter in parameters
+            if parameter.name in {"base_dir", "dir", "path", "_base_dir"}
+            and parameter.kind
+            not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        ),
+        None,
+    )
+    unsupported_required = [parameter for parameter in required if parameter is not base_parameter]
+    if not unsupported_required and base_parameter is not None:
+        if base_parameter.kind is inspect.Parameter.POSITIONAL_ONLY:
+            return factory(base_dir)  # type: ignore[operator]
+        return factory(**{base_parameter.name: base_dir})  # type: ignore[operator]
+
+    if not required:
+        return factory()  # type: ignore[operator]
+
+    # The registered function may have additional optional parameters, but a
+    # required injected dependency (runner, paths, session identity, ...) is
+    # not available at this compatibility boundary.
+    raise TypeError(
+        f"registered factory requires unsupported parameters: "
+        f"{[parameter.name for parameter in parameters]}"
+    )
+
+
+def _load_tool_module(module_name: str, base_dir: Path) -> list[BaseTool]:
+    """Load one reviewed module and invoke its reviewed factory, if possible."""
+
+    factory_name = GENERIC_TOOL_FACTORIES.get(module_name)
+    if factory_name is None:
+        return []
+
     cache_key = (module_name, str(base_dir))
     if cache_key in _tool_instance_cache:
         return _tool_instance_cache[cache_key]
 
     try:
         module = importlib.import_module(f".{module_name}", package=__package__)
-        factory = next(
-            (
-                obj
-                for name, obj in inspect.getmembers(module, inspect.isfunction)
-                if name.startswith("create_")
-            ),
-            None,
-        )
-        if factory is None:
-            print(f"[tools] Warning: no create_* function found in {module_name}")
+        factory = getattr(module, factory_name, None)
+        if not callable(factory) or getattr(factory, "__module__", None) != module.__name__:
+            print(f"[tools] Warning: rejected unowned factory {module_name}.{factory_name}")
             return []
 
-        params = list(inspect.signature(factory).parameters.values())
-        result = factory(base_dir) if (params and ("dir" in params[0].name or "path" in params[0].name)) else factory()
-
+        result = _invoke_registered_factory(factory, base_dir)
         tools = result if isinstance(result, list) else [result]
         _tool_instance_cache[cache_key] = tools
         return tools
@@ -91,51 +164,45 @@ def _load_tool_module(module_name: str, base_dir: Path) -> List[BaseTool]:
         return []
 
 
-def get_all_tools(base_dir: Path) -> List[BaseTool]:
-    """Create and return all tools by auto-scanning *_tool.py files in tools/."""
-    tools_dir = Path(__file__).parent
-    tools: List[BaseTool] = []
+def _report_loaded(tools: list[BaseTool], *, prefix: str) -> None:
+    safe = sum(1 for tool in tools if getattr(tool, "risk_level", "safe") == "safe")
+    moderate = sum(1 for tool in tools if getattr(tool, "risk_level", "") == "moderate")
+    dangerous = sum(1 for tool in tools if getattr(tool, "risk_level", "") == "dangerous")
+    print(f"[tools] {prefix}: {len(tools)} tools (safe={safe}, moderate={moderate}, dangerous={dangerous})")
 
-    tool_files = sorted(set(tools_dir.glob("*_tool.py")) | set(tools_dir.glob("*_tools.py")))
-    for tool_file in tool_files:
-        module_name = tool_file.stem
-        if module_name in ("__init__", "skills_scanner", "tavily_search_tool"):
-            continue
-        if not _extension_module_enabled(module_name):
-            continue
+
+def get_all_tools(base_dir: Path) -> list[BaseTool]:
+    """Return all reviewed generic tools in deterministic module order."""
+
+    tools: list[BaseTool] = []
+    for module_name in sorted(GENERIC_TOOL_FACTORIES):
         tools.extend(_load_tool_module(module_name, base_dir))
-
-    safe = sum(1 for t in tools if getattr(t, 'risk_level', 'safe') == 'safe')
-    moderate = sum(1 for t in tools if getattr(t, 'risk_level', '') == 'moderate')
-    dangerous = sum(1 for t in tools if getattr(t, 'risk_level', '') == 'dangerous')
-    print(f"[tools] Loaded {len(tools)} tools (safe={safe}, moderate={moderate}, dangerous={dangerous})")
-
+    _report_loaded(tools, prefix="Loaded")
     return tools
 
 
-def get_tools_by_categories(base_dir: Path, categories: set[str]) -> List[BaseTool]:
-    """按类别按需加载工具，始终包含 core 类别。
+def get_tools_by_categories(base_dir: Path, categories: set[str]) -> list[BaseTool]:
+    """Load reviewed tools for categories, always including ``core``.
 
-    用于动态工具加载：根据用户意图检测结果只加载相关工具子集，
-    减少无关工具对 LLM 的干扰，降低 token 消耗。
+    The function keeps the legacy call signature.  Category names are looked
+    up only in ``TOOL_CATEGORIES``; there is no fallback to filesystem scans.
     """
-    # core 类别始终加载
-    active_categories = categories | {"core"}
-    seen_modules: set[str] = set()
-    tools: List[BaseTool] = []
 
+    active_categories = set(categories) | {"core"}
+    module_names: set[str] = set()
     for category in active_categories:
-        module_names = TOOL_CATEGORIES.get(category, [])
-        for module_name in module_names:
-            if module_name in seen_modules:
-                continue
-            seen_modules.add(module_name)
-            tools.extend(_load_tool_module(module_name, base_dir))
+        module_names.update(TOOL_CATEGORIES.get(category, ()))
 
-    safe = sum(1 for t in tools if getattr(t, 'risk_level', 'safe') == 'safe')
-    moderate = sum(1 for t in tools if getattr(t, 'risk_level', '') == 'moderate')
-    dangerous = sum(1 for t in tools if getattr(t, 'risk_level', '') == 'dangerous')
-    print(f"[tools] Dynamic load: {len(tools)} tools from categories={sorted(active_categories)} "
-          f"(safe={safe}, moderate={moderate}, dangerous={dangerous})")
-
+    tools: list[BaseTool] = []
+    for module_name in sorted(module_names):
+        tools.extend(_load_tool_module(module_name, base_dir))
+    _report_loaded(tools, prefix=f"Dynamic load categories={sorted(active_categories)}")
     return tools
+
+
+__all__ = [
+    "GENERIC_TOOL_FACTORIES",
+    "TOOL_CATEGORIES",
+    "get_all_tools",
+    "get_tools_by_categories",
+]

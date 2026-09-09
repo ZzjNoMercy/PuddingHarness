@@ -15,10 +15,6 @@ from pathlib import Path, PurePosixPath
 
 VIRTUAL_NAMESPACE_ROOTS = (
     "/workspace",
-    "/knowledge",
-    "/semantic-assets",
-    "/sql-guardrails",
-    "/analytics-models",
     "/skills",
     "/large_tool_results",
     "/scratch",
@@ -96,7 +92,7 @@ def classify_path_authority(
 
     * ``/workspace`` and relative paths belong to the current project;
     * ``/scratch`` belongs to the Goal-scoped internal scratch backend;
-    * other registered virtual namespaces are managed by PuddingClaw;
+    * other registered virtual namespaces are managed by PuddingHarness;
     * host absolute paths resolving inside ``workspace_root`` are canonicalized
       back to ``/workspace``;
     * traversal or a symlink that escapes the workspace is ``ESCAPE``;

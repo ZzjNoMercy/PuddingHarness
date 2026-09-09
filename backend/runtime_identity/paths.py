@@ -1,4 +1,8 @@
-"""Stable host paths for user-owned PuddingClaw runtime state."""
+"""Stable host paths for user-owned PuddingHarness runtime state.
+
+Internal path API names are retained for generic callers. Host state belongs
+exclusively to PuddingHarness; legacy Home import requires the explicit
+upgrade workflow, never an environment fallback."""
 
 from __future__ import annotations
 
@@ -12,32 +16,32 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 
 
 def resolve_puddingclaw_home() -> Path:
-    """Resolve the host-side PuddingClaw data root.
+    """Resolve the host-side PuddingHarness data root.
 
-    ``PUDDINGCLAW_HOME`` is intentionally interpreted by the Backend host
+    ``PUDDINGHARNESS_HOME`` is intentionally interpreted by the Backend host
     process, never by an Agent command or a sandbox container.
     """
 
-    configured = os.environ.get("PUDDINGCLAW_HOME", "").strip()
-    candidate = Path(configured).expanduser() if configured else Path.home() / ".puddingclaw"
+    configured = os.environ.get("PUDDINGHARNESS_HOME", "").strip()
+    candidate = Path(configured).expanduser() if configured else Path.home() / ".puddingharness"
     if not candidate.is_absolute():
-        raise ValueError("PUDDINGCLAW_HOME must be an absolute host path")
+        raise ValueError("PUDDINGHARNESS_HOME must be an absolute host path")
     resolved = candidate.resolve(strict=False)
     if resolved.exists() and not resolved.is_dir():
-        raise ValueError("PUDDINGCLAW_HOME must point to a directory, not a file")
+        raise ValueError("PUDDINGHARNESS_HOME must point to a directory, not a file")
     return resolved
 
 
 def trusted_owner_user_id() -> str:
     """Return the Backend-owned credential principal for this deployment.
 
-    PuddingClaw currently runs as a single-user desktop service.  The value is
+    PuddingHarness currently runs as a single-user desktop service.  The value is
     therefore deployment configuration, not the caller-controlled ``user_id``
     field present in legacy request bodies.
     """
 
     return safe_identity_component(
-        os.environ.get("PUDDINGCLAW_OWNER_USER_ID", "local").strip() or "local",
+        os.environ.get("PUDDINGHARNESS_OWNER_USER_ID", "local").strip() or "local",
         field="owner_user_id",
     )
 
@@ -56,7 +60,7 @@ def runtime_arch() -> str:
 
 @dataclass(frozen=True)
 class PuddingClawPaths:
-    """Typed path projection rooted in the host user's PuddingClaw home."""
+    """Typed path projection rooted in the host user's PuddingHarness home."""
 
     root: Path
 
@@ -69,7 +73,7 @@ class PuddingClawPaths:
 
         self.root.mkdir(parents=True, exist_ok=True)
         if not self.root.is_dir():
-            raise NotADirectoryError(f"PuddingClaw home is not a directory: {self.root}")
+            raise NotADirectoryError(f"PuddingHarness home is not a directory: {self.root}")
         return self.root
 
     def sessions(self) -> Path:
@@ -114,8 +118,6 @@ class PuddingClawPaths:
     def user_definitions(self) -> Path:
         return self.root / "definitions"
 
-    def knowledge(self) -> Path:
-        return self.root / "knowledge"
 
     def databases(self) -> Path:
         return self.root / "db"
@@ -126,8 +128,6 @@ class PuddingClawPaths:
     def usage(self) -> Path:
         return self.data() / "usage"
 
-    def query_results(self) -> Path:
-        return self.data() / "query-results"
 
     def agent_workspaces(self) -> Path:
         return self.data() / "agent-workspaces"
@@ -135,11 +135,7 @@ class PuddingClawPaths:
     def state(self) -> Path:
         return self.root / "state"
 
-    def knowledge_index(self) -> Path:
-        return self.state() / "knowledge_index"
 
-    def knowledge_search(self) -> Path:
-        return self.state() / "knowledge-search"
 
     def memory_index(self) -> Path:
         return self.state() / "memory_index"
@@ -184,7 +180,7 @@ class PuddingClawPaths:
     def integration_root(self, owner_user_id: str, integration: str) -> Path:
         """Return persistent host state for one user-owned CLI integration.
 
-        Provider-native CLIs own the files below this directory.  PuddingClaw
+        Provider-native CLIs own the files below this directory.  PuddingHarness
         supplies an isolated directory per local user/profile but does not
         serialize the provider's state through the Agent workspace.
         """
@@ -262,9 +258,8 @@ class PuddingClawPaths:
             self.sessions(), self.session_traces(), self.session_archive(),
             self.user_skills(), self.config(), self.profile(), self.memory() / "global",
             self.memory() / "projects", self.projects(), self.user_definitions(),
-            self.user_definitions() / "semantic-assets", self.user_definitions() / "analytics-models",
-            self.user_definitions() / "sql-guardrails", self.knowledge(), self.databases(),
-            self.data(), self.usage(), self.query_results(), self.agent_workspaces(),
+            self.databases(),
+            self.data(), self.usage(), self.agent_workspaces(),
             self.state(), self.skill_management(), self.skill_evals(), self.cache(),
             self.logs(), self.temporary(), self.infrastructure(), self.migrations(),
         ):

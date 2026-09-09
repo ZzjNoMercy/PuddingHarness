@@ -87,7 +87,6 @@ class CandidateRequest(BaseModel):
     thinking_level: Literal["low", "high", "max"] | None = None
     credential_name: str | None = None
     project_id: str | None = None
-    analytics_model_id: str | None = None
     tool_allowlist: list[str] = Field(default_factory=list)
     config: dict[str, Any] = Field(default_factory=dict)
 
@@ -193,7 +192,6 @@ def resolve_candidate(base_dir: Path, request: CandidateRequest) -> ExperimentCa
         "llm_model_id": request.llm_model_id,
         "thinking_level": request.thinking_level,
         "credential_name": request.credential_name,
-        "analytics_model_id": request.analytics_model_id,
         "project_id": request.project_id,
         "effective_llm": effective_llm,
         "git_sha": git_sha,
@@ -215,7 +213,6 @@ def resolve_candidate(base_dir: Path, request: CandidateRequest) -> ExperimentCa
         thinking_level=request.thinking_level,
         credential_name=request.credential_name,
         project_id=request.project_id,
-        analytics_model_id=request.analytics_model_id,
         config=snapshots,
         fingerprint=fingerprint,
         fingerprint_status="complete" if git_sha is not None else "partial",
@@ -241,7 +238,6 @@ def verify_candidate_snapshot(base_dir: Path, candidate: ExperimentCandidate) ->
         "llm_model_id": candidate.llm_model_id,
         "thinking_level": candidate.thinking_level,
         "credential_name": candidate.credential_name,
-        "analytics_model_id": candidate.analytics_model_id,
         "project_id": candidate.project_id,
         "effective_llm": effective_llm,
         "git_sha": _git(base_dir, "rev-parse", "HEAD"),

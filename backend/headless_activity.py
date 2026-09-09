@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from db import get_sessionmaker
-from knowledge.models import WorkerAccessLog
+from harness.database_models import WorkerAccessLog
 
 
 class HeadlessActivityLogStore:
@@ -46,7 +46,7 @@ class HeadlessActivityLogStore:
                 tz=timezone.utc,
             ),
             key_id=str(source_id or "local-cli"),
-            key_name=str(source_name or source_id or "PuddingClaw CLI")[:120],
+            key_name=str(source_name or source_id or "PuddingHarness CLI")[:120],
             query=str(query or ""),
         )
         async with self._sessions()() as session:

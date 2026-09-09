@@ -14,6 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from harness.evidence_ledger import EvidenceRef
+from harness.legacy_artifacts import reject_legacy_selectors
 
 
 class HarnessStateError(ValueError):
@@ -382,6 +383,11 @@ class DelegationLimits(BaseModel):
 class DelegationContract(BaseModel):
     """Server-authored authority for one native task delegation."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_retired_control_fields(cls, value: Any) -> Any:
+        return reject_legacy_selectors(value)
+
     subagent_run_id: str
     parent_run_id: str
     parent_tool_call_id: str
@@ -391,7 +397,6 @@ class DelegationContract(BaseModel):
     subagent_type: str
     objective: str
     todo_slice: list[str] = Field(default_factory=list)
-    selected_analytics_model: str | None = None
     semantic_context_refs: list[str] = Field(default_factory=list)
     allowed_skill_activations: list[str] = Field(default_factory=list)
     allowed_toolsets: list[str] = Field(default_factory=list)
@@ -406,6 +411,11 @@ class DelegationContract(BaseModel):
 class DelegationResultEnvelope(BaseModel):
     """Machine-readable subagent handoff consumed by the parent Agent."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_retired_control_fields(cls, value: Any) -> Any:
+        return reject_legacy_selectors(value)
+
     status: Literal["completed", "blocked", "timed_out", "failed", "cancelled"]
     subagent_run_id: str
     summary: str = ""
@@ -413,7 +423,6 @@ class DelegationResultEnvelope(BaseModel):
     completed_todo_ids: list[str] = Field(default_factory=list)
     remaining_todo_ids: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
-    sql_generation_ids: list[str] = Field(default_factory=list)
     validation_receipt_ids: list[str] = Field(default_factory=list)
     artifact_refs: list[dict[str, Any]] = Field(default_factory=list)
     question_for_parent: str | None = None
@@ -643,6 +652,11 @@ class RubricEvaluationReport(BaseModel):
 class RunHandoffSummary(BaseModel):
     """Bounded cross-Run continuity without replaying private execution logs."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_retired_control_fields(cls, value: Any) -> Any:
+        return reject_legacy_selectors(value)
+
     source_run_id: str
     goal_id: str | None = None
     goal_revision: int | None = None
@@ -652,12 +666,16 @@ class RunHandoffSummary(BaseModel):
     durable_facts: list[str] = Field(default_factory=list)
     evidence_refs: list[dict[str, Any]] = Field(default_factory=list)
     artifact_refs: list[dict[str, Any]] = Field(default_factory=list)
-    sql_generation_refs: list[dict[str, Any]] = Field(default_factory=list)
     unresolved_gaps: list[str] = Field(default_factory=list)
     created_at: float = Field(default_factory=time.time)
 
 
 class RunRecord(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_retired_control_fields(cls, value: Any) -> Any:
+        return reject_legacy_selectors(value)
+
     run_id: str
     query_id: str
     session_id: str
@@ -679,7 +697,6 @@ class RunRecord(BaseModel):
     delta_repair_tool_budget: int | None = Field(default=None, ge=1)
     delta_repair_tool_call_ids: list[str] = Field(default_factory=list)
     project_id: str | None = None
-    analytics_model_id: str | None = None
     verification_enabled: bool = True
     verification_mode: VerificationMode = VerificationMode.AGENT
     run_review_policy: RunReviewPolicy = RunReviewPolicy.OFF

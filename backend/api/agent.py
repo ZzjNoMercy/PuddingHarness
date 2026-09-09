@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, model_validator
 from sse_starlette.sse import EventSourceResponse
 
+from harness.legacy_artifacts import reject_legacy_selectors
 from config import get_fallback_llm_config, load_config
 from graph.agent_context_compaction import (
     AgentContextCompactionError,
@@ -130,11 +131,15 @@ async def _instrument_agent_stream(
 
 
 class AgentRequest(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_retired_control_fields(cls, value: Any) -> Any:
+        return reject_legacy_selectors(value)
+
     message: str
     session_id: str = "default"
     user_id: str = "default_user"
     project_id: str | None = None
-    analytics_model_id: str | None = None
     llm_model_id: str | None = None
     thinking_level: Literal["low", "high", "max"] | None = None
     credential_name: str | None = None
@@ -473,7 +478,6 @@ async def agent(request: AgentRequest):
             message=request.message,
             session_id=request.session_id,
             project_id=request.project_id,
-            analytics_model_id=request.analytics_model_id,
             llm_model_id=runtime_model_id,
             thinking_level=runtime_thinking_level,
             credential_name=runtime_credential_name,
@@ -504,7 +508,6 @@ async def agent(request: AgentRequest):
         message=request.message,
         session_id=request.session_id,
         project_id=request.project_id,
-        analytics_model_id=request.analytics_model_id,
         llm_model_id=runtime_model_id,
         thinking_level=runtime_thinking_level,
         credential_name=runtime_credential_name,

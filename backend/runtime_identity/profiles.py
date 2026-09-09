@@ -145,8 +145,8 @@ class MasterKeyProvider:
 
     service = "PuddingClaw Credential Vault"
     manifest_version = 1
-    provider_environment_variable = "PUDDINGCLAW_CREDENTIAL_KEY_PROVIDER"
-    master_key_environment_variable = "PUDDINGCLAW_MASTER_KEY"
+    provider_environment_variable = "PUDDINGHARNESS_CREDENTIAL_KEY_PROVIDER"
+    master_key_environment_variable = "PUDDINGHARNESS_MASTER_KEY"
 
     def __init__(self, paths: PuddingClawPaths, owner_user_id: str) -> None:
         self.paths = paths

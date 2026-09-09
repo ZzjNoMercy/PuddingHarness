@@ -1,99 +1,63 @@
 ---
 name: github-monitor
-description: 监控指定 GitHub 开源项目的更新情况（Release、Commit、PR、Star 趋势），拉取最新数据并存入本地知识库供检索。Use when asked to "监控GitHub项目", "查看开源项目更新", "github项目最近有什么变化", "拉取最新release", "追踪仓库动态", or any request about tracking GitHub repo updates.
+description: 监控指定 GitHub 项目的 Release、Commit、PR 和基础统计，并将结果输出到调用者明确提供的工作区或交给 Knowledge Platform Asset ingestion。
 ---
 
 # GitHub Monitor
 
 ## Goal
 
-从 GitHub API 拉取指定仓库的最新动态（Releases、Commits、Pull Requests、基础统计），格式化为结构化 Markdown 文档，存入本地知识库目录，供后续检索。
+从 GitHub API 拉取指定仓库的最新动态，生成结构化 Markdown。这个 Skill 只
+负责公开数据抓取和格式化；它不拥有 Knowledge Catalog、Wiki、索引或任何
+PuddingClaw Home 目录。
 
 ## Workflow
 
-### Primary Path（Agent 直接执行，推荐）
+1. 对用户明确指定的仓库调用 `fetch_url` 或同等公开 HTTP 能力；未指定时才
+   使用 `references/repos.yaml` 中的默认列表。
+2. 生成每个仓库的 Markdown 文档，文件名为安全的
+   `{owner}_{repo}_tracker.md`。
+3. 若用户要保留本地副本，必须让用户或宿主显式提供 Workspace 输出目录，
+   并运行：
 
-对每个目标仓库，并行调用 `fetch_url` 拉取以下 GitHub API 端点：
+   ```bash
+   python3 scripts/fetch_github.py --repo owner/repo \
+     | python3 scripts/store_kb.py --output-dir /explicit/workspace
+   ```
 
-| 数据 | API 端点 | per_page |
-|------|----------|----------|
-| 基础统计 | `https://api.github.com/repos/{owner}/{repo}` | — |
-| Releases | `https://api.github.com/repos/{owner}/{repo}/releases` | 5 |
-| Commits | `https://api.github.com/repos/{owner}/{repo}/commits` | 10 |
-| Pull Requests | `https://api.github.com/repos/{owner}/{repo}/pulls?state=all&sort=updated&direction=desc` | 10 |
-
-然后使用 `write_file` 将格式化后的 Markdown 写入 `/knowledge/{owner}_{repo}_tracker.md`。
-
-### Script Path（备选，终端直接运行）
-
-```bash
-python3 scripts/fetch_github.py --repo langchain-ai/langchain | python3 scripts/store_kb.py
-```
-
-```
-1. 确认目标仓库列表
-   ├─ 用户指定 → 使用用户指定的仓库
-   └─ 未指定 → 加载 references/repos.yaml 默认列表
-
-2. 逐仓库拉取数据（可并行调用 fetch_url）
-   ├─ 基础统计：stars, forks, open_issues, language, pushed_at
-   ├─ 最新 Release（最近 5 个）
-   ├─ 最近 Commit（最近 5-10 条）
-   └─ 最近 Pull Request（最近 5-10 条，含状态）
-
-3. 格式化输出
-   └─ 每个仓库生成独立 Markdown 文档
-       命名：{owner}_{repo}_tracker.md
-
-4. 存入知识库目录
-   └─ 写入 /knowledge/ 目录
-
-5. 返回摘要
-   └─ 汇总所有仓库的关键变化
-```
+4. 若用户要进入知识库，使用宿主预登记的 Asset binding 调用 Platform
+   upload/import contract；只提交逻辑身份、内容 digest 和 binding ID。不要
+   把宿主路径放入 HTTP body，也不要直接写 Platform Catalog。
+5. 向用户返回抓取摘要和 Platform 返回的 Asset/Resource URI（如有）；不能
+   把生成文件自动宣称为已发布或可检索。
 
 ## Decision Tree
 
-- **用户请求查看某仓库更新** → 只拉取该仓库
-- **用户说"监控这几个项目"** → 使用用户提供的仓库列表
-- **用户说"看看开源项目有什么更新"** → 使用默认仓库列表
-- **用户只问某个项目的 Star 数/基础信息** → 只拉取基础统计，跳过 Commits/PRs
+- 用户询问单个项目：只抓取该项目。
+- 用户要求监控项目列表：只使用用户提供的列表。
+- 用户只问 Star 或基础信息：跳过不需要的 Releases/Commits/PR 请求。
+- GitHub 限流或网络失败：报告已有结果和失败项目；不要伪造 Platform
+  Asset，也不要切换到未声明的旧 Knowledge Tool。
 
 ## Constraints
 
-- GitHub API 未认证请求速率限制 60 次/小时。对 4 个仓库（各 4 类请求 = 16 次调用）安全。
-- **重要**: 共享出口 IP（如终端沙箱、fetch_url）可能已被 GitHub 全局限速 → API 返回 403。
-  此时应自动降级到 **Tavily Search 回退方案**：
-  1. 对每个仓库并行调用 `web_search(query="site:github.com {owner}/{repo} stars release", source="web")`
-  2. 再搜索 `web_search(query="{owner}/{repo} github latest release 2026", source="web")`
-  3. 从搜索结果中提取 star 数、release 版本、commit 信息、PR 动态
-  4. 将结构化数据写入 `/knowledge/{owner}_{repo}_tracker.md`
-- 每次调用 `scripts/fetch_github.py` 必须指定 `--repo` 参数（格式 `owner/repo`）。
-- 拉取到的文档存入 `/knowledge/` 后，提醒用户可通过 `llamaindex_knowledge_query` 检索。
-- 网络失败时不要重试超过 2 次，返回已有数据并报告失败仓库。
-- **终端沙箱 `/knowledge/` 为只读**：脚本输出到 `/tmp/`，再用 `write_file` 工具搬运到 `/knowledge/`。
+- 每次调用 `scripts/fetch_github.py` 必须指定 `--repo`、`--repos` 或 `--all`。
+- 未认证 GitHub API 的限流按脚本的 bounded retry 策略处理，最多重试两次。
+- `scripts/store_kb.py` 必须显式传入 `--output-dir`；没有默认 `/knowledge/`
+  或其他隐式 PuddingClaw 路径。
+- 输出目录和目标文件不能是符号链接；仓库标识必须是安全的 `owner/repo`。
+- 输出 Markdown 是 Workspace 产物或 Platform staging 输入，不是事实源、发布
+  Wiki、Milvus collection 或 Vanna 训练结果。
 
 ## Validation
 
-- 每个仓库至少拉取到基础统计（stars >= 0）。
-- 生成的 Markdown 文件至少包含 `## 仓库概览` 和 `## 最新 Release` 或 `## 最近 Commit` 之一。
-- 文件成功写入知识库目录。
+- 每个成功抓取的仓库至少包含基础统计或明确错误摘要。
+- Markdown 至少包含 `## 仓库概览` 和 `## 最新 Release` 或 `## 最近 Commit`。
+- Workspace 写入只发生在调用者显式指定的目录；Platform 导入必须保留返回的
+  staging/active 状态和 digest。
 
 ## Resources
 
-- `scripts/fetch_github.py` — GitHub API 客户端，拉取指定仓库的 Release/Commit/PR/统计
-- `scripts/store_kb.py` — 将拉取结果格式化并写入知识库
-- `references/repos.yaml` — 默认监控仓库列表及配置
-
-## Usage Examples
-
-```
-# 拉取所有默认仓库
-python3 scripts/fetch_github.py --all | python3 scripts/store_kb.py
-
-# 只拉取单个仓库
-python3 scripts/fetch_github.py --repo langchain-ai/langchain | python3 scripts/store_kb.py
-
-# 指定仓库列表
-python3 scripts/fetch_github.py --repos "langchain-ai/langchain,alibaba/higress" | python3 scripts/store_kb.py
-```
+- `scripts/fetch_github.py` — GitHub API 客户端，输出 JSON
+- `scripts/store_kb.py` — 将 JSON 写入显式 Workspace 输出目录
+- `references/repos.yaml` — 默认监控仓库列表，不包含输出路径

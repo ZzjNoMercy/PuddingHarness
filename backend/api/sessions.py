@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sse_starlette.sse import EventSourceResponse
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import Response
 
+from harness.legacy_artifacts import reject_legacy_selectors
 from config import get_fallback_llm_config
 from graph.deepagents_manager import deepagents_agent_manager
 from graph.permission_resume import permission_resume_registry
@@ -35,8 +36,6 @@ class RenameRequest(BaseModel):
     title: str
 
 
-class SessionAnalyticsModelRequest(BaseModel):
-    analytics_model_id: str | None = None
 
 
 class SessionLlmSelectionRequest(BaseModel):
@@ -50,13 +49,17 @@ class SessionRunReviewPolicyRequest(BaseModel):
 
 
 class SessionCreateRequest(BaseModel):
-    analytics_model_id: str | None = None
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_retired_control_fields(cls, value: Any) -> Any:
+        return reject_legacy_selectors(value)
+
     llm_model_id: str | None = None
     thinking_level: Literal["low", "high", "max"] | None = None
     credential_name: str | None = None
     run_review_policy: Literal["off", "shadow", "blocking_one_shot"] | None = None
     approval_mode: Literal["strict", "smart"] = "smart"
-    runtime_mode: Literal["chat", "agent"] = "agent"
+    runtime_mode: Literal["agent"] = "agent"
     project_id: str | None = None
 
 
@@ -103,7 +106,6 @@ async def create_session(req: SessionCreateRequest | None = None):
         # time so the session lands in the correct sidebar grouping
         # immediately, instead of only after the first Run flips them.
         metadata: dict[str, Any] = {
-            "analytics_model_id": payload.analytics_model_id,
             "run_review_policy": payload.run_review_policy,
             "runtime_mode": payload.runtime_mode,
         }
@@ -138,20 +140,6 @@ async def rename_session(session_id: str, req: RenameRequest):
     return {"id": session_id, "title": req.title}
 
 
-@router.patch("/sessions/{session_id}/analytics-model")
-async def update_session_analytics_model(
-    session_id: str,
-    req: SessionAnalyticsModelRequest,
-):
-    """Persist or clear the analytics model selected for one session."""
-    try:
-        meta = session_manager.update_metadata(
-            session_id,
-            {"analytics_model_id": req.analytics_model_id},
-        )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Session not found") from exc
-    return meta
 
 
 @router.patch("/sessions/{session_id}/llm-selection")
@@ -246,7 +234,7 @@ async def get_session_harness_state(session_id: str):
     legacy_audit = await run_in_threadpool(
         session_manager.audit_legacy_external_leases,
         session_id,
-        migrate=True,
+        migrate=False,
     )
     return {
         "session_id": session_id,

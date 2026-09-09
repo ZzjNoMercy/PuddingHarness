@@ -1,4 +1,6 @@
-"""MCP Servers API — list and optionally probe configured MCP servers."""
+"""Generic MCP configuration and discovery API for PuddingHarness."""
+
+from __future__ import annotations
 
 import asyncio
 import copy
@@ -11,12 +13,6 @@ from pydantic import BaseModel, Field
 from config import _config_path, load_config, save_config
 
 router = APIRouter()
-
-# Mirror of mcp_clients.servers._SERVER_DISPLAY_NAMES to avoid importing
-# the full mcp_clients package (which pulls in optional langchain deps).
-_MCP_DISPLAY_NAMES: dict[str, str] = {
-    "zhihuiya_patents": "智慧芽专利检索",
-}
 
 _SERVER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _SUPPORTED_TRANSPORTS = {"stdio", "sse", "streamable-http"}
@@ -32,7 +28,7 @@ def _mask_secret(value: Any) -> Any:
 
 
 def _safe_mcp_config(config: dict[str, Any]) -> dict[str, Any]:
-    """Return MCP config suitable for the browser, masking header values."""
+    """Return MCP config suitable for the browser, masking secret values."""
 
     result = copy.deepcopy(config)
     servers = result.get("servers")
@@ -40,12 +36,12 @@ def _safe_mcp_config(config: dict[str, Any]) -> dict[str, Any]:
         for server in servers.values():
             if not isinstance(server, dict):
                 continue
-            headers = server.get("headers")
-            if isinstance(headers, dict):
-                server["headers"] = {str(key): _mask_secret(value) for key, value in headers.items()}
-            environment = server.get("env")
-            if isinstance(environment, dict):
-                server["env"] = {str(key): _mask_secret(value) for key, value in environment.items()}
+            for location in ("headers", "env"):
+                values = server.get(location)
+                if isinstance(values, dict):
+                    server[location] = {
+                        str(key): _mask_secret(value) for key, value in values.items()
+                    }
     return result
 
 
@@ -62,7 +58,8 @@ def _mcp_credential_vault_status(config: dict[str, Any]) -> dict[str, Any]:
                 values = server.get(location)
                 if isinstance(values, dict):
                     references.extend(
-                        str(value) for value in values.values()
+                        str(value)
+                        for value in values.values()
                         if isinstance(value, str) and value.startswith("vault://")
                     )
     if not references:
@@ -82,16 +79,15 @@ class McpConfigRequest(BaseModel):
 
 
 def _validate_mcp_config(raw: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
-    """Validate the browser-editable MCP section and preserve masked secrets."""
+    """Validate editable MCP config and preserve masked credentials."""
 
     enabled = raw.get("enabled", [])
-    if not isinstance(enabled, list) or any(not isinstance(name, str) or not name.strip() for name in enabled):
+    if not isinstance(enabled, list) or any(
+        not isinstance(name, str) or not name.strip() for name in enabled
+    ):
         raise ValueError("mcp.enabled must be an array of server names")
-    enabled = [name for name in enabled if name != "gbrain"]
     if len(set(enabled)) != len(enabled):
         raise ValueError("mcp.enabled contains duplicate server names")
-    # gbrain is a code-owned runtime invariant. Client attempts to toggle or
-    # redefine it are ignored rather than treated as user configuration.
 
     servers = raw.get("servers", {})
     if not isinstance(servers, dict):
@@ -118,8 +114,6 @@ def _validate_mcp_config(raw: dict[str, Any], current: dict[str, Any]) -> dict[s
         return credential_store.put(f"mcp:{server_name}:{location}:{key}", value)
 
     for name, value in servers.items():
-        if name == "gbrain":
-            continue
         if not isinstance(name, str) or not _SERVER_NAME_RE.fullmatch(name):
             raise ValueError(f"Invalid MCP server name: {name}")
         if not isinstance(value, dict):
@@ -132,44 +126,39 @@ def _validate_mcp_config(raw: dict[str, Any], current: dict[str, Any]) -> dict[s
         if transport == "stdio" and not str(value.get("command") or "").strip():
             raise ValueError(f"MCP server {name} requires command")
         item = copy.deepcopy(value)
-        headers = item.get("headers")
-        if isinstance(headers, dict):
-            previous = current_servers.get(name, {})
-            previous_headers = previous.get("headers", {}) if isinstance(previous, dict) else {}
-            item["headers"] = {
-                str(key): protect(name, "header", str(key), secret, previous_headers.get(key))
-                for key, secret in headers.items()
-                if str(key).strip() and isinstance(secret, str) and secret.strip()
-            }
-        environment = item.get("env")
-        if isinstance(environment, dict):
-            previous = current_servers.get(name, {})
-            previous_environment = previous.get("env", {}) if isinstance(previous, dict) else {}
-            item["env"] = {
-                str(key): protect(name, "env", str(key), secret, previous_environment.get(key))
-                for key, secret in environment.items()
-                if str(key).strip() and isinstance(secret, str) and secret.strip()
-            }
+        previous = current_servers.get(name, {})
+        previous = previous if isinstance(previous, dict) else {}
+        for location in ("headers", "env"):
+            values = item.get(location)
+            if isinstance(values, dict):
+                previous_values = previous.get(location, {})
+                previous_values = previous_values if isinstance(previous_values, dict) else {}
+                item[location] = {
+                    str(key): protect(
+                        name,
+                        "header" if location == "headers" else location,
+                        str(key),
+                        secret,
+                        previous_values.get(key),
+                    )
+                    for key, secret in values.items()
+                    if str(key).strip() and isinstance(secret, str) and secret.strip()
+                }
         clean_servers[name] = item
 
-    result = {
-        "enabled": list(dict.fromkeys(enabled)),
-        "servers": clean_servers,
-    }
-    return result
+    return {"enabled": enabled, "servers": clean_servers}
 
 
 @router.get("/mcp/config")
 async def get_mcp_config():
-    """Return the persisted MCP section and its local source path."""
+    """Return persisted MCP config and its local source path."""
 
     config = load_config().get("mcp", {})
+    config = config if isinstance(config, dict) else {}
     return {
         "path": str(_config_path()),
-        "config": _safe_mcp_config(config if isinstance(config, dict) else {}),
-        "credential_vault": _mcp_credential_vault_status(
-            config if isinstance(config, dict) else {}
-        ),
+        "config": _safe_mcp_config(config),
+        "credential_vault": _mcp_credential_vault_status(config),
     }
 
 
@@ -204,36 +193,34 @@ async def put_mcp_config(request: McpConfigRequest):
 
 @router.get("/mcp/servers")
 async def list_mcp_servers(probe: bool = Query(False)):
-    """List effective servers and secret-free discovery/load status."""
+    """List configured servers and optionally probe their discovered tools."""
+
     cfg = load_config()
     mcp_config = cfg.get("mcp", {})
-    custom_servers = mcp_config.get("servers", {}) if isinstance(mcp_config, dict) else {}
+    mcp_config = mcp_config if isinstance(mcp_config, dict) else {}
+    custom_servers = mcp_config.get("servers", {})
+    custom_servers = custom_servers if isinstance(custom_servers, dict) else {}
 
-    # Import server registry lazily to avoid heavy deps at module load time.
     try:
         from mcp_clients.servers import (
+            _server_registry,
             effective_mcp_server_names,
-            gbrain_runtime_status,
             get_mcp_server_display_info,
         )
-        enabled = effective_mcp_server_names(mcp_config.get("enabled", []))
-        from mcp_clients.servers import _server_registry
 
-        registry_names = list(
-            _server_registry(custom_servers, resolve_secrets=False).keys()
-        )
+        enabled = effective_mcp_server_names(mcp_config.get("enabled", []))
+        registry_names = list(_server_registry(custom_servers, resolve_secrets=False).keys())
         servers = get_mcp_server_display_info(enabled, custom_servers)
-        gbrain = gbrain_runtime_status()
         catalog_names = list(dict.fromkeys([*registry_names, *enabled]))
         catalog = get_mcp_server_display_info(catalog_names, custom_servers)
         enabled_set = set(enabled)
         for item in catalog:
-            key = item["key"]
-            item["enabled"] = key in enabled_set
-            item["auto_enabled"] = key == "gbrain"
-            item["ready"] = bool(gbrain.get("ready")) if key == "gbrain" else True
-            item["status"] = "ready" if item["enabled"] and item["ready"] else "not_ready"
-            item["reason"] = str(gbrain.get("reason") or "") if key == "gbrain" else ""
+            item["enabled"] = item["key"] in enabled_set
+            item["auto_enabled"] = False
+            item["managed_by"] = "mcp"
+            item["ready"] = True
+            item["status"] = "ready" if item["enabled"] else "not_ready"
+            item["reason"] = ""
             item["loaded"] = False
             item["tools"] = []
             item["tool_count"] = 0
@@ -260,22 +247,22 @@ async def list_mcp_servers(probe: bool = Query(False)):
 
             await asyncio.gather(*(probe_server(item) for item in catalog))
     except Exception:
-        # Fallback: return minimal info from config when MCP client deps are missing.
         servers = [
             {
                 "key": name,
-                "name": _MCP_DISPLAY_NAMES.get(name, name),
+                "name": name,
                 "url": "",
                 "transport": "",
             }
             for name in mcp_config.get("enabled", [])
+            if isinstance(name, str)
         ]
-        gbrain = {"configured": False, "ready": False, "reason": "runtime status unavailable"}
         catalog = [
             {
                 **server,
                 "enabled": True,
                 "auto_enabled": False,
+                "managed_by": "mcp",
                 "ready": False,
                 "loaded": False,
                 "status": "error",
@@ -286,4 +273,4 @@ async def list_mcp_servers(probe: bool = Query(False)):
             for server in servers
         ]
 
-    return {"servers": servers, "catalog": catalog, "gbrain": gbrain}
+    return {"servers": servers, "catalog": catalog}

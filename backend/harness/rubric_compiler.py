@@ -7,7 +7,6 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from harness.analytics_invariants import load_model_invariants
 from harness.models import (
     CriterionSource,
     EvidenceScope,
@@ -54,7 +53,6 @@ def browser_e2e_requested(message: str) -> bool:
 @dataclass(frozen=True)
 class RubricBuildContext:
     user_message: str
-    analytics_model_id: str | None = None
     project_id: str | None = None
     custom_rules: tuple[dict, ...] = ()
     force_required: bool = False
@@ -111,22 +109,6 @@ _PACK_CRITERIA: dict[str, tuple[VerificationCriterion, ...]] = {
             evidence_scope=EvidenceScope.GOAL_INHERITABLE,
         ),
     ),
-    "analytics": (
-        _criterion(
-            "metric_consistency",
-            "指标名称、计算口径、维度和结论必须前后一致；未知口径必须明确说明。",
-            source=CriterionSource.SYSTEM,
-            verifier=VerifierKind.LLM_GRADER,
-            evidence_scope=EvidenceScope.RUN_ONLY,
-        ),
-        _criterion(
-            "analytics_evidence_traceability",
-            "关键数据与结论必须能追溯到本 Run 成功完成的查询、数据源或产物证据。",
-            source=CriterionSource.SYSTEM,
-            verifier=VerifierKind.DETERMINISTIC,
-            evidence_scope=EvidenceScope.GOAL_INHERITABLE,
-        ),
-    ),
     "artifact": (
         _criterion(
             "artifact_delivery",
@@ -146,7 +128,7 @@ _PACK_CRITERIA: dict[str, tuple[VerificationCriterion, ...]] = {
         ),
     ),
 }
-_PACK_ORDER = ("core", "web_research", "analytics", "artifact", "code")
+_PACK_ORDER = ("core", "web_research", "artifact", "code")
 
 
 class RunRubricCompiler:
@@ -194,7 +176,6 @@ class RunRubricCompiler:
     def classify(cls, context: RubricBuildContext) -> RunTaskProfile:
         return context.task_profile or TaskProfileClassifier.classify(
             message=context.user_message,
-            analytics_model_id=context.analytics_model_id,
         )
 
     @classmethod
@@ -227,20 +208,6 @@ class RunRubricCompiler:
             message=context.user_message,
             custom_rules=context.custom_rules,
         )
-        # 模型声明 acceptance.invariants 时并入验收 criteria。不加入 managed_ids，
-        # expand_for_activations 会经 custom 规则回填保留这条 criterion。
-        if context.analytics_model_id and load_model_invariants(
-            context.analytics_model_id
-        ):
-            criteria.append(
-                _criterion(
-                    "analytics_model_invariants",
-                    "分析模型声明的验收不变量（acceptance.invariants）必须全部满足。",
-                    source=CriterionSource.SYSTEM,
-                    verifier=VerifierKind.DETERMINISTIC,
-                    evidence_scope=EvidenceScope.RUN_ONLY,
-                )
-            )
         reasons = {
             pack: [
                 reason
@@ -376,7 +343,7 @@ class RunRubricCompiler:
                 criteria.append(configured.model_copy(deep=True))
                 seen.add(configured.id)
         if _TIME_PATTERN.search(message) and (
-            "analytics" in packs or "web_research" in packs
+            "web_research" in packs
         ):
             criteria.append(
                 _criterion(

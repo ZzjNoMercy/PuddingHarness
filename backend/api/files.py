@@ -22,10 +22,6 @@ ALLOWED_PREFIXES = [
     "workspace/",
     "memory/",
     "skills/",
-    "knowledge/",
-    "semantic-assets/",
-    "sql-guardrails/",
-    "analytics-models/",
 ]
 
 # Whitelist of specific root-level files that can be accessed
@@ -55,10 +51,6 @@ def _validate_path(rel_path: str) -> Path:
         "SKILLS_SNAPSHOT.md": user.skill_management() / "SKILLS_SNAPSHOT.md",
         "profile/": user.profile(),
         "memory/": user.memory(),
-        "knowledge/": user.knowledge(),
-        "semantic-assets/": user.user_definitions() / "semantic-assets",
-        "sql-guardrails/": user.user_definitions() / "sql-guardrails",
-        "analytics-models/": user.user_definitions() / "analytics-models",
         "workspace/": user.agent_workspaces() / "unscoped" / "default",
     }
     full_path = None
@@ -107,29 +99,6 @@ async def save_file(request: FileSaveRequest):
     file_path = _validate_path(request.path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(request.content, encoding="utf-8")
-
-    normalized = request.path.replace("\\", "/").lstrip("./")
-    if normalized.startswith("semantic-assets/"):
-        try:
-            from analytics.semantic_assets import get_semantic_asset_registry
-
-            get_semantic_asset_registry(PuddingClawPaths.from_environment().user_definitions()).refresh()
-        except Exception:
-            pass
-    elif normalized.startswith("sql-guardrails/"):
-        try:
-            from analytics.nl2sql.guardrails import load_guardrail_rules
-
-            load_guardrail_rules()
-        except Exception:
-            pass
-    elif normalized.startswith("analytics-models/"):
-        try:
-            from analytics.models import get_analytics_model_registry
-
-            get_analytics_model_registry(PuddingClawPaths.from_environment().user_definitions()).refresh()
-        except Exception:
-            pass
 
     return {"path": request.path, "status": "saved"}
 

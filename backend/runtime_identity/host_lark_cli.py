@@ -82,12 +82,12 @@ class HostLarkCliRuntime:
 
     @staticmethod
     def _candidate_paths() -> tuple[Path, ...]:
-        configured = os.environ.get("PUDDINGCLAW_LARK_CLI_PATH", "").strip()
+        configured = os.environ.get("PUDDINGHARNESS_LARK_CLI_PATH", "").strip()
         candidates: list[Path] = []
         if configured:
             candidate = Path(configured).expanduser()
             if not candidate.is_absolute():
-                raise ValueError("PUDDINGCLAW_LARK_CLI_PATH must be absolute")
+                raise ValueError("PUDDINGHARNESS_LARK_CLI_PATH must be absolute")
             return (candidate,)
         discovered = shutil.which("lark-cli")
         if discovered:
@@ -176,11 +176,11 @@ class HostLarkCliRuntime:
 
     @staticmethod
     def _native_credential_dir() -> Path:
-        configured = os.environ.get("PUDDINGCLAW_LARK_NATIVE_CREDENTIAL_DIR", "").strip()
+        configured = os.environ.get("PUDDINGHARNESS_LARK_NATIVE_CREDENTIAL_DIR", "").strip()
         if configured:
             path = Path(configured).expanduser()
             if not path.is_absolute():
-                raise ValueError("PUDDINGCLAW_LARK_NATIVE_CREDENTIAL_DIR must be absolute")
+                raise ValueError("PUDDINGHARNESS_LARK_NATIVE_CREDENTIAL_DIR must be absolute")
             return path
         if sys.platform == "darwin":
             return Path.home() / "Library" / "Application Support" / "lark-cli"

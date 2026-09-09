@@ -64,8 +64,6 @@ from langgraph.types import Command
 from typing_extensions import NotRequired
 
 import config
-from analytics.models import get_analytics_model_registry
-from extensions import extension_enabled
 from graph.attachment_store import attachment_store
 from graph.citations import (
     dedupe_sources,
@@ -73,16 +71,12 @@ from graph.citations import (
     resolve_message_citations,
     sanitize_citation_markdown,
 )
-from graph.database_sql_revision_resume import database_sql_revision_resume_registry
 from graph.deepagents_prompt_builder import build_deepagents_system_prompt
-from graph.dimension_build_resume import dimension_build_resume_registry
 from graph.headless_resolver import HeadlessInterruptResolver
 from graph.kernel_fallback_resume import kernel_fallback_resume_registry
 from graph.live_tool_output import project_live_tool_output
-from graph.logical_dataset_resume import logical_dataset_resume_registry
 from graph.managed_paths import is_managed_resource_path
 from graph.middleware_trace_proxy import wrap_middlewares_for_trace
-from graph.middlewares.analysis_templates import AnalysisTemplateMiddleware
 from graph.middlewares.attachment_edit import AttachmentEditMiddleware
 from graph.middlewares.delegation_control import (
     DelegationControlMiddleware,
@@ -97,7 +91,6 @@ from graph.middlewares.model_response_guard import (
     MODEL_RESPONSE_RECOVERY_SOURCE,
     TerminalModelResponseGuardMiddleware,
 )
-from graph.middlewares.semantic_assets import SemanticAssetsMiddleware
 from graph.middlewares.skill_intent_router import (
     RequiredSkillBoundaryMiddleware,
     SkillIntentRouterMiddleware,
@@ -191,7 +184,6 @@ from harness.verification_activations import (
     resolve_published_attachment,
 )
 from harness.workspace_backends import build_workspace_execution_backend
-from knowledge.paths import get_knowledge_root
 from llm.model_client import (
     INTERNAL_CALL_MARKER,
     ModelClientChatModel,
@@ -545,7 +537,7 @@ def _harness_summary_envelope(session_id: str) -> str:
             )
             if item.get(key) is not None
         }
-        for field in ("evidence_refs", "artifact_refs", "sql_generation_refs"):
+        for field in ("evidence_refs", "artifact_refs"):
             projected[field] = [
                 EvidenceRef.model_validate(ref).model_dump(mode="json")
                 for ref in item.get(field) or []
@@ -1220,12 +1212,8 @@ def _agent_context_fingerprint(messages: list[dict[str, Any]] | None) -> str:
 
 
 class PuddingClawAgentState(DeepAgentState):
-    """DeepAgent state extended with the UI-selected analytics model."""
+    """DeepAgent state extended with generic Harness control and verification."""
 
-    analytics_model_id: NotRequired[str | None]
-    semantic_assets_model_id: NotRequired[str]
-    semantic_assets_metadata: NotRequired[list[dict[str, Any]]]
-    allowed_semantic_asset_ids: NotRequired[list[str]]
     tool_context_enqueue: NotRequired[bool]
     rubric: NotRequired[str]
     task_profile: NotRequired[dict[str, Any]]
@@ -1661,9 +1649,6 @@ class PuddingClawRubricMiddleware(RubricMiddleware):
             ],
             "web_evidence_traceability": [
                 "Use an approved web tool and cite its structured source IDs in the answer.",
-            ],
-            "analytics_evidence_traceability": [
-                "Use the activated analytics tools and preserve the structured query-result evidence IDs.",
             ],
             "code_validation": [
                 "Run a validator that matches the target artifact (pytest/ruff/npm build/node --check or a named validate/check/test Python script).",
@@ -2638,10 +2623,6 @@ IMAGE_PATH_RE = re.compile(
 VIRTUAL_RESOURCE_PREFIXES = (
     "/workspace/",
     "/scratch/",
-    "/knowledge/",
-    "/semantic-assets/",
-    "/sql-guardrails/",
-    "/analytics-models/",
     "/skills/",
     "/large_tool_results/",
 )
@@ -2980,7 +2961,7 @@ def _build_subagents(
                 "write_file for full writes, patch_file for anchored local edits, and "
                 "materialize_source_ref for server data references. Harness permissions are inherited from the "
                 "parent Run, so never ask the user for a separate subagent permission. Return registered Evidence IDs, "
-                "SQL generation/validation receipt IDs and Artifact hashes instead of copying exact data through prose. "
+                "validation receipt IDs and Artifact hashes instead of copying exact data through prose. "
                 "Never ask the user directly; return a concise blocker and question to the parent Agent instead."
                 " If blocked, return only one JSON object with status=blocked, question_for_parent and summary."
                 f"{context_prompt}"
@@ -3375,7 +3356,7 @@ class DeepAgentsAgentManager:
     def _memory_root(self) -> Path:
         if self._user_root is None:
             raise RuntimeError("DeepAgentsAgentManager must be initialized with a user Home")
-        evaluation_root = os.getenv("PUDDINGCLAW_EVALUATION_RUNTIME_ROOT")
+        evaluation_root = os.getenv("PUDDINGHARNESS_EVALUATION_RUNTIME_ROOT")
         return Path(evaluation_root).resolve() / "memory" if evaluation_root else self._user_root / "memory"
 
     @staticmethod
@@ -3444,30 +3425,11 @@ class DeepAgentsAgentManager:
     ):
         assert self._base_dir is not None
         user_root = self._user_root or PuddingClawPaths.from_environment().root
-        evaluation_root_raw = os.getenv("PUDDINGCLAW_EVALUATION_RUNTIME_ROOT")
+        evaluation_root_raw = os.getenv("PUDDINGHARNESS_EVALUATION_RUNTIME_ROOT")
         reference_root = Path(evaluation_root_raw).resolve() / "reference" if evaluation_root_raw else None
         skills_dir = reference_root / "skills" if reference_root else self._skills_runtime_root()
-        semantic_assets_dir = (
-            reference_root / "semantic-assets" if reference_root else user_root / "definitions" / "semantic-assets"
-        )
-        sql_guardrails_dir = (
-            reference_root / "sql-guardrails" if reference_root else user_root / "definitions" / "sql-guardrails"
-        )
-        analytics_models_dir = (
-            reference_root / "analytics-models" if reference_root else user_root / "definitions" / "analytics-models"
-        )
-        # `/knowledge` is one logical resource and must resolve through the
-        # same configured root used by indexing, preview, RAG and terminal
-        # aliases.  Using ``user_root / "knowledge"`` here created a second,
-        # usually empty tree whenever the user configured an external
-        # knowledge directory.
-        knowledge_dir = reference_root / "knowledge" if reference_root else get_knowledge_root(self._base_dir)
         if reference_root:
             skills_dir.mkdir(parents=True, exist_ok=True)
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-        semantic_assets_dir.mkdir(parents=True, exist_ok=True)
-        sql_guardrails_dir.mkdir(parents=True, exist_ok=True)
-        analytics_models_dir.mkdir(parents=True, exist_ok=True)
         workspace_digest = hashlib.sha256(str(workspace_path.resolve()).encode("utf-8")).hexdigest()[:20]
         large_tool_results_dir = (
             user_root
@@ -3502,22 +3464,6 @@ class DeepAgentsAgentManager:
             {
                 "source": str(skills_dir.resolve()),
                 "target": "/skills",
-            },
-            {
-                "source": str(knowledge_dir.resolve()),
-                "target": "/knowledge",
-            },
-            {
-                "source": str(semantic_assets_dir.resolve()),
-                "target": "/semantic-assets",
-            },
-            {
-                "source": str(sql_guardrails_dir.resolve()),
-                "target": "/sql-guardrails",
-            },
-            {
-                "source": str(analytics_models_dir.resolve()),
-                "target": "/analytics-models",
             },
             {
                 "source": str(large_tool_results_dir.resolve()),
@@ -3571,10 +3517,6 @@ class DeepAgentsAgentManager:
             dependency_plan = getattr(workspace_backend, "dependency_plan", None)
         routes: dict[str, Any] = {
             "/workspace/": workspace_backend,
-            "/knowledge/": FilesystemBackend(root_dir=knowledge_dir, virtual_mode=True),
-            "/semantic-assets/": FilesystemBackend(root_dir=semantic_assets_dir, virtual_mode=True),
-            "/sql-guardrails/": FilesystemBackend(root_dir=sql_guardrails_dir, virtual_mode=True),
-            "/analytics-models/": FilesystemBackend(root_dir=analytics_models_dir, virtual_mode=True),
             "/large_tool_results/": FilesystemBackend(
                 root_dir=large_tool_results_dir,
                 virtual_mode=True,
@@ -3590,10 +3532,6 @@ class DeepAgentsAgentManager:
             routes=routes,
             session_id=session_id,
             managed_readonly_roots=(
-                knowledge_dir,
-                semantic_assets_dir,
-                sql_guardrails_dir,
-                analytics_models_dir,
                 skills_dir,
                 large_tool_results_dir,
             ),
@@ -3610,10 +3548,6 @@ class DeepAgentsAgentManager:
         backend.execution_scratch_goal_id = goal_id
         backend.execution_scratch_goal_revision = goal_revision
         backend.managed_host_path_aliases = {
-            "/knowledge": str(knowledge_dir.resolve()),
-            "/semantic-assets": str(semantic_assets_dir.resolve()),
-            "/sql-guardrails": str(sql_guardrails_dir.resolve()),
-            "/analytics-models": str(analytics_models_dir.resolve()),
             "/skills": str(skills_dir.resolve()),
             "/large_tool_results": str(large_tool_results_dir.resolve()),
         }
@@ -3674,14 +3608,6 @@ class DeepAgentsAgentManager:
             MemoryMiddleware(backend=memory_store_backend, sources=["/MEMORY.md"]),
             RunScopeMiddleware(),
             *([AttachmentAuthorityBoundaryMiddleware()] if attachment_observation_only else []),
-            *(
-                [
-                    AnalysisTemplateMiddleware(base_dir=self._definitions_root()),
-                    SemanticAssetsMiddleware(base_dir=self._definitions_root()),
-                ]
-                if extension_enabled("analytics")
-                else []
-            ),
             ExternalFilePermissionMiddleware(
                 backend_mode=backend_mode,
                 approval_mode=(permission_context.approval_mode.value if permission_context is not None else "strict"),
@@ -3740,23 +3666,6 @@ class DeepAgentsAgentManager:
                     max_recovery_attempts=int(terminal_response_cfg.get("max_recovery_attempts", 1))
                 )
             )
-        prompt_cache_cfg = config.load_config().get("harness", {}).get("prompt_cache", {})
-        if bool(prompt_cache_cfg.get("ordered_system_sections", True)):
-            # Memory is versioned context, not stable core.  Put it after the
-            # project/semantic sections so a memory edit invalidates only its
-            # suffix.  The list order is also reflected in runtime inventory.
-            memory_index = next(
-                (index for index, item in enumerate(middlewares) if isinstance(item, MemoryMiddleware)),
-                None,
-            )
-            semantic_index = next(
-                (index for index, item in enumerate(middlewares) if isinstance(item, SemanticAssetsMiddleware)),
-                None,
-            )
-            if memory_index is not None and semantic_index is not None and memory_index < semantic_index:
-                memory = middlewares.pop(memory_index)
-                semantic_index -= 1
-                middlewares.insert(semantic_index + 1, memory)
         tool_context_cfg = ToolContextConfig.from_mapping(config.get_deepagents_tool_context_config())
         if tool_context_cfg.enabled:
             middlewares.append(ToolContextCompactionMiddleware(tool_context_cfg))
@@ -3862,8 +3771,6 @@ class DeepAgentsAgentManager:
         session_id: str = "",
         query_id: str = "",
         run_id: str = "",
-        current_message: str = "",
-        current_conversation_documents: list[dict[str, Any]] | None = None,
         current_attachments: list[dict[str, Any]] | None = None,
         goal_id: str = "",
         goal_revision: int | None = None,
@@ -3897,11 +3804,7 @@ class DeepAgentsAgentManager:
                     "root_dir": str(workspace_path),
                     "path_aliases": {
                         "/workspace": str(workspace_path),
-                        "/knowledge": str(get_knowledge_root(self._base_dir)),
                         "/skills": str(self._skills_runtime_root()),
-                        "/semantic-assets": str(self._definitions_root() / "semantic-assets"),
-                        "/sql-guardrails": str(self._definitions_root() / "sql-guardrails"),
-                        "/analytics-models": str(self._definitions_root() / "analytics-models"),
                     },
                 }
                 try:
@@ -3954,76 +3857,6 @@ class DeepAgentsAgentManager:
                     tool = tool.model_copy(update=browser_updates)
                 except Exception:
                     for key, value in browser_updates.items():
-                        setattr(tool, key, value)
-            elif getattr(tool, "name", "") in {
-                "request_dimension_build_rule",
-                "inspect_dimension_build_input",
-                "enqueue_semantic_dimension_build",
-                "discover_semantic_definitions",
-                "prepare_semantic_markdown",
-                "publish_semantic_markdown",
-                "request_logical_dataset_rule",
-                "ensure_attachment_table_asset",
-            }:
-                request_updates = {"session_id": session_id}
-                try:
-                    tool = tool.model_copy(update=request_updates)
-                except Exception:
-                    for key, value in request_updates.items():
-                        setattr(tool, key, value)
-            elif getattr(tool, "name", "") in {
-                "database_evidence_search",
-                "database_sql_generate",
-                "database_sql_validate_legacy",
-                "database_sql_validate",
-                "database_sql_execute",
-                "database_schema_inspect",
-                "database_query_result_source",
-            }:
-                database_updates = {"session_id": session_id, "query_id": query_id}
-                try:
-                    tool = tool.model_copy(update=database_updates)
-                except Exception:
-                    for key, value in database_updates.items():
-                        setattr(tool, key, value)
-            elif getattr(tool, "name", "") == "llm_wiki_conversation_documents":
-                try:
-                    tool = tool.model_copy(
-                        update={"current_conversation_documents": list(current_conversation_documents or [])}
-                    )
-                except Exception:
-                    setattr(
-                        tool,
-                        "current_conversation_documents",
-                        list(current_conversation_documents or []),
-                    )
-            elif getattr(tool, "name", "") == "llm_wiki_create_raw":
-                wiki_intake_updates = {
-                    "session_id": session_id,
-                    "query_id": query_id,
-                    "current_message": current_message,
-                    "current_conversation_documents": list(current_conversation_documents or []),
-                    "current_attachments": list(current_attachments or []),
-                }
-                try:
-                    tool = tool.model_copy(update=wiki_intake_updates)
-                except Exception:
-                    for key, value in wiki_intake_updates.items():
-                        setattr(tool, key, value)
-            elif getattr(tool, "name", "") == "llm_wiki_context":
-                try:
-                    tool = tool.model_copy(update={"allow_ingest": False})
-                except Exception:
-                    setattr(tool, "allow_ingest", False)
-            elif getattr(tool, "name", "") == "llm_wiki_start_ingest":
-                wiki_job_updates = {
-                    "session_id": session_id,
-                    "query_id": query_id,
-                }
-                try:
-                    tool = tool.model_copy(update=wiki_job_updates)
-                except Exception:
-                    for key, value in wiki_job_updates.items():
                         setattr(tool, key, value)
             elif getattr(tool, "name", "") in {
                 "prepare_skill_install",
@@ -4150,7 +3983,7 @@ class DeepAgentsAgentManager:
             "FilesystemMiddleware",
             "deepagents.base",
             ["wrap_tool_call"],
-            "提供 /workspace、/knowledge、/semantic-assets、/sql-guardrails、/analytics-models 与 /skills 文件系统能力",
+            "提供 /workspace、/scratch、/large_tool_results 与 /skills 文件系统能力",
         )
         add(
             "SubAgentMiddleware",
@@ -4384,30 +4217,6 @@ class DeepAgentsAgentManager:
                 "root_dir": str(workspace_path),
                 "exists": workspace_path.exists(),
                 "role": "session workspace",
-            },
-            {
-                "virtual_path": "/knowledge/",
-                "root_dir": str(get_knowledge_root(self._base_dir)),
-                "exists": get_knowledge_root(self._base_dir).exists(),
-                "role": "knowledge resources",
-            },
-            {
-                "virtual_path": "/semantic-assets/",
-                "root_dir": str(self._definitions_root() / "semantic-assets"),
-                "exists": (self._definitions_root() / "semantic-assets").exists(),
-                "role": "semantic assets",
-            },
-            {
-                "virtual_path": "/sql-guardrails/",
-                "root_dir": str(self._definitions_root() / "sql-guardrails"),
-                "exists": (self._definitions_root() / "sql-guardrails").exists(),
-                "role": "sql guardrail assets",
-            },
-            {
-                "virtual_path": "/analytics-models/",
-                "root_dir": str(self._definitions_root() / "analytics-models"),
-                "exists": (self._definitions_root() / "analytics-models").exists(),
-                "role": "analytics model playbooks",
             },
             {
                 "virtual_path": "/skills/",
@@ -4988,7 +4797,6 @@ class DeepAgentsAgentManager:
         self,
         *,
         objective: str,
-        analytics_model_id: str | None,
         skill_catalog: list[dict[str, Any]],
         explicit_skill_hints: list[str] | None = None,
     ) -> RunTaskProfile:
@@ -5001,7 +4809,6 @@ class DeepAgentsAgentManager:
 
         return TaskProfileClassifier.classify(
             message=objective,
-            analytics_model_id=analytics_model_id,
             skill_catalog=skill_catalog,
             explicit_skill_hints=explicit_skill_hints,
         )
@@ -5010,7 +4817,6 @@ class DeepAgentsAgentManager:
         self,
         *,
         objective: str,
-        analytics_model_id: str | None,
         model_override: str | None,
     ) -> RunTaskProfile:
         """Build acceptance-only semantics before a new Rubric Goal exists."""
@@ -5025,7 +4831,6 @@ class DeepAgentsAgentManager:
         return await asyncio.wait_for(
             SemanticRubricProfileClassifier.classify(
                 message=objective,
-                analytics_model_id=analytics_model_id,
                 model=classifier_model,
             ),
             timeout=_RUBRIC_PROFILE_TIMEOUT_SECONDS,
@@ -5036,7 +4841,6 @@ class DeepAgentsAgentManager:
         *,
         baseline: RunTaskProfile,
         objective: str,
-        analytics_model_id: str | None,
         model_override: str | None,
     ) -> tuple[RunTaskProfile, dict[str, Any]]:
         """Return one frozen acceptance profile with deterministic fallback."""
@@ -5049,13 +4853,11 @@ class DeepAgentsAgentManager:
         try:
             semantic = await self._classify_rubric_profile(
                 objective=objective,
-                analytics_model_id=analytics_model_id,
                 model_override=model_override,
             )
             resolved = TaskProfileClassifier.merge_rubric_profile(
                 baseline,
                 semantic,
-                analytics_model_id=analytics_model_id,
             )
             applied = resolved != baseline
         except TimeoutError:
@@ -5233,7 +5035,6 @@ class DeepAgentsAgentManager:
         *,
         session_id: str,
         message: str,
-        analytics_model_id: str | None,
         internal_continuation: bool,
     ) -> RunTaskProfile | None:
         """Reuse a profile only for a server-owned Goal continuation.
@@ -5253,73 +5054,11 @@ class DeepAgentsAgentManager:
             profile = RunTaskProfile.model_validate(profile_payload)
         except Exception:
             return None
-        profile.available_context_refs = [f"analytics_model:{analytics_model_id}"] if analytics_model_id else []
         if "reused_for_continuation" not in profile.reasons:
             profile.reasons.append("reused_for_continuation")
         profile.classifier = "session_continuation"
         return profile
 
-    @staticmethod
-    def _llm_wiki_conversation_documents(
-        session_id: str,
-        *,
-        query_id: str,
-        current_message: str,
-    ) -> list[dict[str, Any]]:
-        """Expose selectable, server-owned conversation documents.
-
-        The Agent chooses document ids; this method never guesses a semantic
-        range. Hidden reasoning and Tool payloads are not document sources.
-        """
-
-        if not session_id:
-            return []
-        messages = session_manager.load_session(session_id)
-        documents: list[dict[str, Any]] = []
-        pending_user = ""
-        for item in messages:
-            if not isinstance(item, dict):
-                continue
-            role = str(item.get("role") or "")
-            if role == "user":
-                pending_user = str(item.get("content") or "").strip()
-                continue
-            if role != "assistant" or not pending_user:
-                continue
-            assistant = str(item.get("content") or "").strip()
-            if not assistant:
-                continue
-            exchange_query_id = str(item.get("query_id") or "").strip()
-            if not exchange_query_id:
-                exchange_query_id = hashlib.sha256(f"{pending_user}\n{assistant}".encode()).hexdigest()[:20]
-            content = f"## 用户\n\n{pending_user}\n\n## Agent\n\n{assistant}"
-            documents.append(
-                {
-                    "document_id": f"exchange:{exchange_query_id}",
-                    "kind": "exchange",
-                    "title": pending_user.splitlines()[0][:160],
-                    "preview": assistant.replace("\n", " ")[:320],
-                    "character_count": len(content),
-                    "content": content,
-                }
-            )
-            pending_user = ""
-
-        clean_current = str(current_message or "").strip()
-        if clean_current:
-            current_id = str(query_id or "").strip() or hashlib.sha256(clean_current.encode("utf-8")).hexdigest()[:20]
-            content = f"## 用户\n\n{clean_current}"
-            documents.append(
-                {
-                    "document_id": f"current:{current_id}",
-                    "kind": "current_message",
-                    "title": clean_current.splitlines()[0][:160],
-                    "preview": clean_current.replace("\n", " ")[:320],
-                    "character_count": len(content),
-                    "content": content,
-                }
-            )
-        return documents
 
     @staticmethod
     def _frozen_goal_rubric_config(
@@ -5343,117 +5082,6 @@ class DeepAgentsAgentManager:
         frozen["enabled"] = True
         return frozen
 
-    def _analytics_model_context(
-        self,
-        analytics_model_id: str | None,
-        *,
-        query: str = "",
-    ) -> tuple[str, dict[str, Any] | None]:
-        if not analytics_model_id:
-            return "", None
-        assert self._base_dir is not None
-        try:
-            model = get_analytics_model_registry(self._definitions_root()).get_model_context(
-                analytics_model_id,
-                query=query,
-            )
-        except Exception as exc:
-            payload = {
-                "id": analytics_model_id,
-                "loaded": False,
-                "error": str(exc),
-            }
-            return (
-                "\n\n"
-                "<analytics_model_context>\n"
-                f"请求的分析模型 `{analytics_model_id}` 加载失败：{exc}\n"
-                "本轮必须明确告知用户模型加载失败，并按通用 Agent 行为继续。\n"
-                "</analytics_model_context>\n",
-                payload,
-            )
-
-        frontmatter = model.get("frontmatter") or {}
-        body = str(model.get("body") or "").strip()
-        body_preview = body[:12000] + ("\n...[truncated]" if len(body) > 12000 else "")
-        yaml_text = json.dumps(frontmatter, ensure_ascii=False, indent=2)
-        rel_path = str(model.get("path") or "").strip()
-        virtual_path = f"/{rel_path}" if rel_path.startswith("analytics-models/") else rel_path
-        resolved_templates = model.get("resolved_templates") or {}
-        model_visible_templates = {
-            str(template_id): {
-                key: value
-                for key, value in template.items()
-                if key not in {"guide_frontmatter", "compiled_semantic_scope"}
-            }
-            for template_id, template in resolved_templates.items()
-            if isinstance(template, dict)
-        }
-        payload = {
-            "id": model.get("id"),
-            "name": model.get("name"),
-            "version": model.get("version"),
-            "path": model.get("path"),
-            "loaded": True,
-            "missing_references": model.get("missing_references") or [],
-            "missing_data_assets": model.get("missing_data_assets") or [],
-            "data_assets": model.get("data_assets") or [],
-            "semantic_assets": [
-                {
-                    "id": item.get("id"),
-                    "name": item.get("name"),
-                    "type": item.get("type"),
-                    "path": item.get("path"),
-                    "frontmatter": item.get("frontmatter") or {},
-                }
-                for item in model.get("semantic_assets") or []
-            ],
-            "asset_relations": model.get("asset_relations") or [],
-            "derived_dimension_paths": model.get("derived_dimension_paths") or [],
-            "logical_datasets": model.get("logical_datasets") or [],
-            "resolved_references": model.get("resolved_references") or {},
-            "resolved_templates": model_visible_templates,
-        }
-        relation_context = model.get("asset_relations") or []
-        relation_text = json.dumps(relation_context, ensure_ascii=False, indent=2)
-        derived_path_text = json.dumps(model.get("derived_dimension_paths") or [], ensure_ascii=False, indent=2)
-        data_asset_text = json.dumps(model.get("data_assets") or [], ensure_ascii=False, indent=2)
-        resolved_reference_text = json.dumps(model.get("resolved_references") or {}, ensure_ascii=False, indent=2)
-        resolved_template_text = json.dumps(model_visible_templates, ensure_ascii=False, indent=2)
-        prompt = (
-            "\n\n"
-            "<analytics_model_context>\n"
-            "当前用户已选择一个分析模型。它是本轮任务的强上下文，不是底层 LLM 模型。\n"
-            "你必须优先遵守该模型的业务边界、Playbook、数据资产、语义资产、守卫和输出要求。\n"
-            "如果用户问题与该模型冲突或缺少关键参数，先说明冲突或追问，不要静默忽略模型。\n\n"
-            "跨资产分析只能沿已发布的资产关联，或由已选资产共同绑定的维度路径进行；不得仅凭同名字段猜测 Join。\n\n"
-            f"模型 ID：{model.get('id')}\n"
-            f"模型名称：{model.get('name')}\n"
-            f"版本：{model.get('version')}\n"
-            f"文件路径：{virtual_path}\n\n"
-            "机器可读 metadata：\n"
-            f"```json\n{yaml_text}\n```\n\n"
-            "服务端已解析 Reference（virtual_path 可直接用于 read_file）：\n"
-            f"```json\n{resolved_reference_text}\n```\n\n"
-            "服务端已解析模板（virtual_path/guide_virtual_path 可直接用于 read_file）：\n"
-            f"```json\n{resolved_template_text}\n```\n"
-            "你必须结合当前用户意图与对话上下文，自主比较模板的 use_when/do_not_use_when。"
-            "决定使用某个模板后，先 read_file 读取它的 guide_virtual_path；成功读取会把模板 manifest "
-            "渐进写入本轮可信 state，供 SQL 等后续工具使用。然后按 guide 继续读取入口与所需 assets。"
-            "不使用模板时不要读取其 guide。必须使用上述完整路径，不得从原始 metadata 手工拼接，也不得用 glob 猜测。\n\n"
-            "已解析资产关联：\n"
-            f"```json\n{relation_text}\n```\n\n"
-            "已推导共同维度路径：\n"
-            f"```json\n{derived_path_text}\n```\n\n"
-            "已选数据资产摘要：\n"
-            "这里统一列出数据库表、普通导入表和虚拟逻辑数据集。跨期趋势、环比、同比或跨来源汇总"
-            "优先使用覆盖范围合适的逻辑数据集；逻辑数据集未覆盖目标期间时，使用模型已选的原始资产补足，"
-            "不得因为某一个数据集缺少年份就断言模型没有该年份数据。\n"
-            f"```json\n{data_asset_text}\n```\n\n"
-            "模型 Playbook：\n"
-            f"{body_preview}\n"
-            "</analytics_model_context>\n"
-        )
-        return prompt, payload
 
     @classmethod
     def _build_messages(
@@ -5922,9 +5550,6 @@ class DeepAgentsAgentManager:
             interrupts = [interrupts]
         supported_types = {
             "permission_request",
-            "dimension_build_rule_request",
-            "logical_dataset_rule_request",
-            "database_sql_revision_request",
             "user_input_request",
             "skill_secret_request",
             "skill_plan_confirmation_request",
@@ -6016,9 +5641,6 @@ class DeepAgentsAgentManager:
 
             required_events = {
                 "permission_request": "permission_required",
-                "dimension_build_rule_request": "dimension_build_rule_required",
-                "logical_dataset_rule_request": "logical_dataset_rule_required",
-                "database_sql_revision_request": "database_sql_revision_required",
                 "user_input_request": "user_input_required",
                 "skill_secret_request": "skill_secret_required",
                 "skill_plan_confirmation_request": "skill_plan_confirmation_required",
@@ -6029,9 +5651,6 @@ class DeepAgentsAgentManager:
 
             resume_registries = {
                 "permission_request": permission_resume_registry,
-                "dimension_build_rule_request": dimension_build_resume_registry,
-                "logical_dataset_rule_request": logical_dataset_resume_registry,
-                "database_sql_revision_request": database_sql_revision_resume_registry,
                 "user_input_request": user_input_resume_registry,
                 "skill_secret_request": skill_secret_resume_registry,
                 "skill_plan_confirmation_request": skill_plan_resume_registry,
@@ -6039,9 +5658,6 @@ class DeepAgentsAgentManager:
             }
             span_names = {
                 "permission_request": "permission.decision",
-                "dimension_build_rule_request": "dimension_build_rule.decision",
-                "logical_dataset_rule_request": "logical_dataset_rule.decision",
-                "database_sql_revision_request": "database_sql_revision.decision",
                 "user_input_request": "user_input.decision",
                 "skill_secret_request": "skill_secret.decision",
                 "skill_plan_confirmation_request": "skill_plan_confirmation.decision",
@@ -6049,9 +5665,6 @@ class DeepAgentsAgentManager:
             }
             resolved_events = {
                 "permission_request": "permission_resolved",
-                "dimension_build_rule_request": "dimension_build_rule_resolved",
-                "logical_dataset_rule_request": "logical_dataset_rule_resolved",
-                "database_sql_revision_request": "database_sql_revision_resolved",
                 "user_input_request": "user_input_resolved",
                 "skill_secret_request": "skill_secret_resolved",
                 "skill_plan_confirmation_request": "skill_plan_confirmation_resolved",
@@ -7140,7 +6753,6 @@ class DeepAgentsAgentManager:
         message: str,
         session_id: str,
         project_id: str | None = None,
-        analytics_model_id: str | None = None,
         llm_model_id: str | None = None,
         thinking_level: str | None = None,
         credential_name: str | None = None,
@@ -7158,7 +6770,6 @@ class DeepAgentsAgentManager:
         filesystem_mode: str | None = None,
         authority_directories: list[str] | None = None,
         authority_network_origins: list[str] | None = None,
-        analytics_model_snapshot: dict[str, Any] | None = None,
         callbacks_override: list[Any] | None = None,
         evaluation_tool_allowlist: set[str] | None = None,
         disable_mcp: bool = False,
@@ -7323,7 +6934,6 @@ class DeepAgentsAgentManager:
                         ).strip()
                     baseline = self._build_preflight_task_profile(
                         objective=revised_objective,
-                        analytics_model_id=analytics_model_id,
                         skill_catalog=discover_skill_catalog(self._skills_runtime_root()),
                         explicit_skill_hints=skill_hints,
                     )
@@ -7341,7 +6951,6 @@ class DeepAgentsAgentManager:
                     revised_profile, precomputed_rubric_profile_result = await self._resolve_rubric_task_profile(
                         baseline=baseline,
                         objective=revised_objective,
-                        analytics_model_id=analytics_model_id,
                         model_override=revision_model_name or None,
                     )
                     yield self._sse(
@@ -7413,7 +7022,6 @@ class DeepAgentsAgentManager:
                 message=current_message,
                 session_id=session_id,
                 project_id=project_id,
-                analytics_model_id=analytics_model_id,
                 llm_model_id=llm_model_id,
                 thinking_level=thinking_level,
                 credential_name=credential_name,
@@ -7435,7 +7043,6 @@ class DeepAgentsAgentManager:
                 filesystem_mode=filesystem_mode,
                 authority_directories=authority_directories,
                 authority_network_origins=authority_network_origins,
-                analytics_model_snapshot=analytics_model_snapshot,
                 callbacks_override=callbacks_override,
                 evaluation_tool_allowlist=evaluation_tool_allowlist,
                 disable_mcp=disable_mcp,
@@ -7579,7 +7186,6 @@ class DeepAgentsAgentManager:
         message: str,
         session_id: str,
         project_id: str | None = None,
-        analytics_model_id: str | None = None,
         llm_model_id: str | None = None,
         thinking_level: str | None = None,
         credential_name: str | None = None,
@@ -7601,7 +7207,6 @@ class DeepAgentsAgentManager:
         filesystem_mode: str | None = None,
         authority_directories: list[str] | None = None,
         authority_network_origins: list[str] | None = None,
-        analytics_model_snapshot: dict[str, Any] | None = None,
         callbacks_override: list[Any] | None = None,
         evaluation_tool_allowlist: set[str] | None = None,
         disable_mcp: bool = False,
@@ -7710,7 +7315,6 @@ class DeepAgentsAgentManager:
             )
             # Persist the request value even when it is None so choosing
             # "不使用分析模型" clears a model saved by an earlier turn.
-            metadata["analytics_model_id"] = analytics_model_id
             session_manager.update_metadata(session_id, metadata)
 
             harness_config = config.load_config().get("harness", {})
@@ -7778,7 +7382,6 @@ class DeepAgentsAgentManager:
             reused_task_profile = self._reusable_task_profile(
                 session_id=session_id,
                 message=message,
-                analytics_model_id=analytics_model_id,
                 internal_continuation=internal_continuation,
             )
             task_profile = reused_task_profile or self._build_preflight_task_profile(
@@ -7787,7 +7390,6 @@ class DeepAgentsAgentManager:
                     if attachment_promotion
                     else profile_objective
                 ),
-                analytics_model_id=analytics_model_id,
                 skill_catalog=skill_catalog,
                 explicit_skill_hints=skill_hints,
             )
@@ -7863,7 +7465,6 @@ class DeepAgentsAgentManager:
                 task_profile, rubric_profile_result = await self._resolve_rubric_task_profile(
                     baseline=task_profile,
                     objective=run_objective or message,
-                    analytics_model_id=analytics_model_id,
                     model_override=rubric_model_name or None,
                 )
                 rubric_status = str(rubric_profile_result["status"])
@@ -7894,7 +7495,6 @@ class DeepAgentsAgentManager:
                 goal_mode=goal_mode,
                 goal_id=goal_id,
                 project_id=project_id,
-                analytics_model_id=analytics_model_id,
                 config_snapshot={
                     "completion": {
                         **dict(harness_config.get("completion", {})),
@@ -7907,9 +7507,6 @@ class DeepAgentsAgentManager:
                         "mode": interaction_mode,
                         "authority_profile": authority_profile,
                         "filesystem_mode": resolved_filesystem_mode,
-                    },
-                    "worker": {
-                        "analytics_model": dict(analytics_model_snapshot or {}),
                     },
                 },
                 # Existing Goals freeze their completion policy. A later UI
@@ -8263,12 +7860,6 @@ class DeepAgentsAgentManager:
                 session_id=session_id,
                 query_id=query_id,
                 run_id=run_record.run_id,
-                current_message=message,
-                current_conversation_documents=self._llm_wiki_conversation_documents(
-                    session_id,
-                    query_id=query_id,
-                    current_message=message,
-                ),
                 current_attachments=attachments,
                 goal_id=str(run_record.goal_id or ""),
                 goal_revision=run_record.goal_revision,
@@ -8286,6 +7877,13 @@ class DeepAgentsAgentManager:
             from mcp_clients.servers import effective_mcp_server_names
 
             enabled_mcp = effective_mcp_server_names(mcp_config.get("enabled", []))
+            from tools.read_resource_tool import bind_mcp_resource_reader
+
+            agent_tools = [
+                bind_mcp_resource_reader(tool, enabled_mcp if not disable_mcp else [])
+                if str(getattr(tool, "name", "")) == "read_resource" else tool
+                for tool in agent_tools
+            ]
             mcp_tool_names: set[str] = set()
             if enabled_mcp and not disable_mcp:
                 try:
@@ -8398,19 +7996,12 @@ class DeepAgentsAgentManager:
                 execution_backend=agent_backend,
             )
             trace_collector.runtime_inventory = runtime_inventory
-            analytics_model_prompt, analytics_model_payload = (
-                self._analytics_model_context(analytics_model_id, query=run_record.objective)
-                if extension_enabled("analytics")
-                else ("", None)
-            )
-            if analytics_model_payload:
-                runtime_inventory["analytics_model"] = analytics_model_payload
             traced_middlewares = wrap_middlewares_for_trace(agent_middlewares)
             logger.info("Building DeepAgents agent for session=%s project=%s", session_id, project_id)
             subagent_tools = [
                 tool
                 for tool in agent_tools
-                if str(getattr(tool, "name", "")) not in {"update_goal", "update_memory", "request_user_input"}
+                if str(getattr(tool, "name", "")) not in {"update_goal", "update_memory", "request_user_input", "deep_research"}
             ]
 
             def build_subagent_middlewares() -> list[Any]:
@@ -8422,14 +8013,6 @@ class DeepAgentsAgentManager:
                     ),
                     SubagentProgressMiddleware(),
                     RunScopeMiddleware(),
-                    *(
-                        [
-                            AnalysisTemplateMiddleware(base_dir=self._definitions_root()),
-                            SemanticAssetsMiddleware(base_dir=self._definitions_root()),
-                        ]
-                        if extension_enabled("analytics")
-                        else []
-                    ),
                     ExternalFilePermissionMiddleware(
                         backend_mode=backend_mode,
                         approval_mode=permission_context.approval_mode.value,
@@ -8489,11 +8072,56 @@ class DeepAgentsAgentManager:
                     middlewares.append(UserAgentsPromptMiddleware(user_agents_prompt))
                 return middlewares
 
+            stream_context = {
+                "session_id": session_id,
+                "query_id": query_id,
+                "run_id": run_record.run_id,
+                "run_kind": run_record.run_kind.value,
+                "goal_id": run_record.goal_id or "",
+                "goal_revision": run_record.goal_revision,
+                "user_id": user_id,
+                "project_id": project_id,
+                "workspace_path": str(workspace_path),
+                "permission_policy": permission_context.grant_bindings(),
+                "interaction_mode": interaction_mode,
+                "authority_profile": authority_profile,
+                "authority_directories": list(authority_directories or []),
+                "authority_network_origins": list(authority_network_origins or []),
+                "run_objective": run_record.objective,
+            }
+            # Research receives only capabilities already bound by this Run.
+            # Server annotations narrow selection; ToolExecutionPipeline still
+            # owns authorization and may pause/reject an external MCP call.
+            research_tools = [
+                tool for tool in agent_tools
+                if str(getattr(tool, "name", "")) in {"read_resource", "read_evidence", "fetch_url", "web_search"}
+                or (
+                    str(getattr(tool, "name", "")) in mcp_tool_names
+                    and (getattr(tool, "metadata", None) or {}).get("readOnlyHint") is True
+                    and (getattr(tool, "metadata", None) or {}).get("destructiveHint") is not True
+                )
+            ]
+
+            def build_research_middlewares() -> list[Any]:
+                # Research supplies one stricter hard tool budget of its own.
+                return [item for item in build_subagent_middlewares()
+                        if not isinstance(item, ToolCallLimitMiddleware)]
+
+            from tools.deep_research_tool import bind_research_tool
+
+            agent_tools = [
+                bind_research_tool(
+                    tool, model=model, backend=agent_backend, tools=research_tools,
+                    middleware_factory=build_research_middlewares,
+                    run_context=stream_context, state_schema=PuddingClawAgentState,
+                ) if str(getattr(tool, "name", "")) == "deep_research" else tool
+                for tool in agent_tools
+            ]
+
             subagents = _build_subagents(
                 subagent_tools,
                 agent_skills,
                 middleware_factory=build_subagent_middlewares,
-                context_prompt=analytics_model_prompt,
             )
             system_prompt = build_deepagents_system_prompt(
                 self._base_dir,
@@ -8503,8 +8131,6 @@ class DeepAgentsAgentManager:
             dependency_prompt = dependency_plan_prompt(getattr(agent_backend, "execution_dependency_plan", None))
             if dependency_prompt:
                 system_prompt += f"\n\n## Current Run Delta\n\n{dependency_prompt}"
-            if analytics_model_prompt:
-                system_prompt += f"\n\n## Versioned Analytics / Semantics\n{analytics_model_prompt}"
             system_prompt += f"\n\n## Current Run Delta\n{_run_artifact_continuity_prompt(run_record)}"
             if run_record.executes_goal:
                 system_prompt += (
@@ -8702,7 +8328,6 @@ class DeepAgentsAgentManager:
             initial_state: dict[str, Any] = {
                 "messages": messages,
                 "todos": persisted_todos,
-                "analytics_model_id": analytics_model_id,
                 "task_profile": run_record.task_profile.model_dump(mode="json"),
             }
             if run_record.verification_contract is not None and run_record.verification_contract.required:
@@ -8719,23 +8344,6 @@ class DeepAgentsAgentManager:
                     },
                 )
 
-            stream_context = {
-                "session_id": session_id,
-                "query_id": query_id,
-                "run_id": run_record.run_id,
-                "run_kind": run_record.run_kind.value,
-                "goal_id": run_record.goal_id or "",
-                "goal_revision": run_record.goal_revision,
-                "user_id": user_id,
-                "project_id": project_id,
-                "workspace_path": str(workspace_path),
-                "permission_policy": permission_context.grant_bindings(),
-                "interaction_mode": interaction_mode,
-                "authority_profile": authority_profile,
-                "authority_directories": list(authority_directories or []),
-                "authority_network_origins": list(authority_network_origins or []),
-                "run_objective": run_record.objective,
-            }
             async for item in self._astream_with_hitl_resume(
                 agent,
                 initial_state,
@@ -9801,7 +9409,7 @@ class DeepAgentsAgentManager:
                     run_record = self._run_coordinator.fail(
                         run_record,
                         outcome=RunOutcome.BLOCKED,
-                        error="headless_business_confirmation_required",
+                        error="headless_skill_confirmation_required",
                     )
                     if goal_record is not None:
                         self._run_coordinator.goals.release_run(
@@ -10477,18 +10085,6 @@ class DeepAgentsAgentManager:
                 )
             try:
                 permission_resume_registry.reject_session(
-                    session_id,
-                    "Agent stream was cancelled by the client.",
-                )
-                dimension_build_resume_registry.reject_session(
-                    session_id,
-                    "Agent stream was cancelled by the client.",
-                )
-                logical_dataset_resume_registry.reject_session(
-                    session_id,
-                    "Agent stream was cancelled by the client.",
-                )
-                database_sql_revision_resume_registry.reject_session(
                     session_id,
                     "Agent stream was cancelled by the client.",
                 )

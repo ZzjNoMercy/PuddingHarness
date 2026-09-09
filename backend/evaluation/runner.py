@@ -57,7 +57,7 @@ class EvaluationRunner:
         root.mkdir(parents=True, exist_ok=True)
         if os.name != "nt":
             os.chmod(root, 0o700)
-        os.environ["PUDDINGCLAW_EVALUATION_RUNTIME_ROOT"] = str(root)
+        os.environ["PUDDINGHARNESS_EVALUATION_RUNTIME_ROOT"] = str(root)
         # Provider tracing remains invocation-scoped. Never mutate the normal
         # backend process or rely on its global LangSmith environment flags.
         os.environ["LANGSMITH_TRACING"] = "false"
@@ -315,7 +315,6 @@ class EvaluationRunner:
                         message=message or "",
                         session_id=session_id,
                         project_id=project_id,
-                        analytics_model_id=experiment.candidate.analytics_model_id,
                         llm_model_id=experiment.candidate.llm_model_id,
                         thinking_level=experiment.candidate.thinking_level,
                         credential_name=experiment.candidate.credential_name,
@@ -896,6 +895,8 @@ class EvaluationRunner:
 
     async def retry_projection(self, experiment_id: str) -> EvalExperiment:
         experiment = self.repository.get_experiment(experiment_id)
+        if getattr(experiment, "historical_read_only", False):
+            raise ValueError("Protocol-1.0 Evaluation artifacts are read-only and cannot be projected")
         if experiment.status != ExperimentStatus.COMPLETED:
             raise ValueError("Only a completed local Experiment can be projected")
         outbox = self.repository.claim_outbox("langsmith", "experiment_projection", experiment_id)
@@ -1143,6 +1144,8 @@ class EvaluationRunner:
         """Re-score persisted SWE-bench patches without executing the Agent."""
 
         experiment = self.repository.get_experiment(experiment_id)
+        if getattr(experiment, "historical_read_only", False):
+            raise ValueError("Protocol-1.0 Evaluation artifacts are read-only and cannot be replayed")
         replay = dict(experiment.summary.get("swebench_verifier_replay") or {})
         total = int(replay.get("total") or 0)
         running = experiment.model_copy(
@@ -1347,6 +1350,8 @@ class EvaluationRunner:
         """Append Attempts only for missing patches, then judge the merged set."""
 
         experiment = self.repository.get_experiment(experiment_id)
+        if getattr(experiment, "historical_read_only", False):
+            raise ValueError("Protocol-1.0 Evaluation artifacts are read-only and cannot be resumed")
         resume = dict(experiment.summary.get("swebench_case_resume") or {})
         requested_instance_ids = {
             str(item) for item in resume.get("missing_instance_ids") or []
@@ -1654,6 +1659,8 @@ class EvaluationRunner:
 
     async def run(self, experiment_id: str) -> EvalExperiment:
         experiment = self.repository.get_experiment(experiment_id)
+        if getattr(experiment, "historical_read_only", False):
+            raise ValueError("Protocol-1.0 Evaluation artifacts are read-only and cannot start a new Run")
         if experiment.summary.get("execution_mode") == "official_verifier_replay":
             return await self.run_official_verifier_replay(experiment_id)
         if experiment.summary.get("execution_mode") == "swebench_missing_case_resume":

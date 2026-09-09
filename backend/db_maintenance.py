@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _checkpoint_interval_seconds() -> float:
-    return max(10.0, float(os.getenv("PUDDINGCLAW_CATALOG_CHECKPOINT_INTERVAL_SECONDS", "300") or "300"))
+    return max(10.0, float(os.getenv("PUDDINGHARNESS_CATALOG_CHECKPOINT_INTERVAL_SECONDS", "300") or "300"))
 
 
 class CatalogMaintenanceManager:
@@ -28,8 +28,8 @@ class CatalogMaintenanceManager:
         self._task: asyncio.Task | None = None
 
     def start(self) -> None:
-        if os.getenv("PUDDINGCLAW_DISABLE_CATALOG_MAINTENANCE", "").strip().lower() in {"1", "true", "yes", "on"}:
-            logger.info("[catalog-maintenance] disabled by PUDDINGCLAW_DISABLE_CATALOG_MAINTENANCE")
+        if os.getenv("PUDDINGHARNESS_DISABLE_CATALOG_MAINTENANCE", "").strip().lower() in {"1", "true", "yes", "on"}:
+            logger.info("[catalog-maintenance] disabled by PUDDINGHARNESS_DISABLE_CATALOG_MAINTENANCE")
             return
         if not is_sqlite_url(get_database_url()):
             logger.info("[catalog-maintenance] skipped: Core catalog is not SQLite")

@@ -1,4 +1,4 @@
-"""GET /api/capabilities — 返回基础设施健康状态。"""
+"""GET /api/capabilities — generic PuddingHarness health status."""
 
 from __future__ import annotations
 
@@ -11,6 +11,6 @@ router = APIRouter()
 
 @router.get("/capabilities")
 async def get_capabilities() -> dict:
-    """返回 core_database / pgvector(gbrain) / external_datasources / Docker / Milvus / MinerU 的可用性状态。"""
+    """Return Core Catalog, Docker, and optional Harness CLI status."""
     caps = await capabilities.detect_capabilities(force=True)
     return caps.to_dict()

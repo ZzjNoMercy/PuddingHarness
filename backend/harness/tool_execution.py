@@ -1825,28 +1825,9 @@ class ToolExecutionPipeline(AgentMiddleware):
             "glob",
             "grep",
             "task",
+            "deep_research",
             "read_resource",
             "inspect_skill",
-            "llamaindex_knowledge_query",
-            "pandas_knowledge_query",
-            "database_schema_inspect",
-            "database_evidence_search",
-            "database_sql_generate",
-            "database_sql_validate_legacy",
-            "database_sql_validate",
-            "database_sql_execute",
-            "database_query_trace_inspect",
-            "database_query_result_page",
-            "semantic_entity_lookup",
-            "inspect_dimension_build_input",
-            "request_dimension_build_rule",
-            "enqueue_semantic_dimension_build",
-            "get_semantic_dimension_build_job",
-            "publish_semantic_dimension_build",
-            "ensure_attachment_table_asset",
-            "list_logical_dataset_candidates",
-            "request_logical_dataset_rule",
-            "apply_logical_dataset_rule",
         }
     )
     NETWORK_TOOLS = frozenset(
@@ -1859,7 +1840,6 @@ class ToolExecutionPipeline(AgentMiddleware):
         }
     )
     SKILL_COMMIT_TOOLS = frozenset({"install_skill", "update_skill"})
-    SEMANTIC_COMMIT_TOOLS = frozenset({"publish_semantic_markdown"})
 
     def __init__(
         self,
@@ -3823,7 +3803,9 @@ class ToolExecutionPipeline(AgentMiddleware):
                     "commit_external_directory",
                 }
             )
-            forbidden.update(name for name in self.known_tools if name.startswith("database_"))
+            # Presentation repair uses existing artifacts; external service calls
+            # require a new Run irrespective of provider or tool spelling.
+            forbidden.update(self.mcp_tool_names)
         reservation = session_manager.reserve_delta_repair_tool_call(
             session_id,
             run_id,
@@ -3956,6 +3938,12 @@ class ToolExecutionPipeline(AgentMiddleware):
                 PolicyDecision.DENY,
                 f"unknown_tool:{tool_name}",
                 "critical",
+            )
+        resource_args = request.tool_call.get("args") or {}
+        if tool_name == "read_resource" and isinstance(resource_args, dict) and resource_args.get("mcp_server"):
+            return ToolPolicyResult(
+                PolicyDecision.ASK, "mcp_resource_requires_user_approval", "high",
+                explanation="External MCP Resource reads require this Run's explicit authorization.",
             )
         control_descriptor = tool_control_descriptor(tool_name)
         if control_descriptor is None:
@@ -4109,13 +4097,6 @@ class ToolExecutionPipeline(AgentMiddleware):
                 PolicyDecision.ASK,
                 f"managed_skill_write:{tool_name}",
                 "managed_skill_write",
-            )
-        if tool_name in self.SEMANTIC_COMMIT_TOOLS:
-            return ToolPolicyResult(
-                PolicyDecision.ASK,
-                "digest_bound_semantic_definition_publish",
-                "managed_definition_write",
-                explanation=("发布会替换用户语义定义；批准只绑定本次调用中的 plan_id 和 plan_digest。"),
             )
         if tool_name == "install_packages":
             if self.permission_context.backend_mode not in {"spawn", "kernel", "adaptive", "docker"}:
@@ -5526,6 +5507,12 @@ class ToolExecutionPipeline(AgentMiddleware):
     def _permission_fingerprint_command(request: ToolCallRequest, preview: str) -> str:
         """Hash the complete browser action while keeping its preview redacted."""
 
+        args = request.tool_call.get("args") or {}
+        if (str(request.tool_call.get("name") or "") == "read_resource"
+                and isinstance(args, dict) and args.get("mcp_server")):
+            # UI previews are bounded; authorization binds the complete URI,
+            # server and page, including any suffix beyond the preview limit.
+            return json.dumps(args, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         if str(request.tool_call.get("name") or "") != "browser":
             return preview
         args = request.tool_call.get("args") or {}
@@ -5691,6 +5678,9 @@ class ToolExecutionPipeline(AgentMiddleware):
         if tool_name in self.SKILL_COMMIT_TOOLS:
             return ["execute", "managed_skill_write"]
         if tool_name in {"fetch_url", "web_search", "tavily_search"}:
+            return ["execute", "network_access"]
+        args = request.tool_call.get("args") or {}
+        if tool_name == "read_resource" and isinstance(args, dict) and args.get("mcp_server"):
             return ["execute", "network_access"]
         if tool_name in self.mcp_tool_names:
             return ["execute", "network_access"]

@@ -13,12 +13,11 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
-from graph.database_sql_revision_resume import database_sql_revision_resume_registry
-from graph.dimension_build_resume import dimension_build_resume_registry
-from graph.logical_dataset_resume import logical_dataset_resume_registry
 from graph.permission_resume import permission_resume_registry
+from graph.kernel_fallback_resume import kernel_fallback_resume_registry
 from graph.session_manager import SessionManager, session_manager
 from graph.skill_plan_resume import skill_plan_resume_registry
+from graph.skill_secret_resume import skill_secret_resume_registry
 from graph.user_input_resume import user_input_resume_registry
 
 logger = logging.getLogger(__name__)
@@ -35,23 +34,22 @@ TERMINAL_RUN_STATUSES = {
 
 _RESUME_REGISTRIES = (
     permission_resume_registry,
-    dimension_build_resume_registry,
-    logical_dataset_resume_registry,
-    database_sql_revision_resume_registry,
     user_input_resume_registry,
     skill_plan_resume_registry,
+    skill_secret_resume_registry,
+    kernel_fallback_resume_registry,
 )
 
 
 def headless_session_ttl_seconds() -> float | None:
     """Return the configured inactivity TTL; zero disables automatic expiry."""
 
-    raw = os.getenv("PUDDINGCLAW_HEADLESS_SESSION_TTL_HOURS", "24").strip()
+    raw = os.getenv("PUDDINGHARNESS_HEADLESS_SESSION_TTL_HOURS", "24").strip()
     try:
         hours = float(raw)
     except ValueError:
         logger.warning(
-            "Invalid PUDDINGCLAW_HEADLESS_SESSION_TTL_HOURS=%r; using 24 hours",
+            "Invalid PUDDINGHARNESS_HEADLESS_SESSION_TTL_HOURS=%r; using 24 hours",
             raw,
         )
         hours = DEFAULT_HEADLESS_SESSION_TTL_HOURS
@@ -96,7 +94,23 @@ def headless_session_has_pending_resume(
 ) -> bool:
     """Return whether any in-process HITL future still owns the Session."""
 
-    return any(registry.has_pending_session(session_id) for registry in registries)
+    for registry in registries:
+        checker = getattr(registry, "has_pending_session", None)
+        if callable(checker):
+            if checker(session_id):
+                return True
+            continue
+        requests = getattr(registry, "_requests", None)
+        if not isinstance(requests, dict):
+            continue
+        for request in requests.values():
+            if not isinstance(request, dict):
+                continue
+            if str(request.get("session_id") or "") != session_id:
+                continue
+            if str(request.get("status") or "").lower() in {"pending", "waiting", "open"}:
+                return True
+    return False
 
 
 def cleanup_stale_headless_sessions(
@@ -117,22 +131,23 @@ def cleanup_stale_headless_sessions(
     effective_now = time.time() if now is None else now
     protected = protected_session_ids or set()
     deleted: list[str] = []
+    cutoff = effective_now - effective_ttl
     for listed in manager.list_sessions():
         session_id = str(listed.get("id") or "")
         if not session_id or session_id in protected:
             continue
-        metadata = manager.get_metadata(session_id)
-        if not is_headless_session_expired(
-            metadata,
-            now=effective_now,
-            ttl_seconds=effective_ttl,
-        ):
-            continue
         if headless_session_has_pending_resume(session_id, resume_registries):
             continue
+        # The atomic delete method reads the authoritative Session JSON and
+        # re-checks Headless ownership, inactivity and Run terminality under
+        # the Session lock.  Do not call ``get_metadata`` here: metadata
+        # projection resolves the Session's current project permission policy,
+        # while retention is intentionally independent of project existence.
+        # A stale Headless Session may legitimately outlive a temporary Teams
+        # workspace/project and must remain cleanable in that state.
         if manager.delete_session_if_idle_headless_before(
             session_id,
-            cutoff=effective_now - effective_ttl,
+            cutoff=cutoff,
             terminal_run_statuses=TERMINAL_RUN_STATUSES,
         ):
             deleted.append(session_id)

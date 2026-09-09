@@ -1,13 +1,10 @@
 """Database-level runtime control: drain/maintenance lease protocol.
 
-The singleton ``core_runtime_control`` row (schema migration v3) coordinates
-the stop-write protocol required before migrating the Core catalog between
-SQLite and PostgreSQL:
+The singleton ``core_runtime_control`` row coordinates the Harness stop-write protocol
+for maintenance and database migration between SQLite and PostgreSQL:
 
-- ``normal``: business as usual;
-- ``draining``: workers stop claiming new jobs and new-job creation is
-  rejected, while in-flight jobs keep heartbeating and finish under the
-  queue lease protocol (``knowledge.queue_repository``);
+- ``normal``: ordinary Harness operation;
+- ``draining``: new Harness writes are rejected while in-flight work finishes;
 - ``maintenance``: entered only when no job holds an active lease; the
   maintenance owner keeps renewing its lease while the migration runs.
 
@@ -21,8 +18,9 @@ Design rules:
   rowcount instead of read-modify-write races;
 - ``generation`` increments on every write_mode transition, letting callers
   detect state changes;
-- readers tolerate pre-v3 databases (no ``core_runtime_control`` table) by
-  treating them as ``normal`` so old catalogs keep working until migrated.
+- readers tolerate an uninitialized Harness database (no
+  ``core_runtime_control`` table) by treating it as ``normal`` until the
+  versioned Harness migration runs.
 """
 
 from __future__ import annotations
@@ -34,7 +32,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from knowledge.queue_repository import db_lease_expiry_expr, db_now_expr, lease_bind_params
+from utils.database_leases import db_lease_expiry_expr, db_now_expr, lease_bind_params
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +47,7 @@ WRITE_MODES = (WRITE_MODE_NORMAL, WRITE_MODE_DRAINING, WRITE_MODE_MAINTENANCE)
 DEFAULT_LEASE_SECONDS = 300
 DEFAULT_RETRY_AFTER_SECONDS = 30
 
-_JOB_TABLES = ("knowledge_import_jobs", "semantic_dimension_build_jobs")
+_JOB_TABLES: tuple[str, ...] = ()
 
 _SELECT_STATE = (
     "SELECT write_mode, maintenance_owner, lease_expires_at, generation, reason, updated_at "
@@ -66,10 +64,10 @@ class MaintenanceConflictError(RuntimeError):
 
 
 class MaintenanceModeError(RuntimeError):
-    """A write was attempted while Core is draining or under maintenance."""
+    """A write was attempted while Harness is draining or under maintenance."""
 
     def __init__(self, write_mode: str, *, retry_after: int = DEFAULT_RETRY_AFTER_SECONDS) -> None:
-        super().__init__(f"Core is in '{write_mode}' mode; new writes are temporarily rejected")
+        super().__init__(f"Harness is in '{write_mode}' mode; new writes are temporarily rejected")
         self.write_mode = write_mode
         self.retry_after = retry_after
 
@@ -151,7 +149,7 @@ async def get_state(session: AsyncSession, *, create_if_missing: bool = True) ->
 
 
 async def queue_running_counts(session: AsyncSession) -> dict[str, dict[str, int]]:
-    """Per-queue count of running jobs, split by whether the lease is active."""
+    """Return generic queue counts; Harness has no Platform-owned job tables."""
 
     now = db_now_expr(_dialect(session))
     counts: dict[str, dict[str, int]] = {}
@@ -335,8 +333,8 @@ async def release_maintenance(
 async def _read_write_mode_tolerant(session: AsyncSession) -> str:
     """Read the current write_mode; pre-v3 databases count as ``normal``.
 
-    A missing ``core_runtime_control`` table (catalog not yet migrated to
-    schema v3) fails open so old databases keep working. Table existence is
+    A missing ``core_runtime_control`` table (Harness database not yet
+    migrated to schema v2) fails open for read-only callers. Table existence is
     probed with a metadata query instead of try/except so the caller's
     session is never poisoned: an exception path would force a rollback,
     which expires every ORM object the caller has already loaded.

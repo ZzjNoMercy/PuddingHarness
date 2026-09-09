@@ -1,3 +1,4 @@
+/* Target Harness SourcesPanel overlay: generic citations, MCP resources, permissions, goals, and artifacts. */
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -12,8 +13,8 @@ import {
   FileText,
   FolderOpen,
   Globe2,
-  KeyRound,
   Images,
+  KeyRound,
   ListChecks,
   Pause,
   Pencil,
@@ -27,7 +28,6 @@ import {
 } from "lucide-react";
 import {
   listSessionPermissions,
-  rawKnowledgeFileUrl,
   revokePermissionGrant,
   type HarnessGoal,
   type HarnessRun,
@@ -2135,7 +2135,7 @@ const SourceItem = React.forwardRef<HTMLDivElement, {
   const openUrl = sourceOpenUrl(source);
   const isLocalSource = isLocalResourceUri(source.uri);
   const displayTitle = sourceDisplayTitle(source);
-  const isKnowledgeImage = source.source_type === "knowledge_image";
+  const displayQuote = typeof source.quote === "string" && source.quote.length <= 1200 ? source.quote : "";
 
   return (
     <div
@@ -2148,9 +2148,7 @@ const SourceItem = React.forwardRef<HTMLDivElement, {
     >
       <div className="flex items-start gap-2.5">
         <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-black/[0.055]">
-          {isKnowledgeImage
-            ? <Images className="h-3 w-3 text-[#002fa7]" />
-            : <FileText className="h-3 w-3 text-slate-600" />}
+          <FileText className="h-3 w-3 text-slate-600" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -2162,25 +2160,10 @@ const SourceItem = React.forwardRef<HTMLDivElement, {
             <p className="truncate text-[13px] font-medium text-slate-800" title={displayTitle}>
               {displayTitle}
             </p>
-            {isKnowledgeImage && (
-              <span className="rounded bg-[#002fa7]/10 px-1.5 py-0.5 text-[9px] font-semibold text-[#002fa7]">
-                图片命中
-              </span>
-            )}
           </div>
-          {isKnowledgeImage && openUrl && (
-            <a href={openUrl} target="_blank" rel="noreferrer" className="mt-2 block overflow-hidden rounded-lg border border-black/[0.06] bg-slate-50">
-              <img
-                src={openUrl}
-                alt={displayTitle}
-                className="max-h-36 w-full object-contain"
-                loading="lazy"
-              />
-            </a>
-          )}
-          {source.quote && (
+          {displayQuote && (
             <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-500">
-              {source.quote}
+              {displayQuote}
             </p>
           )}
           {openUrl ? (
@@ -2194,8 +2177,8 @@ const SourceItem = React.forwardRef<HTMLDivElement, {
               <ExternalLink className="h-3 w-3" />
             </a>
           ) : isLocalSource ? (
-            <p className="mt-2 break-all text-[11px] leading-relaxed text-slate-400" title={source.uri}>
-              本地知识库资源
+            <p className="mt-2 break-all text-[11px] leading-relaxed text-slate-400">
+              本地工作区资源
             </p>
           ) : null}
         </div>
@@ -2206,11 +2189,12 @@ const SourceItem = React.forwardRef<HTMLDivElement, {
 
 function sourceDisplayTitle(source: SourceRecord): string {
   const title = String(source.title || "").trim();
+  const safeTitle = title.length <= 1200 ? title : "";
   const uri = source.uri || "";
-  const genericTitle = /^\[?\d+\]?$/.test(title)
-    || ["", "x.com", "twitter.com", "网页来源", "未命名来源"].includes(title.toLowerCase());
+  const genericTitle = /^\[?\d+\]?$/.test(safeTitle)
+    || ["", "x.com", "twitter.com", "网页来源", "未命名来源"].includes(safeTitle.toLowerCase());
   if (!genericTitle || !isHttpUrl(uri)) {
-    return title || "未命名来源";
+    return safeTitle || "未命名来源";
   }
   try {
     const url = new URL(uri);
@@ -2241,21 +2225,14 @@ function isHttpUrl(value: string | undefined): boolean {
 
 function isLocalResourceUri(value: string | undefined): boolean {
   if (!value) return false;
-  return value.startsWith("/knowledge/") || value.startsWith("/") || value.startsWith("~");
+  return value.startsWith("/") || value.startsWith("~") || value.startsWith("file://");
 }
 
 function sourceOpenUrl(source: SourceRecord): string {
   const uri = source.uri || "";
-  if (isHttpUrl(uri)) return uri;
-  if (uri.startsWith("/knowledge/")) return rawKnowledgeFileUrl(uri);
-
-  const virtualPath =
-    metadataString(source, "virtual_path") ||
-    metadataString(source, "linked_markdown_virtual_path") ||
-    metadataString(source, "browser_path");
-  if (virtualPath.startsWith("/knowledge/")) return rawKnowledgeFileUrl(virtualPath);
-
-  return "";
+  if (isHttpUrl(uri) || uri.startsWith("file://")) return uri;
+  const resourceUri = metadataString(source, "resource_uri");
+  return isHttpUrl(resourceUri) || resourceUri.startsWith("file://") ? resourceUri : "";
 }
 
 function normalizeTodoStatus(status: unknown): TodoStatus {

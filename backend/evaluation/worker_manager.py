@@ -16,7 +16,7 @@ class EvaluationWorkerManager:
     def __init__(self) -> None:
         self._processes: dict[str, asyncio.subprocess.Process] = {}
         self._lock = asyncio.Lock()
-        self._max_workers = max(1, int(os.getenv("PUDDINGCLAW_EVALUATION_MAX_WORKERS", "1")))
+        self._max_workers = max(1, int(os.getenv("PUDDINGHARNESS_EVALUATION_MAX_WORKERS", "1")))
         self._stopping = False
 
     @staticmethod
@@ -290,22 +290,22 @@ class EvaluationWorkerManager:
                 "LANGSMITH_API_KEY",
                 "LANGSMITH_ENDPOINT",
                 "LANGSMITH_PROJECT",
-                "PUDDINGCLAW_EVALUATION_DB",
-                "PUDDINGCLAW_EVALUATION_SETTINGS",
+                "PUDDINGHARNESS_EVALUATION_DB",
+                "PUDDINGHARNESS_EVALUATION_SETTINGS",
                 "DOCKER_HOST",
                 "DOCKER_TLS_VERIFY",
                 "DOCKER_CERT_PATH",
                 "UV_CACHE_DIR",
-                "PUDDINGCLAW_SWEBENCH_NAMESPACE",
-                "PUDDINGCLAW_SWEBENCH_ARCH",
-                "PUDDINGCLAW_SWEBENCH_TEST_TIMEOUT_SECONDS",
-                "PUDDINGCLAW_SWEBENCH_JOB_TIMEOUT_SECONDS",
-                "PUDDINGCLAW_SWEBENCH_MAX_WORKERS",
-                "PUDDINGCLAW_SWEBENCH_CONTAINER_MEMORY",
-                "PUDDINGCLAW_SWEBENCH_CONTAINER_CPUS",
-                "PUDDINGCLAW_SWEBENCH_CONTAINER_PIDS",
-                "PUDDINGCLAW_SWEBENCH_CONTAINER_DISK_GB",
-                "PUDDINGCLAW_SWEBENCH_ISOLATED_DOCKER",
+                "PUDDINGHARNESS_SWEBENCH_NAMESPACE",
+                "PUDDINGHARNESS_SWEBENCH_ARCH",
+                "PUDDINGHARNESS_SWEBENCH_TEST_TIMEOUT_SECONDS",
+                "PUDDINGHARNESS_SWEBENCH_JOB_TIMEOUT_SECONDS",
+                "PUDDINGHARNESS_SWEBENCH_MAX_WORKERS",
+                "PUDDINGHARNESS_SWEBENCH_CONTAINER_MEMORY",
+                "PUDDINGHARNESS_SWEBENCH_CONTAINER_CPUS",
+                "PUDDINGHARNESS_SWEBENCH_CONTAINER_PIDS",
+                "PUDDINGHARNESS_SWEBENCH_CONTAINER_DISK_GB",
+                "PUDDINGHARNESS_SWEBENCH_ISOLATED_DOCKER",
             }
             environment = {key: value for key, value in os.environ.items() if key in allowed_keys}
             if "DOCKER_HOST" not in environment:
@@ -313,7 +313,7 @@ class EvaluationWorkerManager:
                 if docker_host:
                     environment["DOCKER_HOST"] = docker_host
             environment["PYTHONPATH"] = str(backend_dir)
-            environment["PUDDINGCLAW_HOME"] = str(runtime_root)
+            environment["PUDDINGHARNESS_HOME"] = str(runtime_root)
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
                 "-m",
@@ -406,7 +406,6 @@ class EvaluationWorkerManager:
                 llm_model_id=previous.llm_model_id,
                 thinking_level=previous.thinking_level,
                 credential_name=previous.credential_name,
-                analytics_model_id=previous.analytics_model_id,
             ),
         )
         candidate = bind_candidate_capability(candidate, experiment.profile_id)
@@ -432,6 +431,10 @@ class EvaluationWorkerManager:
                 if process.returncode is None
             }
         for experiment in repository.list_experiments():
+            if getattr(experiment, "historical_read_only", False):
+                # Historical protocol rows are inspectable only; do not mutate
+                # their status or launch a new Agent Run during recovery.
+                continue
             if experiment.status == ExperimentStatus.QUEUED:
                 if experiment.summary.get("application_restart_pending"):
                     try:

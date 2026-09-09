@@ -2,9 +2,9 @@
 
 The interactive Agent path intentionally waits on the same registries.  This
 module is the only place where unattended ``auto``/``external`` modes may turn
-a pending interrupt into a decision. ``external`` leaves permission decisions
-to the consumer and uses this resolver only for fail-closed business HITL. It
-never invents business confirmation payloads.
+  a pending interrupt into a decision. ``external`` leaves permission decisions
+  to the consumer and uses this resolver only for fail-closed skill or kernel
+  HITL. It never invents confirmation payloads.
 """
 
 from __future__ import annotations
@@ -14,10 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from graph.database_sql_revision_resume import database_sql_revision_resume_registry
-from graph.dimension_build_resume import dimension_build_resume_registry
 from graph.kernel_fallback_resume import kernel_fallback_resume_registry
-from graph.logical_dataset_resume import logical_dataset_resume_registry
 from graph.permission_resume import permission_resume_registry
 from graph.skill_plan_resume import skill_plan_resume_registry
 from graph.skill_secret_resume import skill_secret_resume_registry
@@ -29,9 +26,6 @@ class HeadlessInterruptResolver:
 
     _REGISTRIES = {
         "permission_request": permission_resume_registry,
-        "dimension_build_rule_request": dimension_build_resume_registry,
-        "logical_dataset_rule_request": logical_dataset_resume_registry,
-        "database_sql_revision_request": database_sql_revision_resume_registry,
         "user_input_request": user_input_resume_registry,
         "skill_plan_confirmation_request": skill_plan_resume_registry,
         "skill_secret_request": skill_secret_resume_registry,
@@ -65,9 +59,6 @@ class HeadlessInterruptResolver:
             normalized = dict(decision)
         action = str(normalized.get("type") or normalized.get("action") or "")
         if interrupt_type in {
-            "database_sql_revision_request",
-            "dimension_build_rule_request",
-            "logical_dataset_rule_request",
             "skill_plan_confirmation_request",
         } or (interrupt_type == "user_input_request" and action == "cancel"):
             self.context["_headless_needs_input"] = {
@@ -112,14 +103,8 @@ class HeadlessInterruptResolver:
             return {"action": "reject", "reason": "headless_kernel_fallback_requires_explicit_user_choice"}
         if interrupt_type == "skill_secret_request":
             return {"action": "cancel", "reason": "interactive_secret_entry_required"}
-        if interrupt_type == "database_sql_revision_request":
-            return {"action": "reject", "reason": "headless_business_confirmation_required"}
-        if interrupt_type in {
-            "dimension_build_rule_request",
-            "logical_dataset_rule_request",
-            "skill_plan_confirmation_request",
-        }:
-            return {"action": "cancel", "reason": "headless_business_confirmation_required"}
+        if interrupt_type == "skill_plan_confirmation_request":
+            return {"action": "cancel", "reason": "headless_skill_confirmation_required"}
         return {"type": "reject", "reason": "headless_unsupported_interrupt"}
 
     @staticmethod
@@ -140,7 +125,7 @@ class HeadlessInterruptResolver:
             # Skill plans expose a status-based registry API because committing
             # a plan has side effects. The registry's cancel path resolves the
             # owning future without pretending that any plan was committed.
-            return registry.cancel(request_id, "headless_business_confirmation_required")
+            return registry.cancel(request_id, "headless_skill_confirmation_required")
         result = registry.resolve(request_id, decision)
         if registry is skill_secret_resume_registry:
             normalized, _resumed = result
@@ -191,9 +176,9 @@ class HeadlessInterruptResolver:
 def headless_authority_from_environment() -> dict[str, Any]:
     """Return safe, non-secret authority settings for a Worker Run."""
 
-    raw_dirs = os.getenv("PUDDINGCLAW_HEADLESS_ALLOWED_DIRECTORIES", "")
-    raw_origins = os.getenv("PUDDINGCLAW_HEADLESS_ALLOWED_NETWORK_ORIGINS", "")
-    configured_profile = os.getenv("PUDDINGCLAW_HEADLESS_AUTHORITY_PROFILE", "").strip().lower()
+    raw_dirs = os.getenv("PUDDINGHARNESS_HEADLESS_ALLOWED_DIRECTORIES", "")
+    raw_origins = os.getenv("PUDDINGHARNESS_HEADLESS_ALLOWED_NETWORK_ORIGINS", "")
+    configured_profile = os.getenv("PUDDINGHARNESS_HEADLESS_AUTHORITY_PROFILE", "").strip().lower()
     return {
         "profile": configured_profile,
         "directories": [item.strip() for item in raw_dirs.split(",") if item.strip()],

@@ -150,7 +150,7 @@ def _dataset_response(dataset: EvalDataset) -> dict[str, Any]:
 
 @router.get("/schemas")
 async def get_protocol_schemas() -> dict[str, Any]:
-    return {"protocol_version": "1.0", "schemas": protocol_json_schemas()}
+    return {"protocol_version": "2.0", "schemas": protocol_json_schemas()}
 
 
 @router.get("/datasets")
@@ -921,7 +921,6 @@ async def retry_experiment(experiment_id: str) -> dict[str, Any]:
             llm_model_id=experiment.candidate.llm_model_id,
             thinking_level=experiment.candidate.thinking_level,
             credential_name=experiment.candidate.credential_name,
-            analytics_model_id=experiment.candidate.analytics_model_id,
         )
         candidate = await run_in_threadpool(resolve_candidate, BASE_DIR, candidate_request)
         candidate = bind_candidate_capability(candidate, experiment.profile_id)
@@ -1174,7 +1173,6 @@ async def resume_missing_swebench_cases(experiment_id: str) -> dict[str, Any]:
             llm_model_id=experiment.candidate.llm_model_id,
             thinking_level=experiment.candidate.thinking_level,
             credential_name=experiment.candidate.credential_name,
-            analytics_model_id=experiment.candidate.analytics_model_id,
         )
         candidate = await run_in_threadpool(resolve_candidate, BASE_DIR, candidate_request)
         candidate = bind_candidate_capability(candidate, experiment.profile_id)

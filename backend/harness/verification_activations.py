@@ -34,45 +34,6 @@ _WEB_TOOLS = frozenset(
         "fetch_url",
         "web_search",
         "tavily_search",
-        "llamaindex_knowledge_query",
-    }
-)
-_ANALYTICS_TOOLS = frozenset(
-    {
-        "pandas_knowledge_query",
-        "database_evidence_search",
-        "database_schema_inspect",
-        "database_sql_generate",
-        "database_sql_validate_legacy",
-        "database_sql_validate",
-        "database_sql_execute",
-        "database_query_trace_inspect",
-        "database_query_result_page",
-        "semantic_entity_lookup",
-        "inspect_dimension_build_input",
-        "request_dimension_build_rule",
-        "enqueue_semantic_dimension_build",
-        "get_semantic_dimension_build_job",
-        "publish_semantic_dimension_build",
-        "ensure_attachment_table_asset",
-        "list_logical_dataset_candidates",
-        "request_logical_dataset_rule",
-        "apply_logical_dataset_rule",
-    }
-)
-_MATERIAL_ANALYTICS_TOOLS = frozenset(
-    {
-        "pandas_knowledge_query",
-        "database_sql_execute",
-        "database_query_trace_inspect",
-        "database_query_result_page",
-        "semantic_entity_lookup",
-        "inspect_dimension_build_input",
-        "get_semantic_dimension_build_job",
-        "publish_semantic_dimension_build",
-        "ensure_attachment_table_asset",
-        "list_logical_dataset_candidates",
-        "apply_logical_dataset_rule",
     }
 )
 _WRITE_TOOLS = frozenset(
@@ -94,8 +55,6 @@ _PROPORTIONAL_MUTATION_TOOLS = frozenset(
         *_WRITE_TOOLS,
         "install_skill",
         "update_skill",
-        "apply_logical_dataset_rule",
-        "publish_semantic_dimension_build",
     }
 )
 _CODE_EXTENSIONS = frozenset(
@@ -160,33 +119,18 @@ _WEB_SKILL_SCRIPT_RE = re.compile(
     r"(?:^|/)aihot/(?:.+/)?[^/\s]+\.(?:py|js|mjs|cjs)$",
     re.IGNORECASE,
 )
-_ANALYTICS_COMMAND_RE = re.compile(
-    r"(?:pandas|polars|duckdb|sqlite|\.csv\b|\.tsv\b|\.xlsx?\b|select\s+.+\s+from)",
-    re.IGNORECASE | re.DOTALL,
-)
 _COMMAND_EXIT_RE = re.compile(
     r"\[Command\s+(?P<status>succeeded|failed)\s+with\s+exit\s+code\s+"
     r"(?P<code>-?\d+)\]",
     re.IGNORECASE,
 )
 _PLAIN_EXIT_RE = re.compile(r"(?:^|\n)Exit code:\s*(?P<code>-?\d+)\s*$", re.IGNORECASE)
-_ANALYTICS_RESULT_REF_RE = re.compile(
-    r"(?P<ref_kind>result_id|query_trace_id|trace_id|database_source_id|"
-    r"generation_id|sql_submission_id|evidence_search_id|validation_receipt_id|数据源)[：:\s]+"
-    r"(?P<value>[A-Za-z0-9_.:/-]+)",
-    re.IGNORECASE,
-)
 _ERROR_PREFIXES = (
     "error:",
     "exception:",
     "traceback",
     "tool execution did not return",
     "❌",
-    "🧮 sql 执行失败",
-    "📊 pandasqueryengine 查询失败",
-    "sql 执行失败",
-    "查询失败",
-    "未找到相关内容",
     "command not found",
 )
 
@@ -199,8 +143,6 @@ def verification_packs_for_tool(
 
     if tool_name in _WEB_TOOLS:
         return ["web_research"]
-    if tool_name in _ANALYTICS_TOOLS:
-        return ["analytics"]
     if tool_name == "validate_html_report":
         return ["code"]
     if tool_name == "prepare_attachment_edit":
@@ -252,8 +194,6 @@ def verification_packs_for_tool(
     packs: list[str] = []
     if _NETWORK_COMMAND_RE.search(command) or _command_executes_web_skill(command):
         packs.append("web_research")
-    if _command_performs_analytics(command):
-        packs.append("analytics")
     if _command_performs_validation(command):
         packs.append("code")
     return packs
@@ -314,36 +254,6 @@ def _tokens_execute_web_skill(tokens: list[str], *, cwd: str) -> bool:
     return False
 
 
-def _command_performs_analytics(command: str) -> bool:
-    tokens = _command_tokens(command)
-    if not tokens:
-        return False
-    executable = tokens[0].rsplit("/", 1)[-1].lower()
-    if executable in {
-        "flutter",
-        "mypy",
-        "npm",
-        "pnpm",
-        "pyright",
-        "pytest",
-        "ruff",
-        "yarn",
-    }:
-        return False
-    if executable in {
-        "cat",
-        "echo",
-        "find",
-        "grep",
-        "head",
-        "ls",
-        "printf",
-        "rg",
-        "stat",
-        "tail",
-    }:
-        return False
-    return bool(_ANALYTICS_COMMAND_RE.search(command))
 
 
 def _command_performs_validation(command: str) -> bool:
@@ -587,30 +497,6 @@ def _result_evidence_refs(
                     "source_type": source.get("source_type"),
                     "uri": source.get("uri"),
                     "title": source.get("title"),
-                }
-            )
-        analytics_lineage: dict[str, str] = {}
-        for match in _ANALYTICS_RESULT_REF_RE.finditer(content):
-            ref_kind = str(match.group("ref_kind") or "").lower()
-            if ref_kind == "数据源":
-                ref_kind = "database_source_id"
-            if ref_kind == "validation_receipt_id" and tool_name.startswith("database_"):
-                ref_kind = "sql_validation_receipt_id"
-            analytics_lineage[ref_kind] = match.group("value")
-        if analytics_lineage.get("result_id"):
-            refs.append(
-                {
-                    "kind": "analytics_result",
-                    "tool_call_id": tool_call_id,
-                    **analytics_lineage,
-                }
-            )
-        elif analytics_lineage:
-            refs.append(
-                {
-                    "kind": "analytics_lineage",
-                    "tool_call_id": tool_call_id,
-                    **analytics_lineage,
                 }
             )
         if tool_name in {"execute", "terminal"}:
@@ -1585,9 +1471,7 @@ def build_verification_activations(
         packs.append("web_research")
     for pack in packs:
         material = bool(result_refs)
-        if pack == "analytics":
-            material = material and (tool_name in _MATERIAL_ANALYTICS_TOOLS or tool_name in {"execute", "terminal"})
-        elif pack == "web_research":
+        if pack == "web_research":
             material = any(item.get("kind") == "source" for item in result_refs)
         elif pack == "artifact":
             material = any(item.get("kind") == "artifact_write" for item in result_refs)

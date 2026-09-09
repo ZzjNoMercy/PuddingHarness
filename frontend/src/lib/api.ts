@@ -1,9 +1,14 @@
 /**
- * API client for PuddingClaw backend.
- * Custom SSE parser for POST requests (native EventSource only supports GET).
+ * Target Harness API client.
+ *
+ * This overlay keeps the Claw runtime contract: sessions, agents, tasks,
+ * workspaces, MCP, permissions, files, and generic evaluation/review APIs.
+ * Product-specific endpoint families live in the Platform Console and are
+ * deliberately absent from this client.
  */
 
 const API_BASE = "/api";
+
 const DIRECT_BACKEND_API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_API_BASE ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
@@ -245,8 +250,8 @@ export interface RubricEvaluationReport {
   created_at: number;
 }
 
-/** Independent review policy for an ordinary (non-Goal) Run. */
 export type RunReviewPolicy = "off" | "shadow" | "blocking_one_shot";
+
 export type RunReviewStatus =
   | "not_requested"
   | "pending"
@@ -460,2894 +465,8 @@ export interface AgentAttachment {
   preview_mime_type?: string;
   width?: number;
   height?: number;
-  created_at?: number;
+ created_at?: number;
 }
-
-export interface KnowledgeDocument {
-  id: string;
-  knowledge_base_id: string;
-  title: string;
-  source_type: string;
-  source_path: string;
-  storage_path: string;
-  virtual_path: string;
-  mime_type: string;
-  content_sha256: string;
-  size_bytes: number;
-  status: string;
-  publish_targets: string[];
-  metadata?: Record<string, unknown>;
-  source_connection_id?: string | null;
-  source_item_id?: string | null;
-  origin_url?: string | null;
-  source_revision?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
-
-export interface KnowledgeDirectoryFile {
-  name: string;
-  extension: string;
-  virtual_path: string;
-  storage_path: string;
-  size_bytes: number;
-  modified_at: string;
-}
-
-export interface KnowledgeTreeNode {
-  name: string;
-  type: "directory" | "file";
-  virtual_path: string;
-  storage_path: string;
-  extension?: string;
-  size_bytes?: number;
-  modified_at?: string;
-  child_count?: number;
-  file_count?: number;
-  truncated?: boolean;
-  children?: KnowledgeTreeNode[];
-}
-
-export interface KnowledgeFilePreview {
-  name: string;
-  extension: string;
-  virtual_path: string;
-  storage_path: string;
-  size_bytes: number;
-  modified_at: string;
-  preview_type: "text" | "unsupported";
-  content: string;
-  truncated: boolean;
-  message?: string | null;
-  llm_wiki_raw?: {
-    available: boolean;
-    snapshot?: Record<string, unknown> | null;
-    latest_snapshot?: Record<string, unknown> | null;
-    changed_since_snapshot: boolean;
-    error?: string;
-  };
-}
-
-export interface KnowledgeStatus {
-  enabled: boolean;
-  database: {
-    configured: boolean;
-    provider: string;
-    url: string;
-    configured_by?: string;
-    environment_override?: boolean;
-    mode?: string;
-    configuration_hint?: string;
-    healthy: boolean;
-    last_error?: string | null;
-  };
-  local_markdown: {
-    enabled: boolean;
-    physical_path: string;
-    originals_path?: string;
-    configured_by?: string;
-    environment_override?: boolean;
-    deepagents_virtual_path: string;
-  };
-  vector: {
-    enabled: boolean;
-    provider?: string | null;
-    note?: string;
-    multimodal?: {
-      enabled: boolean;
-      vector_store: string;
-      milvus_uri: string;
-      text_collection: string;
-      image_collection: string;
-      overwrite?: boolean;
-    };
-  };
-  parser: {
-    mineru_optional: boolean;
-    note?: string;
-  };
-  markdown_search?: {
-    enabled: boolean;
-    glob_endpoint: string;
-    grep_endpoint: string;
-    deepagents_virtual_path: string;
-  };
-}
-
-export type GbrainPrimitive = "entity" | "media" | "temporal" | "annotation" | "concept";
-export type GbrainAggregator = "scalar_brier" | "weighted_brier" | "count_based" | "cluster_summary";
-export type GbrainSubtypeField = "subtype" | "legacy_type" | "origin" | "format" | "kind" | "period" | "domain";
-export type GbrainResolver =
-  | "frontmatter"
-  | "body_first_link"
-  | "slug"
-  | "body_excerpt"
-  | { frontmatter_field: string };
-
-export interface GbrainExtractableSpec {
-  prompt_template?: string;
-  fixture_corpus?: string;
-  eval_dimensions: string[];
-  benchmark_min_recall?: number;
-  verifier_path?: string;
-}
-
-export interface GbrainPageSubtype {
-  name: string;
-  when: {
-    path_pattern?: string;
-    frontmatter_field?: string;
-    frontmatter_value?: string | number | boolean;
-  };
-}
-
-export interface GbrainPageType {
-  name: string;
-  primitive: GbrainPrimitive;
-  path_prefixes: string[];
-  aliases: string[];
-  extractable: boolean | GbrainExtractableSpec;
-  expert_routing: boolean;
-  subtypes?: GbrainPageSubtype[];
-}
-
-export interface GbrainLinkType {
-  name: string;
-  inverse?: string;
-  inference?: {
-    regex?: string;
-    page_type?: string;
-    target_type?: string;
-  };
-}
-
-export interface GbrainFrontmatterLink {
-  page_type: string;
-  fields: string[];
-  link_type: string;
-}
-
-export type GbrainMappingRule =
-  | {
-      kind: "retype";
-      from_type: string;
-      to_type: string;
-      subtype?: string;
-      subtype_field: GbrainSubtypeField;
-      path_filter?: string;
-    }
-  | {
-      kind: "page_to_link";
-      from_type: string;
-      link_type: string;
-      source_slug_from: GbrainResolver;
-      target_slug_from: GbrainResolver;
-      inverse?: string;
-      preserve_notes?: boolean;
-    }
-  | {
-      kind: "page_to_alias";
-      from_type: string;
-      canonical_from: GbrainResolver;
-      alias_slug_from: GbrainResolver;
-      notes_from?: GbrainResolver;
-    };
-
-export interface GbrainSchemaPackManifest {
-  api_version: "gbrain-schema-pack-v1";
-  name: string;
-  version: string;
-  description: string;
-  author?: string;
-  license?: string;
-  homepage?: string;
-  gbrain_min_version: string;
-  extends?: string | null;
-  borrow_from: Array<{ pack: string; types?: string[]; link_types?: string[] }>;
-  page_types: GbrainPageType[];
-  link_types: GbrainLinkType[];
-  frontmatter_links: GbrainFrontmatterLink[];
-  takes_kinds: string[];
-  enrichable_types: Array<{ type: string; rubric?: string }>;
-  filing_rules: Array<{ kind: string; directory: string; examples: string[]; description?: string }>;
-  phases?: string[];
-  calibration_domains?: Array<{ name: string; aggregator: GbrainAggregator; page_types: string[] }>;
-  migration_from?: { pack: string; version: string };
-  mapping_rules?: GbrainMappingRule[];
-}
-
-export interface GbrainSchemaCatalogPack {
-  name: string;
-  version: string;
-  description: string;
-  gbrain_min_version: string;
-  extends?: string | null;
-  borrow_from: GbrainSchemaPackManifest["borrow_from"];
-  manifest_sha256: string;
-  page_type_count: number;
-  link_type_count: number;
-  manifest: GbrainSchemaPackManifest;
-  raw_yaml: string;
-  recommended: boolean;
-  legacy: boolean;
-}
-
-export interface GbrainSchemaCatalog {
-  source_dir: string;
-  packs: GbrainSchemaCatalogPack[];
-  count: number;
-}
-
-export interface BrainSchemaBundle {
-  initialized: true;
-  brain_root: string;
-  custom: {
-    path: string;
-    manifest: GbrainSchemaPackManifest;
-    raw_yaml: string;
-    manifest_sha256: string;
-  };
-  parent: {
-    name: string;
-    version: string;
-    manifest_sha256: string;
-  } | null;
-  brain_schema: {
-    path: string;
-    document: Record<string, unknown>;
-    raw_yaml: string;
-    sha256: string;
-  };
-  agents: {
-    path: string;
-    raw_markdown: string;
-    sha256: string;
-  };
-  resolved: {
-    manifest: GbrainSchemaPackManifest;
-    raw_yaml: string;
-    sha256: string;
-  };
-  bundle_hash: string;
-}
-
-export interface BrainSchemaPreview {
-  valid: true;
-  custom: {
-    manifest: GbrainSchemaPackManifest;
-    raw_yaml: string;
-    manifest_sha256: string;
-  };
-  resolved: BrainSchemaBundle["resolved"];
-  gbrain_validation: Array<Record<string, unknown>>;
-  validation_mode?: "structural" | "official";
-}
-
-export interface LlmWikiWorkspaceStatus {
-  brain_root: string;
-  bundle_hash: string;
-  schema_version: string;
-  agents: { path: string; sha256: string; content: string };
-  raw: Array<{
-    source_id?: string;
-    asset_id?: string;
-    title?: string;
-    snapshot_path: string;
-    sha256?: string;
-    size_bytes?: number;
-    created_at?: string;
-    integrity: string;
-    compiled: boolean;
-    compiled_at?: string | null;
-    compiled_pages: string[];
-    compiled_job_ids: string[];
-  }>;
-  wiki: Array<{
-    slug: string;
-    title: string;
-    type: string;
-    updated?: string;
-    valid: boolean;
-    error?: string;
-  }>;
-  files: { index: boolean; log: boolean };
-  embedding?: LlmWikiEmbeddingStatus;
-  gbrain: {
-    cli_installed: boolean;
-    postgres_configured: boolean;
-    postgres?: {
-      configured: boolean;
-      host: string;
-      port: number;
-      database: string;
-      username: string;
-    };
-    runtime_home: string;
-    imports: {
-      available: boolean;
-      counts: { pages: number; links: number; chunks: number; imports: number };
-      records: Array<{
-        id: number;
-        source_id: string;
-        source_type: string;
-        pages_updated: string[];
-        summary: string;
-        created_at: string;
-      }>;
-    };
-    models: {
-      configured: boolean;
-      embedding: { model_id: string; name: string; provider: string; dimension: number; uses_default_binding: boolean } | null;
-      think: { model_id: string; name: string; provider: string; uses_default_binding: boolean } | null;
-      error: string;
-    };
-  };
-}
-
-export interface LlmWikiEmbeddingStatus {
-  hybrid_enabled: boolean;
-  query_mode: "lexical" | "hybrid";
-  infrastructure_ready: boolean;
-  shared_collection?: boolean;
-  profile?: {
-    embedding_model_id: string;
-    embedding_model: string;
-    embedding_provider: string;
-    embedding_dimension: number;
-    parser: string;
-    parser_version: number;
-    text_collection: string;
-    milvus_uri: string;
-  };
-  profile_matches?: boolean;
-  counts: {
-    total: number;
-    indexed: number;
-    pending: number;
-    outdated: number;
-    failed: number;
-    chunks: number;
-    stale: number;
-  };
-  pages: Array<{
-    slug: string;
-    virtual_path: string;
-    content_sha256: string;
-    indexed_content_sha256?: string | null;
-    state: "indexed" | "pending" | "outdated" | "failed";
-    chunk_count: number;
-    indexed_at?: string | null;
-    error?: string | null;
-  }>;
-  stale_pages?: string[];
-  last_sync?: {
-    completed_at?: string;
-    force?: boolean;
-    updated?: string[];
-    skipped?: string[];
-    failed?: Array<{ slug: string; error: string }>;
-  } | null;
-  error?: string;
-}
-
-export interface LlmWikiLintResult {
-  ok: boolean;
-  errors: Array<{ code: string; path: string; message: string }>;
-  warnings: Array<{ code: string; path: string; message: string }>;
-  counts: { pages: number; errors: number; warnings: number };
-  bundle_hash: string;
-}
-
-export interface LlmWikiCompileResult {
-  ok: boolean;
-  phase: string;
-  bundle_hash?: string;
-  runtime_home?: string;
-  checks?: Array<Record<string, unknown>>;
-  import?: Record<string, unknown> | null;
-  lint?: LlmWikiLintResult;
-}
-
-export interface KnowledgeMarkdownFile {
-  name: string;
-  path: string;
-  virtual_path: string;
-  storage_path: string;
-  size_bytes: number;
-  modified_at: string;
-}
-
-export interface KnowledgeMarkdownMatch {
-  virtual_path: string;
-  path: string;
-  storage_path: string;
-  line_number: number;
-  line: string;
-  context: string[];
-}
-
-export interface KnowledgeSearchHit {
-  rank: number;
-  modality: "text" | "image" | string;
-  title: string;
-  quote: string;
-  id?: string;
-  result_type?: string;
-  uri?: string;
-  display_path?: string;
-  snippet?: string;
-  highlights?: string[];
-  matched_by?: string[];
-  source_group?: { original?: string | null; imported?: string | null; wiki?: string | null; versions?: string[] };
-  preview?: { kind?: string; heading?: string | null; line_number?: number | null };
-  score?: number | null;
-  raw_score?: number | null;
-  normalized_score?: number | null;
-  retrieval_channel?: string;
-  source?: Record<string, unknown>;
-  image_hit?: {
-    title?: string;
-    file_path?: string;
-    virtual_path?: string;
-    score?: number | null;
-    raw_score?: number | null;
-    normalized_score?: number | null;
-    linked_markdown?: string;
-    linked_markdown_virtual_path?: string;
-    context?: Record<string, unknown>;
-  } | null;
-}
-
-export interface KnowledgeSearchResult {
-  query: string;
-  top_k: number;
-  candidate_top_k: number;
-  total?: number;
-  took_ms?: number;
-  facets?: Record<string, Record<string, number>>;
-  fusion?: {
-    text_vector_weight?: number;
-    bm25_weight?: number;
-    image_vector_weight?: number;
-    text_group_weight?: number;
-    rerank_enabled?: boolean;
-    rerank_top_n?: number;
-  };
-  retrieval: {
-    text_vector: number;
-    bm25: number;
-    image_vector: number;
-    selected: number;
-    hybrid_enabled: boolean;
-    rerank_enabled: boolean;
-  };
-  hits: KnowledgeSearchHit[];
-  candidate_pools?: {
-    text_vector?: KnowledgeSearchHit[];
-    bm25?: KnowledgeSearchHit[];
-    image_vector?: KnowledgeSearchHit[];
-  };
-  sources: Record<string, unknown>[];
-}
-
-export interface KnowledgeImportJob {
-  id: string;
-  knowledge_base_id: string;
-  status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | string;
-  file_name: string;
-  file_type: string;
-  file_size: number;
-  source_path: string;
-  source_sha256: string;
-  title?: string | null;
-  publish_targets: string[];
-  current_step: string;
-  progress: number;
-  document_id?: string | null;
-  error_message?: string | null;
-  retry_count: number;
-  metadata?: Record<string, unknown>;
-  created_at?: string | null;
-  updated_at?: string | null;
-  started_at?: string | null;
-  finished_at?: string | null;
-}
-
-export interface KnowledgeImportEvent {
-  id: string;
-  job_id: string;
-  level: "info" | "warning" | "error" | string;
-  message: string;
-  metadata?: Record<string, unknown>;
-  created_at?: string | null;
-}
-
-export interface KnowledgeImportJobDetail {
-  job: KnowledgeImportJob;
-  events: KnowledgeImportEvent[];
-  document?: KnowledgeDocument | null;
-}
-
-export interface TableAssetProfileColumn {
-  name: string;
-  dtype: string;
-  non_null?: number;
-  null_count?: number;
-  distinct_count?: number;
-  distinct_ratio?: number;
-  sample_values?: string[];
-  semantic_role_hint?: string;
-}
-
-export interface TableAssetProfile {
-  asset_id: string;
-  kind: string;
-  source_type: string;
-  file_name: string;
-  virtual_path: string;
-  sheet_name?: string | null;
-  size_bytes: number;
-  modified_at: string;
-  generated_at: string;
-  shape?: [number, number];
-  columns?: TableAssetProfileColumn[];
-  dtypes?: Record<string, string>;
-  preview?: Record<string, unknown>[];
-}
-
-export interface TableAsset {
-  asset_id: string;
-  file_name: string;
-  source_type: "excel" | "csv" | "tsv" | string;
-  virtual_path: string;
-  sheet_name?: string | null;
-  size_bytes: number;
-  modified_at: string;
-  profile_status: "ready" | "missing" | string;
-  profile_path?: string;
-  rows?: number | null;
-  columns_count?: number | null;
-  columns?: string[];
-  reference_status?: string;
-  logical_dataset?: {
-    kind: "vertical_concat" | string;
-    formatter?: string;
-    version?: string;
-    description?: string;
-    tags?: string[];
-    materialization?: string;
-    schema_mode?: string;
-    source_asset_ids?: string[];
-    canonical_columns?: string[];
-    row_lineage_columns?: string[];
-    sources?: Array<{ asset_id?: string; name?: string; sheet_name?: string | null; rows_estimate?: number | null; fields?: string[] }>;
-    schema?: { fields?: string[]; lineage_fields?: string[] };
-    coverage?: Array<Record<string, unknown>>;
-    statistics?: { source_count?: number; rows_estimate?: number | null };
-    routing?: { preferred_intents?: string[]; direct_source_allowed?: boolean; direct_source_when?: string[] };
-    profile?: {
-      status?: "ready" | "partial" | "missing" | "stale" | string;
-      generated_at?: string;
-      profile_refreshed_at?: string;
-      source_count?: number;
-      profiled_source_count?: number;
-      fresh_source_count?: number;
-      note?: string;
-    };
-    profile_refreshed_at?: string;
-    refreshed_at?: string;
-  };
-  profile?: TableAssetProfile;
-}
-
-export interface ConcatDatasetPreviewSource {
-  asset_id: string;
-  file_name: string;
-  sheet_name?: string | null;
-  columns: string[];
-  missing_from_baseline: string[];
-  extra_vs_baseline: string[];
-  missing_from_union: string[];
-}
-
-export interface ConcatDatasetPreview {
-  baseline_columns: string[];
-  canonical_columns: string[];
-  baseline_asset_id: string;
-  baseline_file_name: string;
-  has_schema_drift: boolean;
-  sources: ConcatDatasetPreviewSource[];
-}
-
-export interface TableAssetProfileJob {
-  job_id: string;
-  asset_id: string;
-  status: "queued" | "running" | "succeeded" | "failed" | string;
-  created_at: number;
-  updated_at: number;
-  started_at?: number | null;
-  finished_at?: number | null;
-  error?: string | null;
-  asset?: TableAsset;
-}
-
-export interface KnowledgeDatabaseSource {
-  id: string;
-  type: "postgresql" | "mysql" | string;
-  source_type?: "postgresql" | "mysql" | string;
-  name: string;
-  description?: string;
-  host: string;
-  port: number;
-  database: string;
-  username: string;
-  password?: string;
-  password_configured?: boolean;
-  password_readable?: boolean;
-  password_error?: string;
-  selected_tables: string[];
-  builtin?: boolean;
-  configured_by?: string;
-  environment_override?: boolean;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
-
-export type VannaTrainingType = "sql" | "ddl" | "documentation" | string;
-
-export interface VannaTrainingRecord {
-  id: string;
-  training_type: VannaTrainingType;
-  question?: string | null;
-  content: string;
-  preview?: string;
-}
-
-export interface VannaTrainingData {
-  records: VannaTrainingRecord[];
-  count: number;
-  counts: Record<string, number>;
-}
-
-export interface VannaTrainingResult {
-  ok: boolean;
-  training_type: VannaTrainingType;
-  ids: string[];
-  count: number;
-  message: string;
-}
-
-export interface TableEntityCandidate {
-  column: string;
-  suggested_entity_type: string;
-  score: number;
-  reasons: string[];
-  sample_values: string[];
-  table_column?: string | null;
-  distinct_count?: number | null;
-  distinct_ratio?: number | null;
-  dtype?: string | null;
-}
-
-export type VannaEntityFilterOperator = "in" | "not_in";
-
-export interface VannaEntityFilter {
-  column: string;
-  operator: VannaEntityFilterOperator;
-  values: string[];
-}
-
-export interface VannaEntityImportPreview {
-  table_name: string;
-  column: string;
-  total: number;
-  filtered: number;
-  excluded: number;
-  filters: VannaEntityFilter[];
-}
-
-export interface VannaEntityRecord {
-  pk?: number | string;
-  id?: number | string;
-  entity_type: string;
-  canonical_name: string;
-  aliases?: string[];
-  table_column?: string;
-}
-
-export interface VannaEntityListResult {
-  entities: VannaEntityRecord[];
-  count: number;
-  limited?: boolean;
-  type_counts?: Record<string, number>;
-  offset?: number;
-  limit?: number;
-}
-
-export interface VannaEntityImportResult {
-  ok: boolean;
-  job_id?: string;
-  job?: KnowledgeImportJob;
-  source_table?: string;
-  table_column?: string;
-  entity_type?: string;
-  count?: number;
-  entities?: Array<{ id: string; canonical_name: string; aliases: string[] }>;
-}
-
-export async function getKnowledgeStatus(): Promise<KnowledgeStatus> {
-  const response = await fetch(`${API_BASE}/knowledge/status`, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load knowledge status: ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function getBrainSchemaCatalog(): Promise<GbrainSchemaCatalog> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/schema/catalog`, { cache: "no-store" });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `加载 gbrain Schema 目录失败：${response.status}`));
-  }
-  return JSON.parse(text) as GbrainSchemaCatalog;
-}
-
-export async function getBrainSchemaBundle(): Promise<BrainSchemaBundle | null> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/schema/bundle`, { cache: "no-store" });
-  if (response.status === 404) return null;
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `加载 Schema Bundle 失败：${response.status}`));
-  }
-  return JSON.parse(text) as BrainSchemaBundle;
-}
-
-export async function initializeBrainSchema(): Promise<BrainSchemaBundle> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/initialize`, { method: "POST" });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `初始化 LLM Wiki Brain 失败：${response.status}`));
-  }
-  return JSON.parse(text) as BrainSchemaBundle;
-}
-
-export async function previewBrainCustomSchema(
-  manifest: GbrainSchemaPackManifest,
-): Promise<BrainSchemaPreview> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/schema/custom/preview`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ manifest }),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `Schema 校验失败：${response.status}`));
-  }
-  return JSON.parse(text) as BrainSchemaPreview;
-}
-
-export async function saveBrainCustomSchema(
-  manifest: GbrainSchemaPackManifest,
-  expectedSha256: string,
-  expectedBundleHash: string,
-): Promise<BrainSchemaBundle> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/schema/custom`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      manifest,
-      expected_sha256: expectedSha256,
-      expected_bundle_hash: expectedBundleHash,
-    }),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `保存自定义 Schema 失败：${response.status}`));
-  }
-  return JSON.parse(text) as BrainSchemaBundle;
-}
-
-export async function rebuildLlmWikiAgents(): Promise<BrainSchemaBundle> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/agents/rebuild`, { method: "POST" });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `重建 AGENTS.md 失败：${response.status}`));
-  }
-  return JSON.parse(text) as BrainSchemaBundle;
-}
-
-export async function getLlmWikiWorkspaceStatus(): Promise<LlmWikiWorkspaceStatus> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/wiki/status`, { cache: "no-store" });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `加载 LLM Wiki 工作区失败：${response.status}`));
-  }
-  return JSON.parse(text) as LlmWikiWorkspaceStatus;
-}
-
-export async function getLlmWikiEmbeddingStatus(): Promise<LlmWikiEmbeddingStatus> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/wiki/embedding`, { cache: "no-store" });
-  const text = await response.text();
-  if (response.status === 404) {
-    const workspace = await getLlmWikiWorkspaceStatus();
-    if (workspace.embedding) return workspace.embedding;
-    throw new Error("当前后端尚未加载 Wiki Embedding 状态接口，请重启后端服务后重新探测。");
-  }
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `加载 Wiki Embedding 状态失败：${response.status}`));
-  }
-  return JSON.parse(text) as LlmWikiEmbeddingStatus;
-}
-
-export async function syncLlmWikiEmbeddings(force = false, slugs: string[] = []): Promise<{
-  ok: boolean;
-  updated: string[];
-  skipped: string[];
-  failed: Array<{ slug: string; error: string }>;
-  status?: LlmWikiEmbeddingStatus;
-}> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/wiki/embedding/sync`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ force, slugs }),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `同步 Wiki Embedding 失败：${response.status}`));
-  }
-  return JSON.parse(text) as {
-    ok: boolean;
-    updated: string[];
-    skipped: string[];
-    failed: Array<{ slug: string; error: string }>;
-    status?: LlmWikiEmbeddingStatus;
-  };
-}
-
-export async function snapshotLlmWikiRaw(payload: {
-  source_id: string;
-  asset_id: string;
-  title: string;
-  content: string;
-  source_path?: string;
-}): Promise<Record<string, unknown>> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/wiki/raw`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `导入 Raw 快照失败：${response.status}`));
-  }
-  return JSON.parse(text) as Record<string, unknown>;
-}
-
-export async function lintLlmWiki(): Promise<LlmWikiLintResult> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/wiki/lint`, { cache: "no-store" });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `检查 Wiki 失败：${response.status}`));
-  }
-  return JSON.parse(text) as LlmWikiLintResult;
-}
-
-export async function compileLlmWikiGbrain(importPages = false): Promise<LlmWikiCompileResult> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/wiki/compile`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ import_pages: importPages }),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `运行 gbrain 编译失败：${response.status}`));
-  }
-  return JSON.parse(text) as LlmWikiCompileResult;
-}
-
-export async function initializeLlmWikiGbrain(databaseUrl: string): Promise<{
-  ok: boolean;
-  runtime_home: string;
-  schema_pack: string;
-  postgresql: string;
-}> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/wiki/gbrain/initialize`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ database_url: databaseUrl }),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `初始化 gbrain PostgreSQL 运行时失败：${response.status}`));
-  }
-  return JSON.parse(text) as { ok: boolean; runtime_home: string; schema_pack: string; postgresql: string };
-}
-
-export async function listKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
-  const response = await fetch(`${API_BASE}/knowledge/documents`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `Failed to load knowledge documents: ${response.status}`);
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.documents) ? payload.documents : [];
-}
-
-export async function listKnowledgeFiles(): Promise<KnowledgeDirectoryFile[]> {
-  const response = await fetch(`${API_BASE}/knowledge/files`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `Failed to load knowledge files: ${response.status}`);
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.files) ? payload.files : [];
-}
-
-export async function getKnowledgeFileTree(): Promise<KnowledgeTreeNode | null> {
-  const response = await fetch(`${API_BASE}/knowledge/tree`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `Failed to load knowledge file tree: ${response.status}`);
-  }
-  const payload = await response.json();
-  return payload.tree ?? null;
-}
-
-export async function listKnowledgeDatabaseSources(): Promise<KnowledgeDatabaseSource[]> {
-  const response = await fetch(`${API_BASE}/knowledge/database-sources`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load database sources: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.sources) ? payload.sources : [];
-}
-
-export async function saveKnowledgeDatabaseSource(
-  source: Partial<KnowledgeDatabaseSource>
-): Promise<KnowledgeDatabaseSource> {
-  const response = await fetch(`${API_BASE}/knowledge/database-sources`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(source),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to save database source: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.source;
-}
-
-export async function testKnowledgeDatabaseSource(
-  source: Partial<KnowledgeDatabaseSource>
-): Promise<{ ok: boolean; message: string }> {
-  const response = await fetch(`${API_BASE}/knowledge/database-sources/test`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(source),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to test database source: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function listKnowledgeDatabaseSourceTables(sourceId: string): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/tables`, {
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to list database tables: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.tables) ? payload.tables : [];
-}
-
-export async function listKnowledgeDatabaseSourceTableColumns(sourceId: string, tableName: string): Promise<string[]> {
-  const response = await fetch(
-    `${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(tableName)}/columns`,
-    { cache: "no-store" }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load database table columns: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.columns) ? payload.columns.map(String) : [];
-}
-
-export async function listKnowledgeDatabaseSourceColumnValues(
-  sourceId: string,
-  payload: { table_name: string; column: string; search?: string; limit?: number }
-): Promise<{ values: string[]; has_more: boolean }> {
-  const response = await fetch(
-    `${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/column-values`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load database column values: ${response.status}`));
-  }
-  const result = await response.json();
-  return {
-    values: Array.isArray(result.values) ? result.values.map(String) : [],
-    has_more: Boolean(result.has_more),
-  };
-}
-
-export async function deleteKnowledgeDatabaseSource(sourceId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}`, {
-    method: "DELETE",
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to delete database source: ${response.status}`));
-  }
-}
-
-export async function listKnowledgeDatabaseSourceVannaTraining(
-  sourceId: string,
-  tableName?: string
-): Promise<VannaTrainingData> {
-  const params = new URLSearchParams();
-  if (tableName) params.set("table_name", tableName);
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  const response = await fetch(
-    `${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/vanna/training-data${suffix}`,
-    { cache: "no-store" }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to list Vanna training data: ${response.status}`));
-  }
-  const payload = await response.json();
-  return {
-    records: Array.isArray(payload.records) ? payload.records : [],
-    count: Number(payload.count || 0),
-    counts: payload.counts && typeof payload.counts === "object" ? payload.counts : {},
-  };
-}
-
-export async function trainKnowledgeDatabaseSourceVanna(
-  sourceId: string,
-  payload: {
-    training_type: "ddl" | "documentation" | "sql";
-    table_name?: string;
-    table_names?: string[];
-    ddl?: string;
-    documentation?: string;
-    question?: string;
-    sql?: string;
-  }
-): Promise<VannaTrainingResult> {
-  const response = await fetch(`${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/vanna/train`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to train Vanna: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function deleteKnowledgeDatabaseSourceVannaTraining(
-  sourceId: string,
-  trainingId: string
-): Promise<void> {
-  const response = await fetch(
-    `${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/vanna/training-data/${encodeURIComponent(trainingId)}`,
-    { method: "DELETE" }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to delete Vanna training data: ${response.status}`));
-  }
-}
-
-export async function listKnowledgeDatabaseSourceVannaEntityCandidates(
-  sourceId: string,
-  payload: { table_name: string; max_candidates?: number }
-): Promise<TableEntityCandidate[]> {
-  const response = await fetch(
-    `${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/vanna/entities/candidates`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load Vanna entity candidates: ${response.status}`));
-  }
-  const data = await response.json();
-  return Array.isArray(data.candidates) ? data.candidates : [];
-}
-
-export async function importKnowledgeDatabaseSourceVannaEntities(
-  sourceId: string,
-  payload: {
-    table_name: string;
-    column: string;
-    entity_type: string;
-    alias_columns?: string[];
-    filters?: VannaEntityFilter[];
-    max_values?: number;
-  }
-): Promise<VannaEntityImportResult> {
-  const response = await fetch(
-    `${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/vanna/entities/import`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to import Vanna entities: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function previewKnowledgeDatabaseSourceVannaEntities(
-  sourceId: string,
-  payload: { table_name: string; column: string; filters?: VannaEntityFilter[] }
-): Promise<VannaEntityImportPreview> {
-  const response = await fetch(
-    `${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/vanna/entities/preview`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to preview Vanna entities: ${response.status}`));
-  }
-  const result = await response.json();
-  return {
-    table_name: String(result.table_name || payload.table_name),
-    column: String(result.column || payload.column),
-    total: Number(result.total || 0),
-    filtered: Number(result.filtered || 0),
-    excluded: Number(result.excluded || 0),
-    filters: Array.isArray(result.filters) ? result.filters : [],
-  };
-}
-
-export async function listKnowledgeDatabaseSourceVannaEntities(
-  sourceId: string,
-  options?: string | {
-    tableName?: string;
-    entityType?: string;
-    search?: string;
-    offset?: number;
-    limit?: number;
-  }
-): Promise<VannaEntityListResult> {
-  const params = new URLSearchParams();
-  const normalizedOptions = typeof options === "string" ? { tableName: options } : options ?? {};
-  if (normalizedOptions.tableName) params.set("table_name", normalizedOptions.tableName);
-  if (normalizedOptions.entityType && normalizedOptions.entityType !== "all") params.set("entity_type", normalizedOptions.entityType);
-  if (normalizedOptions.search?.trim()) params.set("search", normalizedOptions.search.trim());
-  if (typeof normalizedOptions.offset === "number") params.set("offset", String(Math.max(0, normalizedOptions.offset)));
-  if (typeof normalizedOptions.limit === "number") params.set("limit", String(Math.max(1, normalizedOptions.limit)));
-  const query = params.toString();
-  const response = await fetch(
-    `${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/vanna/entities${query ? `?${query}` : ""}`,
-    { cache: "no-store" }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to list Vanna entities: ${response.status}`));
-  }
-  const data = await response.json();
-  const entities = Array.isArray(data.entities) ? data.entities : [];
-  return {
-    entities,
-    count: typeof data.count === "number" ? data.count : entities.length,
-    limited: Boolean(data.limited),
-    type_counts: data.type_counts && typeof data.type_counts === "object" ? data.type_counts : {},
-    offset: typeof data.offset === "number" ? data.offset : 0,
-    limit: typeof data.limit === "number" ? data.limit : entities.length,
-  };
-}
-
-export async function deleteKnowledgeDatabaseSourceVannaEntity(sourceId: string, entityId: string): Promise<void> {
-  const response = await fetch(
-    `${API_BASE}/knowledge/database-sources/${encodeURIComponent(sourceId)}/vanna/entities/${encodeURIComponent(entityId)}`,
-    { method: "DELETE" }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to delete Vanna entity: ${response.status}`));
-  }
-}
-
-export async function previewKnowledgeFile(virtualPath: string): Promise<KnowledgeFilePreview> {
-  const params = new URLSearchParams({ virtual_path: virtualPath });
-  const response = await fetch(`${API_BASE}/knowledge/file/preview?${params.toString()}`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to preview knowledge file: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.file;
-}
-
-export async function snapshotKnowledgeFileToLlmWikiRaw(
-  virtualPath: string
-): Promise<{ ok: boolean; raw: Record<string, unknown> }> {
-  const response = await fetch(`${API_BASE}/knowledge/file/llm-wiki-raw`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ virtual_path: virtualPath }),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(apiErrorMessage(text, `加入 LLM Wiki Raw 失败：${response.status}`));
-  }
-  return JSON.parse(text) as { ok: boolean; raw: Record<string, unknown> };
-}
-
-export function rawKnowledgeFileUrl(virtualPath: string): string {
-  if (!virtualPath) return "";
-  if (virtualPath.startsWith("/api/knowledge/file/raw?")) return virtualPath;
-  if (virtualPath.startsWith("/knowledge/")) {
-    return `${API_BASE}/knowledge/file/raw?virtual_path=${encodeURIComponent(virtualPath)}`;
-  }
-  return virtualPath;
-}
-
-export async function importLocalMarkdownDocument(
-  sourcePath: string,
-  title?: string
-): Promise<KnowledgeDocument> {
-  const response = await fetch(`${API_BASE}/knowledge/documents/import-local-md`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_path: sourcePath, title: title || undefined }),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `Failed to import knowledge document: ${response.status}`);
-  }
-  const payload = await response.json();
-  return payload.document;
-}
-
-export async function uploadPdfKnowledgeDocument(
-  file: File,
-  title?: string,
-  publishTargets: string[] = ["local_markdown", "vector"]
-): Promise<{ document: KnowledgeDocument; ingestion: Record<string, unknown> }> {
-  const form = new FormData();
-  form.append("file", file, file.name);
-  if (title?.trim()) form.append("title", title.trim());
-  form.append("publish_targets", publishTargets.join(","));
-  const response = await fetch(`${DIRECT_BACKEND_API_BASE}/knowledge/documents/upload-pdf`, {
-    method: "POST",
-    body: form,
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to upload PDF knowledge document: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function uploadKnowledgeDocument(
-  file: File,
-  title?: string,
-  publishTargets: string[] = ["local_markdown", "vector"]
-): Promise<{ document: KnowledgeDocument; ingestion: Record<string, unknown>; detected_type?: string }> {
-  const form = new FormData();
-  form.append("file", file, file.name);
-  if (title?.trim()) form.append("title", title.trim());
-  form.append("publish_targets", publishTargets.join(","));
-  const response = await fetch(`${DIRECT_BACKEND_API_BASE}/knowledge/documents/import`, {
-    method: "POST",
-    body: form,
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to import knowledge document: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function createKnowledgeImportJob(
-  file: File,
-  title?: string,
-  publishTargets: string[] = ["local_markdown"]
-): Promise<KnowledgeImportJob> {
-  const form = new FormData();
-  form.append("file", file, file.name);
-  if (title?.trim()) form.append("title", title.trim());
-  form.append("publish_targets", publishTargets.join(","));
-  const response = await fetch(`${DIRECT_BACKEND_API_BASE}/knowledge/import-jobs`, {
-    method: "POST",
-    body: form,
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to create knowledge import job: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.job;
-}
-
-export interface DocumentParserStatus {
-  id: string;
-  name: string;
-  description: string;
-  location: "local" | "cloud";
-  supported_extensions: string[];
-  supports_assets?: boolean;
-  supports_tables?: boolean;
-  requires_credential: boolean;
-  credential_env?: string;
-  credential_configured: boolean;
-  credential_readable?: boolean;
-  credential_error?: string;
-  credential_source?: "environment" | "vault" | "none";
-  cloud_data_notice?: string;
-  version?: string;
-  implementation_available: boolean;
-  enabled: boolean;
-  priority: number;
-  available: boolean;
-  healthy?: boolean;
-  health_message: string;
-  compatible: boolean;
-  selectable: boolean;
-  recommended: boolean;
-  reason: string;
-  base_url?: string;
-  dependency_extra?: string;
-  dependency_install?: {
-    status: "idle" | "installing" | "succeeded" | "failed";
-    message: string;
-    started_at?: string;
-    finished_at?: string;
-  };
-}
-
-export interface StagedKnowledgeSource {
-  id: string;
-  file_name: string;
-  size_bytes: number;
-  sha256: string;
-  mime_type: string;
-  page_count?: number | null;
-  expires_at?: string | null;
-  status: "staged";
-}
-
-export async function listDocumentParsers(filename = ""): Promise<DocumentParserStatus[]> {
-  const query = filename ? `?filename=${encodeURIComponent(filename)}` : "";
-  const response = await fetch(`${DIRECT_BACKEND_API_BASE}/knowledge/parsers${query}`, { cache: "no-store" });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `加载解析器失败：${response.status}`));
-  return (JSON.parse(text) as { parsers: DocumentParserStatus[] }).parsers;
-}
-
-export async function stageKnowledgeImportSource(
-  file: File,
-  title?: string,
-): Promise<{ source: StagedKnowledgeSource; parsers: DocumentParserStatus[] }> {
-  const form = new FormData();
-  form.append("file", file, file.name);
-  if (title?.trim()) form.append("title", title.trim());
-  const response = await fetch(`${DIRECT_BACKEND_API_BASE}/knowledge/import-sources`, {
-    method: "POST",
-    body: form,
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `暂存文件失败：${response.status}`));
-  return JSON.parse(text);
-}
-
-export async function commitKnowledgeImportSource(
-  sourceId: string,
-  input: {
-    parser_id: string;
-    parser_options?: Record<string, unknown>;
-    publish_targets?: string[];
-    title?: string;
-    allow_cloud?: boolean;
-  },
-): Promise<KnowledgeImportJob> {
-  const response = await fetch(
-    `${DIRECT_BACKEND_API_BASE}/knowledge/import-jobs/${encodeURIComponent(sourceId)}/commit`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    },
-  );
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `创建导入任务失败：${response.status}`));
-  return (JSON.parse(text) as { job: KnowledgeImportJob }).job;
-}
-
-export async function updateDocumentParser(
-  parserId: string,
-  input: {
-    enabled?: boolean;
-    priority?: number;
-    base_url?: string;
-    credential_ref?: string;
-    default_options?: Record<string, unknown>;
-    api_key?: string;
-  },
-): Promise<DocumentParserStatus> {
-  const response = await fetch(`${DIRECT_BACKEND_API_BASE}/knowledge/parsers/${encodeURIComponent(parserId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `保存解析器失败：${response.status}`));
-  return (JSON.parse(text) as { parser: DocumentParserStatus }).parser;
-}
-
-export async function testDocumentParser(
-  parserId: string,
-  input: { base_url?: string; api_key?: string } = {},
-): Promise<{ ok: boolean; message: string; parser: DocumentParserStatus }> {
-  const response = await fetch(
-    `${DIRECT_BACKEND_API_BASE}/knowledge/parsers/${encodeURIComponent(parserId)}/test`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    },
-  );
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `测试解析器失败：${response.status}`));
-  return JSON.parse(text);
-}
-
-export async function installDocumentParserDependency(
-  parserId: string,
-): Promise<NonNullable<DocumentParserStatus["dependency_install"]>> {
-  const response = await fetch(
-    `${DIRECT_BACKEND_API_BASE}/knowledge/parsers/${encodeURIComponent(parserId)}/install`,
-    { method: "POST" },
-  );
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `安装解析器依赖失败：${response.status}`));
-  return (JSON.parse(text) as { install: NonNullable<DocumentParserStatus["dependency_install"]> }).install;
-}
-
-export async function createLlmWikiIngestJob(
-  rawPaths: string[],
-  importGbrain = false
-): Promise<KnowledgeImportJob> {
-  const response = await fetch(`${API_BASE}/knowledge/brain/wiki/ingest-jobs`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ raw_paths: rawPaths, import_gbrain: importGbrain }),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to create LLM Wiki ingest job: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.job;
-}
-
-export type ReadLaterItem = {
-  id: string;
-  original_url: string;
-  canonical_url: string;
-  title: string;
-  site_name: string;
-  author: string;
-  description: string;
-  image_url: string;
-  virtual_path: string;
-  content_sha256: string;
-  parse_status: "queued" | "processing" | "ready" | "link_only" | "failed";
-  reading_status: "unread" | "read" | "archived";
-  error_message: string;
-  tags: string[];
-  note: string;
-  document_id: string | null;
-  raw_snapshot_path: string;
-  wiki_job_id: string;
-  fetched_at: string | null;
-  read_at: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-  content?: string;
-};
-
-export async function saveReadLaterUrl(input: {
-  url: string;
-  title?: string;
-  note?: string;
-  tags?: string[];
-}): Promise<{ item: ReadLaterItem; job: KnowledgeImportJob | null; deduplicated: boolean }> {
-  const response = await fetch(`${API_BASE}/read-later`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `收藏链接失败：${response.status}`));
-  return JSON.parse(text);
-}
-
-export async function listReadLaterItems(options: {
-  readingStatus?: string;
-  parseStatus?: string;
-  source?: string;
-  search?: string;
-} = {}): Promise<ReadLaterItem[]> {
-  const params = new URLSearchParams();
-  if (options.readingStatus) params.set("reading_status", options.readingStatus);
-  if (options.parseStatus) params.set("parse_status", options.parseStatus);
-  if (options.source) params.set("source", options.source);
-  if (options.search) params.set("search", options.search);
-  const response = await fetch(`${API_BASE}/read-later?${params.toString()}`, { cache: "no-store" });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `读取稍后读失败：${response.status}`));
-  return (JSON.parse(text).items || []) as ReadLaterItem[];
-}
-
-export async function getReadLaterItem(itemId: string): Promise<ReadLaterItem> {
-  const response = await fetch(`${API_BASE}/read-later/${encodeURIComponent(itemId)}`, { cache: "no-store" });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `读取收藏正文失败：${response.status}`));
-  return JSON.parse(text).item as ReadLaterItem;
-}
-
-export async function updateReadLaterItem(
-  itemId: string,
-  patch: Partial<Pick<ReadLaterItem, "reading_status" | "title" | "note" | "tags">>
-): Promise<ReadLaterItem> {
-  const response = await fetch(`${API_BASE}/read-later/${encodeURIComponent(itemId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `更新收藏失败：${response.status}`));
-  return JSON.parse(text).item as ReadLaterItem;
-}
-
-export async function deleteReadLaterItem(itemId: string): Promise<{
-  ok: boolean;
-  deleted: Record<string, boolean>;
-  preserved: string[];
-}> {
-  const response = await fetch(`${API_BASE}/read-later/${encodeURIComponent(itemId)}`, { method: "DELETE" });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `删除收藏失败：${response.status}`));
-  return JSON.parse(text);
-}
-
-export async function retryReadLaterItem(itemId: string): Promise<{ item: ReadLaterItem; job: KnowledgeImportJob }> {
-  const response = await fetch(`${API_BASE}/read-later/${encodeURIComponent(itemId)}/retry`, { method: "POST" });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `重新解析失败：${response.status}`));
-  return JSON.parse(text);
-}
-
-export async function compileReadLaterItems(itemIds: string[], importGbrain = false): Promise<KnowledgeImportJob> {
-  const response = await fetch(`${API_BASE}/read-later/compile`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ item_ids: itemIds, import_gbrain: importGbrain }),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `提交 Wiki 编译失败：${response.status}`));
-  return JSON.parse(text).job as KnowledgeImportJob;
-}
-
-export async function listKnowledgeImportJobs(limit = 20): Promise<KnowledgeImportJob[]> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  const response = await fetchWithTimeout(
-    `${API_BASE}/knowledge/import-jobs?${params.toString()}`,
-    { cache: "no-store" },
-    4000
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load knowledge import jobs: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.jobs) ? payload.jobs : [];
-}
-
-export async function getKnowledgeImportJob(
-  jobId: string,
-  includeEvents = true
-): Promise<KnowledgeImportJobDetail> {
-  const params = new URLSearchParams({ include_events: includeEvents ? "true" : "false" });
-  const response = await fetchWithTimeout(
-    `${API_BASE}/knowledge/import-jobs/${encodeURIComponent(jobId)}?${params.toString()}`,
-    {
-      cache: "no-store",
-    },
-    includeEvents ? 8000 : 3000
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load knowledge import job: ${response.status}`));
-  }
-  const payload = await response.json();
-  return {
-    job: payload.job,
-    events: Array.isArray(payload.events) ? payload.events : [],
-    document: payload.document ?? null,
-  };
-}
-
-export async function retryKnowledgeImportJob(jobId: string): Promise<KnowledgeImportJob> {
-  const response = await fetch(`${API_BASE}/knowledge/import-jobs/${encodeURIComponent(jobId)}/retry`, {
-    method: "POST",
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to retry knowledge import job: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.job;
-}
-
-export async function deleteKnowledgeImportJob(jobId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/knowledge/import-jobs/${encodeURIComponent(jobId)}`, {
-    method: "DELETE",
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to delete knowledge import job: ${response.status}`));
-  }
-}
-
-export async function clearKnowledgeImportJobs(): Promise<number> {
-  const response = await fetch(`${API_BASE}/knowledge/import-jobs`, {
-    method: "DELETE",
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to clear knowledge import jobs: ${response.status}`));
-  }
-  const payload = await response.json();
-  return typeof payload.deleted_count === "number" ? payload.deleted_count : 0;
-}
-
-export async function publishKnowledgeImportJobVector(
-  jobId: string
-): Promise<{ job: KnowledgeImportJob; queued: boolean; source_job_id?: string }> {
-  const response = await fetch(`${API_BASE}/knowledge/import-jobs/${encodeURIComponent(jobId)}/publish-vector`, {
-    method: "POST",
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to publish knowledge vector index: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function publishKnowledgeDocumentVector(
-  documentId: string
-): Promise<{ job: KnowledgeImportJob; queued: boolean }> {
-  const response = await fetch(
-    `${API_BASE}/knowledge/documents/${encodeURIComponent(documentId)}/publish-vector`,
-    { method: "POST" }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to rebuild document vector index: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function globKnowledgeMarkdown(pattern = "**/*.md"): Promise<KnowledgeMarkdownFile[]> {
-  const params = new URLSearchParams({ pattern });
-  const response = await fetch(`${API_BASE}/knowledge/markdown/glob?${params.toString()}`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `Failed to glob knowledge Markdown: ${response.status}`);
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.files) ? payload.files : [];
-}
-
-export async function grepKnowledgeMarkdown(
-  query: string,
-  pattern = "**/*.md"
-): Promise<KnowledgeMarkdownMatch[]> {
-  const response = await fetch(`${API_BASE}/knowledge/markdown/grep`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, pattern, context_lines: 1, max_matches: 50 }),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `Failed to grep knowledge Markdown: ${response.status}`);
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.matches) ? payload.matches : [];
-}
-
-export async function searchKnowledge(query: string, topK?: number): Promise<KnowledgeSearchResult> {
-  const response = await fetch(`${API_BASE}/knowledge/search`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, top_k: topK }),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to search knowledge: ${response.status}`));
-  }
-  return response.json();
-}
-
-export type KnowledgeSearchCategory = "all" | "wiki" | "article" | "image" | "file";
-
-export interface KnowledgeSearchDirectory {
-  id: string;
-  path: string;
-  enabled: boolean;
-  recursive: boolean;
-  content_types: string[];
-  referenced_images_only?: boolean;
-  status?: string;
-  indexed_documents?: number;
-  indexed_images?: number;
-}
-
-export interface KnowledgeSearchConfig {
-  enabled: boolean;
-  directories: KnowledgeSearchDirectory[];
-  sources: { read_later?: { enabled: boolean } };
-  exclude: string[];
-}
-
-export interface KnowledgeSearchIndexStatus {
-  enabled: boolean;
-  status: string;
-  generated_at?: string | null;
-  counts: { records: number; documents: number; images: number };
-  directories: KnowledgeSearchDirectory[];
-}
-
-export async function searchKnowledgePortal(input: {
-  query: string;
-  category?: KnowledgeSearchCategory;
-  offset?: number;
-  limit?: number;
-  directory_ids?: string[];
-}): Promise<KnowledgeSearchResult> {
-  const response = await fetch(`${API_BASE}/knowledge/search`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `搜索知识库失败：${response.status}`));
-  return JSON.parse(text) as KnowledgeSearchResult;
-}
-
-export async function getKnowledgeSearchConfig(): Promise<KnowledgeSearchConfig> {
-  const response = await fetch(`${API_BASE}/knowledge/search/config`, { cache: "no-store" });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `读取搜索配置失败：${response.status}`));
-  return (JSON.parse(text) as { config: KnowledgeSearchConfig }).config;
-}
-
-export async function updateKnowledgeSearchConfig(config: KnowledgeSearchConfig): Promise<KnowledgeSearchConfig> {
-  const response = await fetch(`${API_BASE}/knowledge/search/config`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(config),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `保存搜索配置失败：${response.status}`));
-  return (JSON.parse(text) as { config: KnowledgeSearchConfig }).config;
-}
-
-export async function getKnowledgeSearchIndexStatus(): Promise<KnowledgeSearchIndexStatus> {
-  const response = await fetch(`${API_BASE}/knowledge/search/index-status`, { cache: "no-store" });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `读取关键词目录状态失败：${response.status}`));
-  return JSON.parse(text) as KnowledgeSearchIndexStatus;
-}
-
-export async function refreshKnowledgeSearchIndex(rebuild = false): Promise<KnowledgeSearchIndexStatus> {
-  const response = await fetch(`${API_BASE}/knowledge/search/${rebuild ? "index-rebuild" : "index-refresh"}`, { method: "POST" });
-  const text = await response.text();
-  if (!response.ok) throw new Error(apiErrorMessage(text, `更新关键词目录失败：${response.status}`));
-  return JSON.parse(text) as KnowledgeSearchIndexStatus;
-}
-
-export async function listTableAssets(includeProfile = false): Promise<TableAsset[]> {
-  const params = new URLSearchParams({ include_profile: includeProfile ? "true" : "false" });
-  const response = await fetch(`${API_BASE}/analytics/table-assets?${params.toString()}`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load table assets: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.assets) ? payload.assets : [];
-}
-
-export async function getTableAsset(assetId: string, includeProfile = true): Promise<TableAsset> {
-  const response = await fetch(
-    `${API_BASE}/analytics/table-assets/${encodeURIComponent(assetId)}?include_profile=${includeProfile ? "true" : "false"}`,
-    { cache: "no-store" }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load table asset: ${response.status}`));
-  }
-  const responsePayload = await response.json();
-  return responsePayload.asset;
-}
-
-export async function removeTableAsset(assetId: string): Promise<{ asset_id: string; removed_asset_ids: string[]; file_name: string; source_file_preserved: boolean }> {
-  const response = await fetch(`${API_BASE}/analytics/table-assets/${encodeURIComponent(assetId)}`, { method: "DELETE" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to remove table asset: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function previewConcatDataset(sourceAssetIds: string[]): Promise<ConcatDatasetPreview> {
-  const response = await fetch(`${API_BASE}/analytics/table-assets/concat-datasets/preview`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_asset_ids: sourceAssetIds }),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to inspect logical dataset fields: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function createConcatDataset(payload: { name: string; description?: string; tags?: string[]; source_asset_ids: string[]; schema_mode?: "strict" | "baseline_fill_missing" | "union_fill_missing"; preferred_intents?: string[]; direct_source_allowed?: boolean }): Promise<TableAsset> {
-  const response = await fetch(`${API_BASE}/analytics/table-assets/concat-datasets`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to create logical dataset: ${response.status}`));
-  }
-  return (await response.json()).asset;
-}
-
-export async function refreshConcatDataset(assetId: string): Promise<TableAsset> {
-  const response = await fetch(`${API_BASE}/analytics/table-assets/${encodeURIComponent(assetId)}/refresh-concat`, { method: "POST" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to refresh logical dataset: ${response.status}`));
-  }
-  return (await response.json()).asset;
-}
-
-export async function appendConcatDatasetSources(
-  assetId: string,
-  payload: { source_asset_ids: string[]; schema_mode: "strict" | "baseline_fill_missing" | "union_fill_missing" }
-): Promise<TableAsset> {
-  const response = await fetch(`${API_BASE}/analytics/table-assets/${encodeURIComponent(assetId)}/concat-sources`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to append logical dataset sources: ${response.status}`));
-  }
-  return (await response.json()).asset;
-}
-
-export async function updateLogicalDatasetDefinition(
-  assetId: string,
-  payload: { name?: string; description?: string; tags?: string[]; preferred_intents?: string[]; direct_source_allowed?: boolean }
-): Promise<TableAsset> {
-  const response = await fetch(`${API_BASE}/analytics/table-assets/${encodeURIComponent(assetId)}/logical-definition`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to update logical dataset definition: ${response.status}`));
-  }
-  return (await response.json()).asset;
-}
-
-export async function generateTableAssetProfile(assetId: string): Promise<TableAssetProfileJob> {
-  const response = await fetch(`${API_BASE}/analytics/table-assets/${encodeURIComponent(assetId)}/profile`, {
-    method: "POST",
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to generate table profile: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.job;
-}
-
-export async function getTableAssetProfileJob(jobId: string): Promise<TableAssetProfileJob> {
-  const response = await fetch(`${API_BASE}/analytics/table-assets/profile-jobs/${encodeURIComponent(jobId)}`, {
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load table profile job: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.job;
-}
-
-export async function refreshTableAssetProfiles(): Promise<{ generated: TableAsset[]; errors: Record<string, string>[]; total: number }> {
-  const response = await fetch(`${API_BASE}/analytics/table-assets/refresh-profiles`, { method: "POST" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to refresh table profiles: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function listTableAssetEntityCandidates(assetId: string, limit = 12): Promise<TableEntityCandidate[]> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  const response = await fetch(
-    `${API_BASE}/analytics/table-assets/${encodeURIComponent(assetId)}/entity-candidates?${params.toString()}`,
-    { cache: "no-store" }
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load entity candidates: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.candidates) ? payload.candidates : [];
-}
-
-export type SemanticAssetType = "measure" | "dimension" | "grain" | "relation";
-export type DimensionResolutionMode = "source_field" | "derived" | "entity_lookup" | "calendar_lookup";
-export type AssetRelationType = "dimension_binding" | "direct_join";
-
-export interface AssetRelationDefinition {
-  type: AssetRelationType;
-  asset?: { ref: string; display_name?: string; key_fields: string[] };
-  dimension?: { ref: string; display_name?: string; output_key?: string };
-  left?: { ref: string; display_name?: string; key_fields: string[] };
-  right?: { ref: string; display_name?: string; key_fields: string[] };
-  field_mapping?: { left: string[]; right: string[] };
-  cardinality: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many";
-  join_type?: "inner" | "left" | "right" | "full";
-  grain?: string[] | { left: string[]; right: string[] };
-  use_statuses?: string[];
-  rules?: string[];
-}
-
-export interface DimensionBindingDefinition {
-  asset_ref?: string;
-  display_name?: string;
-  fields?: Record<string, string>;
-}
-
-export interface DimensionDefinition {
-  mode: DimensionResolutionMode;
-  bindings?: DimensionBindingDefinition[];
-  source_fields?: string[];
-  expression?: string;
-  canonical?: { key?: string; fields?: string[] };
-  reference_path?: string;
-  date_field?: string;
-  week_start_day?: string;
-  timezone?: string;
-}
-
-export interface SemanticDimensionUpdatePayload {
-  name: string;
-  description: string;
-  aliases: string[];
-  tags: string[];
-  version: string;
-  dimension_definition: DimensionDefinition;
-}
-
-export interface SemanticAssetSummary {
-  id: string;
-  name: string;
-  type: SemanticAssetType;
-  path: string;
-  description?: string;
-  aliases?: string[];
-  tags?: string[];
-  formatter?: string;
-  resolution_mode?: string;
-  resolution_label?: string;
-  relation_type?: AssetRelationType | string;
-  relation_definition?: AssetRelationDefinition;
-  mtime?: number;
-  size_bytes?: number;
-}
-
-export interface SemanticAssetFile {
-  name: string;
-  path: string;
-  relative_path: string;
-  size_bytes?: number;
-  mtime?: number;
-  editable?: boolean;
-  main?: boolean;
-}
-
-export interface SemanticAssetDetail extends SemanticAssetSummary {
-  body: string;
-  frontmatter: Record<string, unknown>;
-  files?: SemanticAssetFile[];
-}
-
-export interface SemanticDimensionSourceBinding {
-  source_id?: string;
-  source_kind?: string;
-  source_ref?: string;
-  source_name?: string;
-  table_or_sheet?: string;
-  key_fields?: Record<string, unknown>;
-}
-
-export interface SemanticDimensionMatchRow {
-  entity_key?: string | null;
-  canonical_label?: string;
-  canonical?: { entity_key?: string; canonical_brand?: string; canonical_serial_name?: string } | null;
-  status?: string;
-  binding?: SemanticDimensionSourceBinding | null;
-  manual?: boolean;
-  override_id?: string;
-}
-
-export interface SemanticDimensionSourceRegistryEntry {
-  id: string;
-  name: string;
-  kind?: string;
-  table_or_sheet?: string;
-  identity_fields?: string[];
-  mapping?: Array<Record<string, unknown>>;
-}
-
-export interface SemanticDimensionMatchingView {
-  dimension_id: string;
-  version: string;
-  generated_at_display?: string;
-  summary: {
-    canonical_entities: number;
-    manual_overrides: number;
-    manual_entity_overrides?: number;
-    sources: number;
-    status_counts: Record<string, number>;
-    published_manual_overrides?: number;
-    has_unpublished_changes?: boolean;
-  };
-  sources: SemanticDimensionSourceRegistryEntry[];
-  entity_options: Array<{ entity_key: string; label: string }>;
-  rows: SemanticDimensionMatchRow[];
-  count: number;
-  offset: number;
-  limit: number;
-}
-
-export interface SemanticDimensionMatchingOverviewRow {
-  entity_key: string;
-  canonical_label: string;
-  status?: string;
-  source_cells: Record<string, Array<{
-    source_ref: string;
-    source_key: Record<string, unknown>;
-    manual?: boolean;
-  }>>;
-}
-
-export interface SemanticDimensionMatchingOverview {
-  dimension_id: string;
-  version: string;
-  has_unpublished_changes?: boolean;
-  summary: {
-    canonical_entities: number;
-    manual_overrides: number;
-    manual_entity_overrides?: number;
-    published_manual_overrides?: number;
-    sources: number;
-  };
-  sources: SemanticDimensionSourceRegistryEntry[];
-  rows: SemanticDimensionMatchingOverviewRow[];
-  count: number;
-  offset: number;
-  limit: number;
-}
-
-export interface SemanticDimensionBaselineChange {
-  job: SemanticDimensionBuildJob;
-  baseline_delta: {
-    added?: Array<{ entity_key: string; label?: string }>;
-    removed?: Array<{ entity_key: string; label?: string }>;
-  };
-}
-
-export interface SemanticDimensionOverridePayload {
-  source_ref: string;
-  source_key: Record<string, unknown>;
-  source_id?: string;
-  scope?: "source_id" | "source_ref";
-  action: "bind" | "exclude";
-  target_entity_key?: string;
-  reason?: string;
-  source_name?: string;
-  source_kind?: string;
-  table_or_sheet?: string;
-}
-
-export interface SemanticDimensionEntityLifecyclePayload {
-  entity_key: string;
-  action: "active" | "inactive" | "remove";
-  reason?: string;
-}
-
-export interface SemanticAssetListResult {
-  assets: SemanticAssetSummary[];
-  count: number;
-  type_counts?: Record<string, number>;
-  root_dir?: string;
-  last_scanned_at?: string | null;
-}
-
-export interface TaskNotification {
-  id: string;
-  category: string;
-  subject_type: string;
-  subject_id: string;
-  title: string;
-  body: string;
-  payload?: Record<string, unknown>;
-  created_at?: string | null;
-  read_at?: string | null;
-}
-
-export interface SemanticDimensionBuildJob {
-  id: string;
-  session_id: string;
-  query_id: string;
-  dimension_id: string;
-  adapter: string;
-  status: string;
-  current_step: string;
-  progress: number;
-  staging_path: string;
-  published_reference_path: string;
-  result_summary?: Record<string, unknown>;
-  error_message?: string | null;
-  retry_count: number;
-  created_at?: string | null;
-  updated_at?: string | null;
-  started_at?: string | null;
-  finished_at?: string | null;
-}
-
-export interface TaskJobEvent {
-  id: string;
-  job_id: string;
-  level: string;
-  message: string;
-  metadata?: Record<string, unknown>;
-  created_at?: string | null;
-}
-
-export interface SemanticDimensionBuildJobDetail {
-  job: SemanticDimensionBuildJob;
-  events: TaskJobEvent[];
-}
-
-export interface TaskCenterItem {
-  task_type: "semantic_dimension_build" | "knowledge_import" | string;
-  title: string;
-  job: { id?: string; status?: string; current_step?: string; progress?: number; [key: string]: unknown };
-  created_at?: string | null;
-}
-
-export async function listTaskNotifications(unreadOnly = false, limit = 20): Promise<TaskNotification[]> {
-  const params = new URLSearchParams({ unread_only: String(unreadOnly), limit: String(limit) });
-  const response = await fetchWithTimeout(`${API_BASE}/analytics/task-notifications?${params.toString()}`, { cache: "no-store" }, 4000);
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load task notifications: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.notifications) ? payload.notifications : [];
-}
-
-export async function markTaskNotificationRead(notificationId: string): Promise<TaskNotification> {
-  const response = await fetch(`${API_BASE}/analytics/task-notifications/${encodeURIComponent(notificationId)}/read`, { method: "POST" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to mark task notification read: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.notification;
-}
-
-export async function listTaskCenter(limit = 20): Promise<TaskCenterItem[]> {
-  const response = await fetchWithTimeout(`${API_BASE}/analytics/task-center?limit=${limit}`, { cache: "no-store" }, 4000);
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load task center: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.tasks) ? payload.tasks : [];
-}
-
-export async function getSemanticDimensionBuildJob(
-  jobId: string,
-  includeEvents = true
-): Promise<SemanticDimensionBuildJobDetail> {
-  const params = new URLSearchParams({ include_events: String(includeEvents) });
-  const response = await fetchWithTimeout(
-    `${API_BASE}/analytics/semantic-dimension-jobs/${encodeURIComponent(jobId)}?${params.toString()}`,
-    { cache: "no-store" },
-    includeEvents ? 8000 : 3000
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load semantic dimension job: ${response.status}`));
-  }
-  const payload = await response.json();
-  return {
-    job: payload.job,
-    events: Array.isArray(payload.events) ? payload.events : [],
-  };
-}
-
-export interface SemanticAssetCreatePayload {
-  name: string;
-  type: SemanticAssetType;
-  description?: string;
-  aliases?: string[];
-  tags?: string[];
-  version?: string;
-  slug?: string;
-  dimension_definition?: DimensionDefinition;
-  relation_definition?: AssetRelationDefinition;
-}
-
-export async function listSemanticAssets(): Promise<SemanticAssetListResult> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-assets`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load semantic assets: ${response.status}`));
-  }
-  const payload = await response.json();
-  return {
-    ...payload,
-    assets: Array.isArray(payload.assets) ? payload.assets : [],
-    count: typeof payload.count === "number" ? payload.count : 0,
-  };
-}
-
-export async function refreshSemanticAssets(): Promise<SemanticAssetListResult> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-assets/refresh`, { method: "POST" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to refresh semantic assets: ${response.status}`));
-  }
-  const payload = await response.json();
-  return {
-    ...payload,
-    assets: Array.isArray(payload.assets) ? payload.assets : [],
-    count: typeof payload.count === "number" ? payload.count : 0,
-  };
-}
-
-export async function createSemanticAsset(payload: SemanticAssetCreatePayload): Promise<SemanticAssetDetail> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-assets`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to create semantic asset: ${response.status}`));
-  }
-  const data = await response.json();
-  return data.asset;
-}
-
-export async function getSemanticAsset(assetId: string): Promise<SemanticAssetDetail> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-assets/${encodeURIComponent(assetId)}`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load semantic asset: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.asset;
-}
-
-export async function updateSemanticDimensionDefinition(
-  assetId: string,
-  payload: SemanticDimensionUpdatePayload
-): Promise<SemanticAssetDetail> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-assets/${encodeURIComponent(assetId)}/dimension-definition`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to save dimension definition: ${response.status}`));
-  }
-  const responsePayload = await response.json();
-  return responsePayload.asset;
-}
-
-export async function updateSemanticRelationDefinition(
-  assetId: string,
-  payload: {
-    name: string;
-    description: string;
-    aliases: string[];
-    tags: string[];
-    version: string;
-    relation_definition: AssetRelationDefinition;
-  }
-): Promise<SemanticAssetDetail> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-assets/${encodeURIComponent(assetId)}/relation-definition`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to save relation definition: ${response.status}`));
-  }
-  return (await response.json()).asset;
-}
-
-export async function getSemanticDimensionMatching(
-  dimensionId: string,
-  options: { status?: string; sourceRef?: string; query?: string; offset?: number; limit?: number } = {}
-): Promise<SemanticDimensionMatchingView> {
-  const params = new URLSearchParams();
-  if (options.status) params.set("status", options.status);
-  if (options.sourceRef) params.set("source_ref", options.sourceRef);
-  if (options.query) params.set("query", options.query);
-  params.set("offset", String(options.offset || 0));
-  params.set("limit", String(options.limit || 100));
-  const response = await fetchWithTimeout(
-    `${API_BASE}/analytics/semantic-dimensions/${encodeURIComponent(dimensionId)}/matching?${params.toString()}`,
-    { cache: "no-store" },
-    10000
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load semantic dimension matching: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function getSemanticDimensionMatchingOverview(
-  dimensionId: string,
-  options: { query?: string; offset?: number; limit?: number } = {}
-): Promise<SemanticDimensionMatchingOverview> {
-  const params = new URLSearchParams();
-  if (options.query) params.set("query", options.query);
-  params.set("offset", String(options.offset || 0));
-  params.set("limit", String(options.limit || 100));
-  const response = await fetchWithTimeout(
-    `${API_BASE}/analytics/semantic-dimensions/${encodeURIComponent(dimensionId)}/matching/overview?${params.toString()}`,
-    { cache: "no-store" },
-    10000
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load semantic dimension overview: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function getSemanticDimensionBaselineChange(dimensionId: string): Promise<SemanticDimensionBaselineChange | null> {
-  const response = await fetchWithTimeout(
-    `${API_BASE}/analytics/semantic-dimensions/${encodeURIComponent(dimensionId)}/matching/baseline-changes`,
-    { cache: "no-store" },
-    10000
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load semantic dimension baseline change: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.change || null;
-}
-
-export async function resolveSemanticDimensionBaselineChange(
-  jobId: string,
-  action: "inactive" | "remove" | "cancel"
-): Promise<void> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-dimension-jobs/${encodeURIComponent(jobId)}/baseline-change/resolve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action }),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to resolve semantic dimension baseline change: ${response.status}`));
-  }
-}
-
-export async function publishSemanticDimensionMatching(dimensionId: string): Promise<{ version: string; published_at_display?: string }> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-dimensions/${encodeURIComponent(dimensionId)}/matching/publish`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to publish semantic dimension matching: ${response.status}`));
-  }
-  return response.json();
-}
-
-export async function saveSemanticDimensionOverride(
-  dimensionId: string,
-  payload: SemanticDimensionOverridePayload
-): Promise<void> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-dimensions/${encodeURIComponent(dimensionId)}/matching/overrides`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to save semantic dimension override: ${response.status}`));
-  }
-}
-
-export async function deleteSemanticDimensionOverride(dimensionId: string, overrideId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-dimensions/${encodeURIComponent(dimensionId)}/matching/overrides/${encodeURIComponent(overrideId)}`, { method: "DELETE" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to delete semantic dimension override: ${response.status}`));
-  }
-}
-
-export async function saveSemanticDimensionEntityLifecycle(
-  dimensionId: string,
-  payload: SemanticDimensionEntityLifecyclePayload
-): Promise<void> {
-  const response = await fetch(`${API_BASE}/analytics/semantic-dimensions/${encodeURIComponent(dimensionId)}/matching/entities/lifecycle`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to save semantic dimension lifecycle: ${response.status}`));
-  }
-}
-
-export async function importSemanticAssets(files: File[]): Promise<SemanticAssetListResult> {
-  const form = new FormData();
-  files.forEach((file) => {
-    const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-    form.append("files", file, relativePath || file.name);
-  });
-  const response = await fetch(`${API_BASE}/analytics/semantic-assets/import`, {
-    method: "POST",
-    body: form,
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to import semantic assets: ${response.status}`));
-  }
-  const payload = await response.json();
-  return {
-    ...payload,
-    assets: Array.isArray(payload.assets) ? payload.assets : [],
-    count: typeof payload.count === "number" ? payload.count : 0,
-  };
-}
-
-export interface AnalyticsModelFile {
-  name: string;
-  path: string;
-  relative_path: string;
-  size_bytes?: number;
-  mtime?: number;
-  editable?: boolean;
-  main?: boolean;
-}
-
-export interface AnalyticsModelSummary {
-  id: string;
-  name: string;
-  path: string;
-  description?: string;
-  version?: string;
-  tags?: string[];
-  formatter?: string;
-  data_assets?: Record<string, unknown>;
-  semantic_assets?: Record<string, unknown>;
-  asset_relations?: string[];
-  guardrails?: string[];
-  templates?: Record<string, unknown>;
-  default_template?: string | null;
-  mtime?: number;
-  size_bytes?: number;
-}
-
-export interface AnalyticsModelDetail extends AnalyticsModelSummary {
-  body: string;
-  frontmatter: Record<string, unknown>;
-  files?: AnalyticsModelFile[];
-}
-
-export interface AnalyticsModelListResult {
-  models: AnalyticsModelSummary[];
-  count: number;
-  root_dir?: string;
-  last_scanned_at?: string | null;
-}
-
-export interface AnalyticsModelCreatePayload {
-  name: string;
-  description?: string;
-  version?: string;
-  tags?: string[];
-  slug?: string;
-  data_assets?: Record<string, unknown>;
-  semantic_assets?: Record<string, unknown>;
-  asset_relations?: string[];
-  guardrails?: string[];
-  templates?: Record<string, unknown>;
-  default_template?: string | null;
-}
-
-export type AnalyticsProjectDataFileMode = "copy" | "reference";
-
-export interface AnalyticsProjectExportDataAsset {
-  ref: string;
-  kind: "database_table" | "table_asset" | "logical_dataset";
-  status: "ready" | "missing";
-  asset_id: string;
-  file_name: string;
-  source_path: string;
-  virtual_path: string;
-  sheet_name?: string | null;
-  size_bytes: number;
-  profile_available: boolean;
-  source_asset_ids: string[];
-  source_name: string;
-  source_type: string;
-  host: string;
-  port: number;
-  database: string;
-  schema_name: string;
-}
-
-export interface AnalyticsProjectExportPlan {
-  format: string;
-  model_id: string;
-  model_name: string;
-  model_version: string;
-  package_name: string;
-  plan_id: string;
-  data_file_mode: AnalyticsProjectDataFileMode;
-  semantic_asset_ids: string[];
-  relation_ids: string[];
-  guardrail_ids: string[];
-  data_assets: AnalyticsProjectExportDataAsset[];
-  copied_file_count: number;
-  copied_bytes: number;
-  warnings: string[];
-  missing_dependencies: string[];
-}
-
-export async function listAnalyticsModels(): Promise<AnalyticsModelListResult> {
-  const response = await fetch(`${API_BASE}/analytics/models`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load analytics models: ${response.status}`));
-  }
-  const payload = await response.json();
-  return {
-    ...payload,
-    models: Array.isArray(payload.models) ? payload.models : [],
-    count: typeof payload.count === "number" ? payload.count : 0,
-  };
-}
-
-export async function refreshAnalyticsModels(): Promise<AnalyticsModelListResult> {
-  const response = await fetch(`${API_BASE}/analytics/models/refresh`, { method: "POST" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to refresh analytics models: ${response.status}`));
-  }
-  const payload = await response.json();
-  return {
-    ...payload,
-    models: Array.isArray(payload.models) ? payload.models : [],
-    count: typeof payload.count === "number" ? payload.count : 0,
-  };
-}
-
-export async function createAnalyticsModel(payload: AnalyticsModelCreatePayload): Promise<AnalyticsModelDetail> {
-  const response = await fetch(`${API_BASE}/analytics/models`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to create analytics model: ${response.status}`));
-  }
-  const data = await response.json();
-  return data.model;
-}
-
-export async function getAnalyticsModel(modelId: string): Promise<AnalyticsModelDetail> {
-  const response = await fetch(`${API_BASE}/analytics/models/${encodeURIComponent(modelId)}`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load analytics model: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.model;
-}
-
-export async function importAnalyticsModels(files: File[]): Promise<AnalyticsModelListResult> {
-  const form = new FormData();
-  files.forEach((file) => {
-    const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-    form.append("files", file, relativePath || file.name);
-  });
-  const response = await fetch(`${API_BASE}/analytics/models/import`, {
-    method: "POST",
-    body: form,
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to import analytics models: ${response.status}`));
-  }
-  const payload = await response.json();
-  return {
-    ...payload,
-    models: Array.isArray(payload.models) ? payload.models : [],
-    count: typeof payload.count === "number" ? payload.count : 0,
-  };
-}
-
-export async function planAnalyticsProjectExport(
-  modelId: string,
-  dataFileMode: AnalyticsProjectDataFileMode
-): Promise<{ plan: AnalyticsProjectExportPlan; ready: boolean }> {
-  const response = await fetch(`${API_BASE}/analytics/models/export-plan`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model_id: modelId, data_file_mode: dataFileMode }),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to plan analytics project export: ${response.status}`));
-  }
-  return response.json();
-}
-
-export function analyticsProjectExportDownloadUrl(
-  modelId: string,
-  dataFileMode: AnalyticsProjectDataFileMode,
-  expectedPlanId?: string
-): string {
-  const params = new URLSearchParams({ model_id: modelId, data_file_mode: dataFileMode });
-  if (expectedPlanId) params.set("expected_plan_id", expectedPlanId);
-  return `${API_BASE}/analytics/models/export.zip?${params.toString()}`;
-}
-
-export type SqlGuardrailActionType = "rewrite" | "block" | "warn";
-
-export interface SqlGuardrailScope {
-  table_scope: {
-    mode: "any" | "all";
-    values: string[];
-  };
-  semantic_assets: string[];
-}
-
-export interface SqlGuardrailAction {
-  type: SqlGuardrailActionType;
-  message: string;
-}
-
-export interface SqlGuardrailRule {
-  id: string;
-  name: string;
-  enabled: boolean;
-  type: string;
-  scope: SqlGuardrailScope;
-  params: Record<string, unknown>;
-  action: SqlGuardrailAction;
-  document_path?: string;
-  document_body?: string;
-  document_content?: string;
-}
-
-export interface SqlGuardrailFieldDefinition {
-  path: string;
-  label: string;
-  type: "string" | "string_array" | "number" | string;
-  required?: boolean;
-}
-
-export interface SqlGuardrailTypeDefinition {
-  label: string;
-  description: string;
-  fields: SqlGuardrailFieldDefinition[];
-}
-
-export interface SqlGuardrailRulesResult {
-  guardrails: SqlGuardrailRule[];
-}
-
-export async function listSqlGuardrailTypes(): Promise<Record<string, SqlGuardrailTypeDefinition>> {
-  const response = await fetch(`${API_BASE}/analytics/sql-guardrail-types`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load SQL guardrail types: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.types || {};
-}
-
-export async function listSqlGuardrails(): Promise<SqlGuardrailRule[]> {
-  const response = await fetch(`${API_BASE}/analytics/sql-guardrails`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load SQL guardrails: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.guardrails) ? payload.guardrails : [];
-}
-
-export async function saveSqlGuardrail(rule: SqlGuardrailRule): Promise<SqlGuardrailRule> {
-  const response = await fetch(`${API_BASE}/analytics/sql-guardrails`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(rule),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to save SQL guardrail: ${response.status}`));
-  }
-  const payload = await response.json();
-  return payload.rule;
-}
-
-export async function deleteSqlGuardrail(ruleId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/analytics/sql-guardrails/${encodeURIComponent(ruleId)}`, { method: "DELETE" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to delete SQL guardrail: ${response.status}`));
-  }
-}
-
-export async function resetSqlGuardrails(): Promise<SqlGuardrailRule[]> {
-  const response = await fetch(`${API_BASE}/analytics/sql-guardrails/reset`, { method: "POST" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to reset SQL guardrails: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.guardrails) ? payload.guardrails : [];
-}
-
-export interface DatabaseQueryResultSummary {
-  result_id: string;
-  session_id?: string;
-  tool_call_id?: string;
-  question: string;
-  sql: string;
-  columns: string[];
-  row_count: number;
-  profile?: Record<string, unknown>;
-  artifact_path: string;
-  storage_path?: string;
-  artifact_format: string;
-  status: string;
-  expired: boolean;
-  artifact_exists: boolean;
-  catalog_exists?: boolean;
-  export_enabled?: boolean;
-  created_at: string;
-  expires_at: string;
-}
-
-export interface DatabaseQueryResultPage {
-  result_id: string;
-  expired: boolean;
-  status: string;
-  row_count: number;
-  columns: string[];
-  profile?: Record<string, unknown>;
-  export_enabled?: boolean;
-  page: number;
-  page_size: number;
-  has_next?: boolean;
-  has_previous?: boolean;
-  rows: Record<string, unknown>[];
-  expires_at: string;
-  message?: string;
-}
-
-export async function listDatabaseQueryResults(limit = 50): Promise<DatabaseQueryResultSummary[]> {
-  const params = new URLSearchParams({ limit: String(limit), include_expired: "true" });
-  const response = await fetch(`${API_BASE}/analytics/query-results?${params.toString()}`, { cache: "no-store" });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load query results: ${response.status}`));
-  }
-  const payload = await response.json();
-  return Array.isArray(payload.items) ? payload.items : [];
-}
-
-export async function getDatabaseQueryResultPage(
-  resultId: string,
-  page = 1,
-  pageSize = 100
-): Promise<DatabaseQueryResultPage> {
-  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-  const response = await fetch(`${API_BASE}/analytics/query-results/${encodeURIComponent(resultId)}?${params.toString()}`, {
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, `Failed to load query result page: ${response.status}`));
-  }
-  return response.json();
-}
-
-export function databaseQueryResultExportCsvUrl(resultId: string): string {
-  return `${API_BASE}/analytics/query-results/${encodeURIComponent(resultId)}/export.csv`;
-}
-
 export async function uploadAgentAttachments(
   files: File[],
   sessionId: string,
@@ -3644,112 +763,6 @@ export async function resolveKernelFallbackRequest(
   if (!response.ok) throw new Error(apiErrorMessage(text, `处理 Kernel 回退请求失败：${response.status}`));
 }
 
-export interface DimensionBuildInputCandidate {
-  id: string;
-  display_name: string;
-  input: {
-    kind: "attachment" | "table_asset" | "database_table" | string;
-    attachment_id?: string;
-    asset_id?: string;
-    source_id?: string;
-    table?: string;
-  };
-  fields: string[];
-  suggested_key_fields?: string[];
-  suggested_output_fields?: string[];
-  suggested_source_id?: string;
-  suggested_source_name?: string;
-}
-
-export interface DimensionBuildRuleRequest {
-  id: string;
-  type: string;
-  session_id: string;
-  query_id?: string;
-  tool_call_id?: string;
-  status?: string;
-  dimension_id: string;
-  title: string;
-  reason: string;
-  operation: string;
-  locked_canonical_candidate_id?: string;
-  candidates: DimensionBuildInputCandidate[];
-  registered_sources?: Array<{ id: string; name: string; identity_fields?: string[] }>;
-  rule_template?: {
-    dimension_id?: string;
-    adapter?: string;
-    reference_path?: string;
-  };
-}
-
-export async function resolveDimensionBuildRuleRequest(
-  requestId: string,
-  payload: {
-    action: "confirm" | "cancel";
-    canonical_candidate_id?: string;
-    bindings?: Array<{ candidate_id: string; key_fields: string[]; output_fields: string[]; source_id?: string; source_name?: string; source_mode?: "new" | "append" }>;
-    conflict_policy?: string;
-  }
-): Promise<{ request_id: string; decision: Record<string, unknown>; resumed: boolean }> {
-  const response = await fetch(`${API_BASE}/analytics/dimension-build-requests/${encodeURIComponent(requestId)}/resolve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, "Failed to resolve dimension build rule request"));
-  }
-  return response.json();
-}
-
-export interface LogicalDatasetRuleRequest {
-  id: string;
-  type: string;
-  session_id: string;
-  status?: string;
-  title: string;
-  reason: string;
-  suggested_name?: string;
-  operation: "create" | "append" | string;
-  target_asset_id?: string;
-  target?: { asset_id: string; display_name: string; fields: string[]; rows?: number | null; sheet_name?: string | null } | null;
-  candidates: Array<{ asset_id: string; display_name: string; fields: string[]; rows?: number | null; sheet_name?: string | null }>;
-}
-
-export async function resolveLogicalDatasetRuleRequest(
-  requestId: string,
-  payload: { action: "confirm" | "cancel"; name?: string; description?: string; tags?: string[]; baseline_asset_id?: string; source_asset_ids?: string[]; schema_mode?: "strict" | "baseline_fill_missing" | "union_fill_missing"; preferred_intents?: string[]; direct_source_allowed?: boolean }
-): Promise<{ request_id: string; decision: Record<string, unknown>; resumed: boolean }> {
-  const response = await fetch(`${API_BASE}/analytics/logical-dataset-requests/${encodeURIComponent(requestId)}/resolve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, "Failed to resolve logical dataset rule request"));
-  }
-  return response.json();
-}
-
-export interface DatabaseSqlRevisionRequest {
-  id: string;
-  type: string;
-  session_id: string;
-  query_id?: string;
-  tool_call_id?: string;
-  status?: string;
-  generation_id: string;
-  original_question: string;
-  original_sql: string;
-  proposed_revision_instruction: string;
-  semantic_assets?: {
-    matched?: Array<Record<string, unknown>>;
-    references?: Array<Record<string, unknown>>;
-  };
-}
-
 export interface UserInputOption {
   id: string;
   label: string;
@@ -3859,93 +872,6 @@ export async function resolveSkillSecretRequest(
   }
   return response.json();
 }
-
-export async function resolveDatabaseSqlRevisionRequest(
-  requestId: string,
-  payload: { action: "agree" | "reject" | "modify"; revision_instruction?: string }
-): Promise<{ request_id: string; decision: Record<string, unknown>; resumed: boolean }> {
-  const response = await fetch(`${API_BASE}/analytics/database-sql-revision-requests/${encodeURIComponent(requestId)}/resolve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(apiErrorMessage(text, "Failed to resolve database SQL revision request"));
-  }
-  return response.json();
-}
-
-/**
- * LEGACY: Stream messages through the retired Chat runtime via POST SSE.
- * This compatibility client is no longer used by the main conversation UI
- * and is not maintained. New product flows must use streamAgent.
- *
- * @deprecated Use streamAgent instead.
- * Yields parsed SSE events as they arrive.
- */
-export async function* streamChat(
-  message: string,
-  sessionId: string,
-  signal?: AbortSignal,
-  userId?: string
-): AsyncGenerator<SSEEvent> {
-  const response = await fetch(`${API_BASE}/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message,
-      session_id: sessionId,
-      user_id: userId || "default_user",
-      stream: true
-    }),
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Chat API error: ${response.status}`);
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("No response body");
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    // SSE uses an empty line as the event boundary. Parsing complete frames
-    // keeps event/data association correct even when a network chunk splits
-    // between the two lines.
-    buffer = buffer.replace(/\r\n/g, "\n");
-    const frames = buffer.split("\n\n");
-    buffer = frames.pop() || "";
-
-    const parsedFrames = frames
-      .map((frame) => parseSSEFrame(frame))
-      .filter((event): event is SSEEvent => event !== null);
-
-    for (const parsed of parsedFrames) {
-
-      if (parsed.event === "token" && typeof parsed.data.content === "string") {
-        // Consume upstream chunks immediately. The HTTP trace proves the proxy
-        // already delivers data incrementally; adding rAF/timer pacing here can
-        // only create a client-side queue and delayed "replay" on long runs.
-        yield parsed;
-        continue;
-      }
-
-      yield parsed;
-    }
-  }
-}
-
-/**
- * Stream Agent-mode messages via POST SSE.
- */
 export async function* streamAgent(
   message: string,
   sessionId: string,
@@ -3953,7 +879,6 @@ export async function* streamAgent(
   signal?: AbortSignal,
   userId?: string,
   attachments?: AgentAttachment[],
-  analyticsModelId?: string | null,
   goalMode = false,
   goalId?: string | null,
   contextGoalId?: string | null,
@@ -3972,7 +897,6 @@ export async function* streamAgent(
       session_id: sessionId,
       user_id: userId || "default_user",
       project_id: projectId || null,
-      analytics_model_id: analyticsModelId || null,
       attachments: attachments || [],
       skill_hints: skillHints ?? null,
       llm_model_id: llmModelId || null,
@@ -4016,8 +940,6 @@ export async function* streamAgent(
     }
   }
 }
-
-/** Queue an independent review for one completed ordinary Run. */
 export async function requestRunReview(
   sessionId: string,
   runId: string,
@@ -4036,8 +958,6 @@ export async function requestRunReview(
   }
   return (text ? JSON.parse(text) : { status: "pending", run_id: runId }) as RunReviewStatusResponse;
 }
-
-/** Read the durable review status for one ordinary Run. */
 export async function getRunReviewStatus(
   sessionId: string,
   runId: string,
@@ -4052,8 +972,6 @@ export async function getRunReviewStatus(
   }
   return (text ? JSON.parse(text) : { status: "not_requested", run_id: runId }) as RunReviewStatusResponse;
 }
-
-/** Observe a Headless Run already owned by CLI/PuddingTeams. */
 export async function* streamSessionEvents(
   sessionId: string,
   signal?: AbortSignal,
@@ -4086,7 +1004,6 @@ export async function* streamSessionEvents(
   const tail = parseSSEFrame(buffer.trim());
   if (tail) yield tail;
 }
-
 export async function getSessionHarnessState(
   sessionId: string,
 ): Promise<SessionHarnessState> {
@@ -4099,7 +1016,6 @@ export async function getSessionHarnessState(
   }
   return response.json();
 }
-
 async function transitionGoal(
   sessionId: string,
   goalId: string,
@@ -4115,16 +1031,12 @@ async function transitionGoal(
   }
   return response.json();
 }
-
 export const pauseGoal = (sessionId: string, goalId: string) =>
   transitionGoal(sessionId, goalId, "pause");
-
 export const resumeGoal = (sessionId: string, goalId: string) =>
   transitionGoal(sessionId, goalId, "resume");
-
 export const cancelGoal = (sessionId: string, goalId: string) =>
   transitionGoal(sessionId, goalId, "cancel");
-
 export async function extendGoalBudget(
   sessionId: string,
   goalId: string,
@@ -4144,7 +1056,6 @@ export async function extendGoalBudget(
   }
   return response.json();
 }
-
 export async function updateGoalObjective(
   sessionId: string,
   goalId: string,
@@ -4168,7 +1079,6 @@ export async function updateGoalObjective(
   }
   return response.json();
 }
-
 function parseSSEFrame(frame: string): SSEEvent | null {
   let event = "message";
   let id: string | undefined;
@@ -4185,26 +1095,18 @@ function parseSSEFrame(frame: string): SSEEvent | null {
   }
   if (dataLines.length === 0) return null;
   try {
-    const data = JSON.parse(dataLines.join("\n"));
+    const data = JSON.parse(dataLines.join("n"));
     return { event, data, ...(id ? { id } : {}) };
   } catch {
     return null;
   }
 }
-
-/**
- * Read a file from the backend.
- */
 export async function readFile(path: string): Promise<string> {
   const resp = await fetch(`${API_BASE}/files?path=${encodeURIComponent(path)}`);
   if (!resp.ok) throw new Error(`Failed to read file: ${resp.status}`);
   const data = await resp.json();
   return data.content;
 }
-
-/**
- * Save a file to the backend.
- */
 export async function saveFile(path: string, content: string): Promise<void> {
   const resp = await fetch(`${API_BASE}/files`, {
     method: "POST",
@@ -4213,10 +1115,6 @@ export async function saveFile(path: string, content: string): Promise<void> {
   });
   if (!resp.ok) throw new Error(`Failed to save file: ${resp.status}`);
 }
-
-/**
- * List all sessions.
- */
 export async function listSessions(): Promise<
   Array<{
     id: string;
@@ -4228,7 +1126,6 @@ export async function listSessions(): Promise<
     workspace_type?: string;
     workspace_path?: string;
     session_source?: string;
-    analytics_model_id?: string | null;
     llm_model_id?: string | null;
     thinking_level?: "low" | "high" | "max" | null;
     credential_name?: string | null;
@@ -4243,7 +1140,6 @@ export async function listSessions(): Promise<
   const data = await resp.json();
   return data.sessions;
 }
-
 export interface SessionSearchResult {
   id: string;
   title: string;
@@ -4254,8 +1150,6 @@ export interface SessionSearchResult {
   snippet: string;
   matched_in: "title" | "content";
 }
-
-/** Search session titles and visible conversation content. */
 export async function searchSessions(
   query: string,
   signal?: AbortSignal,
@@ -4272,7 +1166,6 @@ export async function searchSessions(
   const data = await resp.json() as { results?: SessionSearchResult[] };
   return Array.isArray(data.results) ? data.results : [];
 }
-
 export interface ProjectMeta {
   project_id: string;
   name: string;
@@ -4284,14 +1177,12 @@ export interface ProjectMeta {
   trust_state: "pending" | "trusted" | "denied";
   identity_digest?: string;
 }
-
 export async function listProjects(): Promise<ProjectMeta[]> {
   const resp = await fetch(`${API_BASE}/projects`);
   if (!resp.ok) throw new Error(`Failed to list projects: ${resp.status}`);
   const data = await resp.json();
   return data.projects;
 }
-
 export async function registerProject(path: string, name?: string): Promise<ProjectMeta> {
   const resp = await fetch(`${API_BASE}/projects/register`, {
     method: "POST",
@@ -4303,14 +1194,12 @@ export async function registerProject(path: string, name?: string): Promise<Proj
   if (!resp.ok) throw new Error(`Failed to register project: ${resp.status}`);
   return resp.json();
 }
-
 export async function openProject(projectId: string): Promise<void> {
   const resp = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/open`, {
     method: "POST",
   });
   if (!resp.ok) throw new Error(`Failed to open project: ${resp.status}`);
 }
-
 export async function openLocalFile(path: string, sessionId: string): Promise<void> {
   const resp = await fetch(`${API_BASE}/local-files/open`, {
     method: "POST",
@@ -4322,7 +1211,6 @@ export async function openLocalFile(path: string, sessionId: string): Promise<vo
     throw new Error(apiErrorMessage(text, `Failed to open file: ${resp.status}`));
   }
 }
-
 export async function updateProject(
   projectId: string,
   update: { name?: string; pinned?: boolean; execution_mode?: "spawn" | "kernel" }
@@ -4335,7 +1223,6 @@ export async function updateProject(
   if (!resp.ok) throw new Error(`Failed to update project: ${resp.status}`);
   return resp.json();
 }
-
 export async function setProjectTrust(
   projectId: string,
   state: "pending" | "trusted" | "denied",
@@ -4351,14 +1238,12 @@ export async function setProjectTrust(
   }
   return resp.json();
 }
-
 export async function removeProject(projectId: string): Promise<void> {
   const resp = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`, {
     method: "DELETE",
   });
   if (!resp.ok) throw new Error(`Failed to remove project: ${resp.status}`);
 }
-
 export async function listSessionPermissions(sessionId: string): Promise<SessionPermissionState> {
   const resp = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/permissions`);
   if (!resp.ok) throw new Error(`Failed to list permissions: ${resp.status}`);
@@ -4368,7 +1253,6 @@ export async function listSessionPermissions(sessionId: string): Promise<Session
     history: Array.isArray(data.history) ? data.history : [],
   };
 }
-
 export async function grantExternalFilePermission(
   sessionId: string,
   targetKind: "exact_file" | "exact_directory" | "all_external_files",
@@ -4390,7 +1274,6 @@ export async function grantExternalFilePermission(
   const data = await resp.json();
   return data.grant;
 }
-
 export async function grantToolActionPermission(
   sessionId: string,
   permissionRequestId: string,
@@ -4414,7 +1297,6 @@ export async function grantToolActionPermission(
   const data = await resp.json();
   return data.grant;
 }
-
 export async function grantShellDirectoryPermission(
   sessionId: string,
   permissionRequestId: string,
@@ -4438,7 +1320,6 @@ export async function grantShellDirectoryPermission(
   const data = await resp.json();
   return Array.isArray(data.grants) ? data.grants : [];
 }
-
 export async function revokePermissionGrant(sessionId: string, grantId: string): Promise<void> {
   const resp = await fetch(
     `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(grantId)}/revoke`,
@@ -4446,7 +1327,6 @@ export async function revokePermissionGrant(sessionId: string, grantId: string):
   );
   if (!resp.ok) throw new Error(`Failed to revoke permission: ${resp.status}`);
 }
-
 export async function denyPermissionRequest(
   sessionId: string,
   permissionRequestId: string,
@@ -4459,20 +1339,15 @@ export async function denyPermissionRequest(
   });
   if (!resp.ok) throw new Error(`Failed to deny permission: ${resp.status}`);
 }
-
-/**
- * Create a new session.
- */
 export type ApprovalMode = "strict" | "smart";
 
 export interface CreateSessionOptions {
-  analytics_model_id?: string | null;
   llm_model_id?: string | null;
   thinking_level?: "low" | "high" | "max" | null;
   credential_name?: string | null;
   run_review_policy?: RunReviewPolicy | null;
   approval_mode?: ApprovalMode;
-  runtime_mode?: "agent" | "chat";
+  runtime_mode?: "agent";
   project_id?: string | null;
 }
 
@@ -4488,9 +1363,8 @@ export async function createSession(options: CreateSessionOptions = {}): Promise
   title: string;
   created_at?: number;
   updated_at?: number;
-  runtime_mode?: "agent" | "chat";
+  runtime_mode?: "agent";
   project_id?: string | null;
-  analytics_model_id?: string | null;
   llm_model_id?: string | null;
   thinking_level?: "low" | "high" | "max" | null;
   credential_name?: string | null;
@@ -4602,26 +1476,6 @@ export async function updateSessionApprovalMode(
   return resp.json();
 }
 
-
-/** Persist or clear the analytics model selected for a session. */
-export async function updateSessionAnalyticsModel(
-  sessionId: string,
-  analyticsModelId: string | null
-): Promise<void> {
-  const resp = await fetch(
-    `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/analytics-model`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ analytics_model_id: analyticsModelId }),
-    }
-  );
-  if (!resp.ok) throw new Error(`Failed to update session analytics model: ${resp.status}`);
-}
-
-/**
- * Rename a session.
- */
 export async function renameSession(id: string, title: string): Promise<void> {
   const resp = await fetch(`${API_BASE}/sessions/${encodeURIComponent(id)}`, {
     method: "PUT",
@@ -4631,9 +1485,6 @@ export async function renameSession(id: string, title: string): Promise<void> {
   if (!resp.ok) throw new Error(`Failed to rename session: ${resp.status}`);
 }
 
-/**
- * Delete a session.
- */
 export async function deleteSession(id: string): Promise<void> {
   const resp = await fetch(`${API_BASE}/sessions/${encodeURIComponent(id)}`, {
     method: "DELETE",
@@ -4641,9 +1492,6 @@ export async function deleteSession(id: string): Promise<void> {
   if (!resp.ok) throw new Error(`Failed to delete session: ${resp.status}`);
 }
 
-/**
- * Get raw messages for a session (including system prompt).
- */
 export async function getRawMessages(
   sessionId: string
 ): Promise<{
@@ -4662,7 +1510,6 @@ export async function getRawMessages(
   return resp.json();
 }
 
-/** Load heavyweight Agent traces on demand, separately from chat history. */
 export async function getSessionTraces(
   sessionId: string
 ): Promise<{
@@ -4683,9 +1530,7 @@ export async function getSessionTraces(
   return resp.json();
 }
 
-/**
- * Get session conversation history (no system prompt, includes tool_calls).
- */
+/** Historical read-only compatibility: legacy transcript fields remain opaque. */
 export async function getSessionHistory(
   sessionId: string
 ): Promise<{
@@ -4735,9 +1580,6 @@ export async function getCurrentSessionTodos(sessionId: string): Promise<Current
   return resp.json();
 }
 
-/**
- * List available skills.
- */
 export async function listSkills(): Promise<
   Array<{ name: string; path: string; description: string }>
 > {
@@ -4747,9 +1589,6 @@ export async function listSkills(): Promise<
   return data.skills;
 }
 
-/**
- * List enabled MCP servers.
- */
 export async function listMcpServers(): Promise<
   Array<{ key: string; name: string; url: string; transport: string }>
 > {
@@ -4806,6 +1645,7 @@ export interface McpServerStatus {
   transport: string;
   enabled: boolean;
   auto_enabled: boolean;
+  managed_by?: "mcp" | string;
   ready: boolean;
   loaded: boolean;
   status: "ready" | "loaded" | "not_ready" | "error";
@@ -4817,23 +1657,9 @@ export interface McpServerStatus {
 export interface McpServersStatus {
   servers: Array<{ key: string; name: string; url: string; transport: string }>;
   catalog: McpServerStatus[];
-  gbrain: {
-    configured: boolean;
-    ready: boolean;
-    reason: string;
-    home?: string;
-    binary?: string;
-    config_exists?: boolean;
-    pack_exists?: boolean;
-    models?: {
-      embedding?: { name: string; provider: string; dimension: number };
-      think?: { name: string; provider: string };
-    } | null;
-  };
 }
 
 let mcpStatusProbeInFlight: Promise<McpServersStatus> | null = null;
-
 export async function getMcpServersStatus(probe = true): Promise<McpServersStatus> {
   if (probe && mcpStatusProbeInFlight) return mcpStatusProbeInFlight;
   const request = (async () => {
@@ -4852,9 +1678,6 @@ export async function getMcpServersStatus(probe = true): Promise<McpServersStatu
   }
 }
 
-/**
- * Load a skill into the current session.
- */
 export async function loadSkill(skillName: string): Promise<void> {
   const resp = await fetch(`${API_BASE}/skills/load`, {
     method: "POST",
@@ -4864,9 +1687,6 @@ export async function loadSkill(skillName: string): Promise<void> {
   if (!resp.ok) throw new Error(`Failed to load skill: ${resp.status}`);
 }
 
-/**
- * Generate a title for a session using AI.
- */
 export async function generateTitle(
   sessionId: string
 ): Promise<{ title: string }> {
@@ -4878,9 +1698,6 @@ export async function generateTitle(
   return resp.json();
 }
 
-/**
- * Get token count for a session (system + messages).
- */
 export async function getSessionTokenCount(
   sessionId: string,
   runtimeMode?: "agent" | "chat",
@@ -4902,9 +1719,6 @@ export async function getSessionTokenCount(
   return resp.json();
 }
 
-/**
- * Get token counts for a list of files.
- */
 export async function getFileTokenCounts(
   paths: string[]
 ): Promise<{ files: Array<{ path: string; tokens: number }> }> {
@@ -4943,10 +1757,6 @@ interface AgentCompactOperation extends Omit<Partial<AgentCompactResult>, "statu
   error?: string;
 }
 
-/**
- * Manually compact an idle Agent Session's model context projection.
- * The visible/raw transcript and control-plane ledgers are not modified.
- */
 export async function compactAgentSession(
   sessionId: string,
   focus = "",
@@ -4999,9 +1809,6 @@ export async function compactAgentSession(
   throw new Error("等待 Agent 上下文压缩结果超时；可稍后重试或刷新 Session 状态。");
 }
 
-/**
- * Clear all messages in a session (like Claude Code /clear).
- */
 export async function clearSession(
   sessionId: string
 ): Promise<{ status: string; session_id: string }> {
@@ -5012,3 +1819,4 @@ export async function clearSession(
   if (!resp.ok) throw new Error(`Failed to clear session: ${resp.status}`);
   return resp.json();
 }
+ 

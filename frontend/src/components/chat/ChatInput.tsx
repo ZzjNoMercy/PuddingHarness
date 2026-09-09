@@ -1,9 +1,9 @@
+/* Target Harness ChatInput overlay: generic attachments, Goal, review, and HITL controls. */
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   ArrowUp,
-  ArrowLeft,
   Check,
   ChevronDown,
   FolderKanban,
@@ -17,7 +17,6 @@ import {
   FileSpreadsheet,
   FileText,
   ImagePlus,
-  Layers3,
   Paperclip,
   Plus,
   ShieldCheck,
@@ -33,12 +32,10 @@ import {
 import { useProjectFolderPicker } from "@/components/projects/useProjectFolderPicker";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import {
-  listAnalyticsModels,
   listSkills,
   getSessionTokenCount,
   uploadAgentAttachments,
   type AgentAttachment,
-  type AnalyticsModelSummary,
   type ApprovalMode,
   type RunReviewPolicy,
 } from "@/lib/api";
@@ -59,7 +56,7 @@ function formatContextPercentage(percentage: number, used: number): string {
 import SlashCommandMenu from "./SlashCommandMenu";
 
 type AttachmentKind = AgentAttachment["type"];
-type OpenPopover = null | "plus" | "plus-model" | "project" | "approval" | "llm" | "review-policy";
+type OpenPopover = null | "plus" | "project" | "approval" | "llm" | "review-policy";
 type SelectedSkillHint = { name: string; start: number; end: number };
 
 const thinkingLevelLabels: Record<ThinkingLevel, string> = {
@@ -154,9 +151,7 @@ export default function ChatInput() {
     thinkingLevel,
     credentialName,
     setLlmSelection,
-    analyticsModelId,
-    setAnalyticsModelId,
-    goalModeEnabled,
+      goalModeEnabled,
     setGoalModeEnabled,
     runReviewPolicy,
     setRunReviewPolicy,
@@ -210,7 +205,6 @@ export default function ChatInput() {
   const isSubmitting = isSessionSubmitting(submittingSessionIds, sessionId);
   const disabled = !projectsLoaded || sessionHistoryLoading || isStreaming || isCompressing || approvalModeSaving || isSubmitting || isUploading || currentRun?.status === "waiting_hitl";
   const configurationBusy = isSubmitting || isUploading;
-  const [analyticsModels, setAnalyticsModels] = useState<AnalyticsModelSummary[]>([]);
   const [providerRegistry, setProviderRegistry] = useState<ProviderRegistry | null>(null);
   const detectedImagePaths = useMemo(() => {
     const matches = text.match(/(?:~|\/|[A-Za-z]:[\\/])(?:[^\s'"<>]|\\ )+\.(?:png|jpe?g|webp|gif|bmp|tiff?)/gi);
@@ -347,10 +341,6 @@ export default function ChatInput() {
     () => projects.find((project) => project.project_id === currentProjectId) || null,
     [projects, currentProjectId]
   );
-  const selectedAnalyticsModel = useMemo(
-    () => analyticsModels.find((model) => model.id === analyticsModelId) || null,
-    [analyticsModelId, analyticsModels]
-  );
   const conversationModels = useMemo(() => {
     if (!providerRegistry) return [];
     return providerRegistry.providers.flatMap((provider) =>
@@ -402,13 +392,6 @@ export default function ChatInput() {
     return () => {
       window.removeEventListener("puddingclaw:provider-bindings-changed", refreshProviderRegistry);
     };
-  }, [runtimeMode]);
-
-  useEffect(() => {
-    if (runtimeMode !== "agent") return;
-    listAnalyticsModels()
-      .then((result) => setAnalyticsModels(result.models))
-      .catch(() => setAnalyticsModels([]));
   }, [runtimeMode]);
 
   useEffect(() => {
@@ -812,10 +795,10 @@ export default function ChatInput() {
               if (ch === " " || ch === "\n") break; // hit whitespace before finding `/`
               if (ch === "/") {
                 // Valid if at start or preceded by space/newline
-                if (i === 0 || val[i - 1] === " " || val[i - 1] === "\n") {
-                  slashPos = i;
-                }
-                break;
+               if (i === 0 || val[i - 1] === " " || val[i - 1] === "\n") {
+                 slashPos = i;
+               }
+               break;
               }
             }
 
@@ -861,11 +844,11 @@ export default function ChatInput() {
                 <button
                   type="button"
                   onClick={() => togglePopover("plus")}
-                  aria-expanded={openPopover === "plus" || openPopover === "plus-model"}
+                  aria-expanded={openPopover === "plus"}
                   aria-haspopup="menu"
-                  aria-label="添加附件、分析模型或目标"
+                  aria-label="添加附件或目标"
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-all ${
-                    openPopover === "plus" || openPopover === "plus-model"
+                    openPopover === "plus"
                       ? "border-[#002fa7]/15 bg-[#e8edff] text-[#002fa7]"
                       : "border-black/[0.06] bg-white/50 text-gray-600 hover:bg-white/80 hover:text-gray-950"
                   }`}
@@ -873,129 +856,46 @@ export default function ChatInput() {
                   <Plus className="h-4 w-4" />
                 </button>
 
-                {(openPopover === "plus" || openPopover === "plus-model") && (
+                {openPopover === "plus" && (
                   <div
                     role="menu"
                     className="absolute bottom-full left-0 z-50 mb-2 w-full max-w-[22rem] rounded-2xl border border-black/[0.10] bg-white p-2 shadow-2xl shadow-slate-900/15 animate-fade-in-scale"
                   >
-                    {openPopover === "plus-model" ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setOpenPopover("plus")}
-                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] font-medium text-gray-700 hover:bg-black/[0.04]"
-                        >
-                          <ArrowLeft className="h-4 w-4" />
-                          选择分析模型
-                        </button>
-                        <div className="my-1 h-px bg-black/[0.06]" />
-                        <div className="max-h-60 overflow-y-auto py-1">
-                          <button
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={!analyticsModelId}
-                            onClick={() => {
-                              setAnalyticsModelId(null);
-                              setOpenPopover(null);
-                            }}
-                            className={`flex w-full items-start gap-2 rounded-xl px-3 py-2 text-left transition-colors ${
-                              !analyticsModelId
-                                ? "bg-[#002fa7]/[0.07] text-[#002fa7]"
-                                : "text-gray-700 hover:bg-black/[0.04]"
-                            }`}
-                          >
-                            <Layers3 className="mt-0.5 h-4 w-4 shrink-0" />
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-[13px] font-medium">不使用分析模型</span>
-                              <span className="block text-[11px] text-gray-400">按通用 Agent 上下文执行</span>
-                            </span>
-                            {!analyticsModelId && <Check className="mt-0.5 h-4 w-4" />}
-                          </button>
-                          {analyticsModels.map((model) => (
-                            <button
-                              type="button"
-                              role="menuitemradio"
-                              aria-checked={analyticsModelId === model.id}
-                              key={model.id}
-                              onClick={() => {
-                                setAnalyticsModelId(model.id);
-                                setOpenPopover(null);
-                              }}
-                              className={`flex w-full items-start gap-2 rounded-xl px-3 py-2 text-left transition-colors ${
-                                analyticsModelId === model.id
-                                  ? "bg-[#002fa7]/[0.07] text-[#002fa7]"
-                                  : "text-gray-700 hover:bg-black/[0.04]"
-                              }`}
-                            >
-                              <Layers3 className="mt-0.5 h-4 w-4 shrink-0" />
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[13px] font-medium">{model.name}</span>
-                                <span className="block truncate text-[11px] text-gray-400">{model.id}</span>
-                              </span>
-                              {analyticsModelId === model.id && <Check className="mt-0.5 h-4 w-4" />}
-                            </button>
-                          ))}
-                          {analyticsModels.length === 0 && (
-                            <p className="px-3 py-3 text-[12px] text-gray-400">
-                              还没有分析模型，可在智能问数工作台创建或导入。
-                            </p>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setOpenPopover(null);
-                            attachmentInputRef.current?.click();
-                          }}
-                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] text-gray-700 hover:bg-black/[0.04]"
-                        >
-                          <Paperclip className="h-4 w-4" />
-                          <span className="flex-1">添加文件和图片</span>
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => setOpenPopover("plus-model")}
-                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] text-gray-700 hover:bg-black/[0.04]"
-                        >
-                          <Layers3 className="h-4 w-4" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block">分析模型</span>
-                            <span className="block truncate text-[11px] text-gray-400">
-                              {selectedAnalyticsModel?.name || "未选择"}
-                            </span>
-                          </span>
-                          <ChevronDown className="h-4 w-4 -rotate-90" />
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitemcheckbox"
-                          aria-checked={goalModeEnabled}
-                          onClick={() => {
-                            setOpenPopover(null);
-                            setGoalModeEnabled(!goalModeEnabled);
-                          }}
-                          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] hover:bg-black/[0.04] ${
-                            goalModeEnabled ? "text-emerald-700" : "text-gray-700"
-                          }`}
-                        >
-                          <Target className="h-4 w-4" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block">目标</span>
-                            <span className="block text-[11px] text-gray-400">
-                              {goalModeEnabled
-                                ? "下次发送将开启 Goal"
-                                : "默认关闭；仅对下次发送生效"}
-                            </span>
-                          </span>
-                          {goalModeEnabled && <Check className="h-4 w-4" />}
-                        </button>
-                      </>
-                    )}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setOpenPopover(null);
+                        attachmentInputRef.current?.click();
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] text-gray-700 hover:bg-black/[0.04]"
+                    >
+                      <Paperclip className="h-4 w-4" />
+                      <span className="flex-1">添加文件和图片</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={goalModeEnabled}
+                      onClick={() => {
+                        setOpenPopover(null);
+                        setGoalModeEnabled(!goalModeEnabled);
+                      }}
+                      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] hover:bg-black/[0.04] ${
+                        goalModeEnabled ? "text-emerald-700" : "text-gray-700"
+                      }`}
+                    >
+                      <Target className="h-4 w-4" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block">目标</span>
+                        <span className="block text-[11px] text-gray-400">
+                          {goalModeEnabled
+                            ? "下次发送将开启 Goal"
+                            : "默认关闭；仅对下次发送生效"}
+                        </span>
+                      </span>
+                      {goalModeEnabled && <Check className="h-4 w-4" />}
+                    </button>
                   </div>
                 )}
               </div>

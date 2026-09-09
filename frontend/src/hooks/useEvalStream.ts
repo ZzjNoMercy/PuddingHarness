@@ -4,16 +4,15 @@
  * Drives the evaluation state machine:
  *   idle → evaluating → completed
  *
- * LEGACY DEPENDENCY: this review hook still calls the retired streamChat
- * compatibility client. The old runtime is no longer maintained; migrate this
- * workflow to a dedicated evaluator before changing or extending it.
+ * Uses the maintained Agent transport. A result is saved only after a normal
+ * completed Run supplies all five scores and its final verdict.
  *
  * Streams the evaluation prompt via SSE, parses format markers from the
  * accumulated token buffer, and manages all derived state.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { streamChat } from "@/lib/api";
+import { createSession, streamAgent } from "@/lib/api";
 import { saveEvalResult, type FiveDimEvalResult } from "@/lib/evalApi";
 
 // ── Exported Types ────────────────────────────────────────
@@ -302,8 +301,8 @@ export function useEvalStream(): UseEvalStreamReturn {
         };
         setVerdict(v);
         verdictRef.current = v;
-        setPhase("completed");
-        stopTimer();
+        // A streamed marker is provisional. Only the completed Run boundary
+        // may finalize and persist this evaluation.
       }
     }
 
@@ -378,13 +377,16 @@ export function useEvalStream(): UseEvalStreamReturn {
       const ctrl = new AbortController();
       abortCtrlRef.current = ctrl;
 
-      const sessionId = `eval-${skillName}-${Date.now()}`;
       const prompt = buildEvalPrompt(skillPath);
 
       // Run the async generator in a self-contained async IIFE
       (async () => {
         try {
-          for await (const event of streamChat(prompt, sessionId, ctrl.signal)) {
+          const session = await createSession({ runtime_mode: "agent", run_review_policy: "off" });
+          if (ctrl.signal.aborted) return;
+          const sessionId = session.id;
+          let completed = false;
+          for await (const event of streamAgent(prompt, sessionId, null, ctrl.signal)) {
             if (ctrl.signal.aborted) break;
 
             if (event.event === "token") {
@@ -402,9 +404,43 @@ export function useEvalStream(): UseEvalStreamReturn {
 
               // Parse full buffer — dedup via seenMarkersRef prevents reprocessing
               parseAndApplyMarkers(textBufferRef.current);
+            } else if (event.event.endsWith("_required")) {
+              ctrl.abort();
+              setError("评估需要人工确认，已停止。请先完成相关授权后重新评估。");
+              setPhase("idle");
+              stopTimer();
+              return;
             } else if (event.event === "done") {
-              // Final parse pass
+              if (event.data.run_outcome !== "completed") {
+                throw new Error(`评估未正常完成：${String(event.data.run_outcome || "unknown")}`);
+              }
+              const finalText = typeof event.data.final_response === "string" && event.data.final_response.trim()
+                ? event.data.final_response
+                : typeof event.data.content === "string" ? event.data.content : "";
+              if (!finalText.trim()) {
+                throw new Error("评估未返回非空最终结果，未保存。");
+              }
+              if (finalText !== textBufferRef.current) {
+                textBufferRef.current = finalText;
+                seenMarkersRef.current = new Set();
+                logCursorRef.current = 0;
+                pendingLineRef.current = "";
+                dimensionsRef.current = INITIAL_DIMENSIONS.map((d) => ({ ...d, checks: [] }));
+                verdictRef.current = null;
+                strengthsRef.current = [];
+                weaknessesRef.current = [];
+                setDimensions(dimensionsRef.current);
+                setVerdict(null);
+                setStrengths([]);
+                setWeaknesses([]);
+                setLogLines([]);
+              }
               parseAndApplyMarkers(textBufferRef.current);
+              const scores = dimensionsRef.current.map((dimension) => dimension.score);
+              if (!verdictRef.current || scores.some((score) => score === null || score < 1 || score > 5)
+                || scores.reduce<number>((sum, score) => sum + (score ?? 0), 0) !== verdictRef.current.totalScore) {
+                throw new Error("评估结果缺少完整评分或总分不一致，未保存。");
+              }
 
               // Flush any remaining pending line
               if (pendingLineRef.current.trim()) {
@@ -431,11 +467,11 @@ export function useEvalStream(): UseEvalStreamReturn {
                   weaknesses: weaknessesRef.current,
                   session_id: sessionId,
                 };
-                saveEvalResult(skillNameRef.current, result, version).catch(
-                  (err) => console.error("Failed to save eval result:", err)
-                );
+                await saveEvalResult(skillNameRef.current, result, version);
               }
 
+              if (ctrl.signal.aborted) return;
+              completed = true;
               stopTimer();
               setPhase((prev) => (prev === "evaluating" ? "completed" : prev));
               break;
@@ -444,12 +480,10 @@ export function useEvalStream(): UseEvalStreamReturn {
                 typeof event.data.message === "string"
                   ? event.data.message
                   : "Evaluation error";
-              setError(msg);
-              setPhase("idle");
-              stopTimer();
-              break;
+              throw new Error(msg);
             }
           }
+          if (!completed && !ctrl.signal.aborted) throw new Error("评估连接在完成前中断，未保存。");
         } catch (err) {
           if (!ctrl.signal.aborted) {
             const msg = err instanceof Error ? err.message : String(err);

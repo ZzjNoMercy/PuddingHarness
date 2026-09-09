@@ -34,7 +34,7 @@ except ImportError:  # pragma: no cover - Windows fallback uses the process lock
 
 
 def cli_package_dir(base_dir: Path) -> Path:
-    configured = str(os.getenv("PUDDINGCLAW_CLI_PACKAGE_DIR") or "").strip()
+    configured = str(os.getenv("PUDDINGHARNESS_CLI_PACKAGE_DIR") or "").strip()
     if configured:
         return Path(configured).expanduser().resolve()
     return (base_dir.parent / "packages" / "puddingclaw-deploy-cli").resolve()
@@ -108,7 +108,7 @@ def _cli_status(command: str | None, *, runner: CommandRunner) -> dict[str, Any]
 
 
 def _requested_policy() -> tuple[str, bool]:
-    configured = str(os.getenv("PUDDINGCLAW_CLI_INSTALL_POLICY") or "").strip().lower()
+    configured = str(os.getenv("PUDDINGHARNESS_CLI_INSTALL_POLICY") or "").strip().lower()
     if configured:
         return (configured if configured in INSTALL_POLICIES else "never"), True
 
@@ -117,7 +117,7 @@ def _requested_policy() -> tuple[str, bool]:
     # production and receive an interactive prompt instead of an implicit
     # global npm install.
     environment = str(
-        os.getenv("PUDDINGCLAW_ENV") or os.getenv("PUDDINGCLAW_ENVIRONMENT") or ""
+        os.getenv("PUDDINGHARNESS_ENV") or os.getenv("PUDDINGHARNESS_ENVIRONMENT") or ""
     ).strip().lower()
     if environment in {"production", "prod", "staging"}:
         return "prompt", False
@@ -260,7 +260,7 @@ def ensure_cli_runtime(
     should_install = policy == "auto" or (policy == "prompt" and _prompt_for_install())
     if not should_install:
         initial["install_message"] = (
-            "CLI not installed; set PUDDINGCLAW_CLI_INSTALL_POLICY=auto or run "
+            "CLI not installed; set PUDDINGHARNESS_CLI_INSTALL_POLICY=auto or run "
             "npm install -g ./packages/puddingclaw-deploy-cli"
         )
         _last_status = initial
@@ -304,7 +304,7 @@ def ensure_cli_runtime(
                 "--no-fund",
                 str(package_dir),
             ],
-            timeout=max(10.0, float(os.getenv("PUDDINGCLAW_CLI_INSTALL_TIMEOUT_S", "120"))),
+            timeout=max(10.0, float(os.getenv("PUDDINGHARNESS_CLI_INSTALL_TIMEOUT_S", "120"))),
             runner=runner,
         )
     finally:

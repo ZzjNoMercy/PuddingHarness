@@ -146,26 +146,9 @@ def evaluate_deterministic_criteria(
                     final_state,
                 )
             )
-        elif criterion.id == "analytics_evidence_traceability":
-            evaluations.append(
-                _evaluate_evidence_traceability(
-                    criterion.id,
-                    "analytics",
-                    harness_context,
-                    final_state,
-                )
-            )
         elif criterion.id == "code_validation":
             evaluations.append(
                 _evaluate_code_validation(
-                    criterion.id,
-                    harness_context,
-                    final_state,
-                )
-            )
-        elif criterion.id == "analytics_model_invariants":
-            evaluations.append(
-                _evaluate_analytics_model_invariants(
                     criterion.id,
                     harness_context,
                     final_state,
@@ -182,55 +165,6 @@ def evaluate_deterministic_criteria(
                 )
             )
     return evaluations
-
-
-def _evaluate_analytics_model_invariants(
-    criterion_id: str,
-    harness_context: dict[str, Any],
-    final_state: dict[str, Any],
-) -> CriterionEvaluation:
-    from harness.analytics_invariants import evaluate_model_invariants
-
-    model_id = str(final_state.get("analytics_model_id") or harness_context.get("analytics_model_id") or "").strip()
-    if not model_id:
-        # 与缺证据惯例一致 fail-closed：编译期能绑定模型，执行期取不到 id 属异常。
-        return CriterionEvaluation(
-            criterion_id=criterion_id,
-            name=criterion_id,
-            passed=False,
-            verifier=VerifierKind.DETERMINISTIC,
-            evidence=[{"kind": "analytics_model_invariants", "analytics_model_id": ""}],
-            gap="契约包含分析模型验收不变量，但最终状态缺少 analytics_model_id。",
-            failure_kind=VerificationFailureKind.INFRASTRUCTURE_ERROR,
-        )
-    try:
-        violations = evaluate_model_invariants(model_id, final_state)
-    except Exception as exc:
-        return CriterionEvaluation(
-            criterion_id=criterion_id,
-            name=criterion_id,
-            passed=False,
-            verifier=VerifierKind.DETERMINISTIC,
-            evidence=[{"kind": "analytics_model_invariants", "analytics_model_id": model_id}],
-            gap=f"分析模型验收不变量执行异常：{exc}",
-            failure_kind=VerificationFailureKind.INFRASTRUCTURE_ERROR,
-        )
-    evidence = [
-        {
-            "kind": "analytics_model_invariants",
-            "analytics_model_id": model_id,
-            "violations": violations,
-        }
-    ]
-    return CriterionEvaluation(
-        criterion_id=criterion_id,
-        name=criterion_id,
-        passed=not violations,
-        verifier=VerifierKind.DETERMINISTIC,
-        evidence=evidence,
-        gap="；".join(violations[:5]) if violations else None,
-        failure_kind=VerificationFailureKind.TASK_GAP if violations else None,
-    )
 
 
 def _evaluate_todos(
@@ -785,23 +719,6 @@ def _evaluate_evidence_traceability(
                 evidence=evidence,
                 gap=("当前 Goal 修订版没有形成可验证的来源链路，或多来源回答没有显式引用真实 source_id / 网页链接。"),
             )
-    if required_pack == "analytics":
-        result_evidence = [
-            item
-            for item in evidence
-            if item.get("kind") in {"tool_result", "analytics_result"} and item.get("tool_call_id")
-        ]
-        if not result_evidence:
-            return CriterionEvaluation(
-                criterion_id=criterion_id,
-                name=criterion_id,
-                passed=False,
-                verifier=VerifierKind.DETERMINISTIC,
-                evidence=evidence,
-                gap=(
-                    "分析 pack 已激活，但缺少当前 Goal 修订版查询结果的输出摘要、result_id、query trace 或数据源引用。"
-                ),
-            )
     if (activations or inherited) and evidence:
         return CriterionEvaluation(
             criterion_id=criterion_id,
@@ -810,7 +727,7 @@ def _evaluate_evidence_traceability(
             verifier=VerifierKind.DETERMINISTIC,
             evidence=evidence,
         )
-    pack_label = "网页研究" if required_pack == "web_research" else "数据分析"
+    pack_label = "网页研究" if required_pack == "web_research" else "结构化"
     return CriterionEvaluation(
         criterion_id=criterion_id,
         name=criterion_id,

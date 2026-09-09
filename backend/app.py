@@ -1,54 +1,38 @@
-"""PuddingClaw Backend — FastAPI Entry Point"""
-
+"""PuddingHarness API composition; target-only cleanup of the legacy entry point."""
 import asyncio
 import os
 from builtins import BaseExceptionGroup
 from contextlib import asynccontextmanager
 from pathlib import Path
-
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-
 load_dotenv()
-
 BASE_DIR = Path(__file__).resolve().parent
-
 
 def _exception_leaf_summary(exc: BaseException) -> str:
     """Expose useful TaskGroup leaf errors without dumping tracebacks."""
-
     if isinstance(exc, BaseExceptionGroup):
         parts = [_exception_leaf_summary(item) for item in exc.exceptions]
-        return "; ".join(dict.fromkeys(part for part in parts if part))
-    detail = " ".join(str(exc).split())
-    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+        return '; '.join(dict.fromkeys((part for part in parts if part)))
+    detail = ' '.join(str(exc).split())
+    return f'{type(exc).__name__}: {detail}' if detail else type(exc).__name__
 
-
-async def _warm_mcp_discovery(
-    *,
-    max_attempts: int = 2,
-    retry_delay_seconds: float = 0.25,
-) -> None:
+async def _warm_mcp_discovery(*, max_attempts: int=2, retry_delay_seconds: float=0.25) -> None:
     """Prime MCP metadata while keeping startup failures non-fatal.
 
     A stdio MCP server can close its first cold-start handshake while its
     runtime is still settling.  Retry that transient once before surfacing a
     warning; discovery failures are not cached, so the retry is a clean spawn.
     """
-
     enabled_mcp: list[str] = []
     try:
         import config
         from mcp_clients import load_filtered_mcp_tools
         from mcp_clients.servers import effective_mcp_server_names
-        from extensions import extension_enabled
-
-        mcp_config = config.load_config().get("mcp", {})
-        enabled_mcp = effective_mcp_server_names(mcp_config.get("enabled", []))
-        if not extension_enabled("knowledge"):
-            enabled_mcp = [name for name in enabled_mcp if name != "gbrain"]
+        mcp_config = config.load_config().get('mcp', {})
+        enabled_mcp = effective_mcp_server_names(mcp_config.get('enabled', []))
         if not enabled_mcp:
             return
         attempts = max(1, max_attempts)
@@ -62,306 +46,102 @@ async def _warm_mcp_discovery(
                     raise
                 await asyncio.sleep(max(0.0, retry_delay_seconds))
             else:
-                retry_note = " after one cold-start retry" if attempt > 1 else ""
-                print(f"🔌 MCP discovery warmed{retry_note}: {len(tools)} filtered tools")
+                retry_note = ' after one cold-start retry' if attempt > 1 else ''
+                print(f'🔌 MCP discovery warmed{retry_note}: {len(tools)} filtered tools')
                 return
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        # Discovery failures are never cached; the first MCP-dependent Agent
-        # request retries on demand.  Spell this out because upstream stdio
-        # servers may print setup instructions that do not describe the
-        # durable PuddingClaw runtime accurately.
         cause = _exception_leaf_summary(exc)
-        print(
-            "⚠️ MCP discovery warm-up did not complete; backend startup will continue "
-            f"and first use will retry. Cause: {cause}"
-        )
-        if "gbrain" in enabled_mcp:
-            from mcp_clients.servers import gbrain_runtime_status
-
-            status = gbrain_runtime_status()
-            if status.get("ready"):
-                print(
-                    "ℹ️ Dedicated GBrain configuration and Schema Pack are present. "
-                    "This is only an MCP metadata warm-up failure; do not run `gbrain init`."
-                )
-
+        print(f'⚠️ MCP discovery warm-up did not complete; backend startup will continue and first use will retry. Cause: {cause}')
 
 async def _install_cli_runtime_in_background() -> None:
     """Install the optional CLI after the backend has become ready."""
-
     from cli_runtime import ensure_cli_runtime
-
     try:
         status = await asyncio.to_thread(ensure_cli_runtime, BASE_DIR)
-        if status.get("installed"):
+        if status.get('installed'):
             print(f"🧩 Worker CLI ready: {status.get('command')} v{status.get('version')} ({status.get('path')})")
         else:
-            print(
-                "⚠️ Worker CLI remains unavailable; backend is still usable. "
-                f"{status.get('install_message') or 'install it separately when needed.'}"
-            )
+            print(f"⚠️ Worker CLI remains unavailable; backend is still usable. {status.get('install_message') or 'install it separately when needed.'}")
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        print(f"⚠️ Worker CLI background setup failed; backend will continue: {exc}")
+        print(f'⚠️ Worker CLI background setup failed; backend will continue: {exc}')
 
-
+@asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: scan skills, initialize agent, build memory index."""
     import traceback
-
-    print("🚀 Initializing PuddingClaw backend...")
-
-    import capabilities
+    print('🚀 Initializing PuddingHarness backend...')
     from backend_lease import BackendInstanceLease
     from cli_runtime import detect_cli_runtime
-    from db import init_database
-    from db_maintenance import catalog_maintenance_manager
+    from db import close_database, get_database_status, init_database
     from evaluation.worker_manager import evaluation_worker_manager
-    from graph.agent import agent_manager
     from graph.attachment_store import attachment_store
     from graph.deepagents_manager import deepagents_agent_manager
     from graph.session_manager import session_manager
-    from extensions import extension_enabled
     from projects.registry import project_registry
-    from runtime_identity.migration import (
-        migrate_definitions_and_data,
-        migrate_home_layout,
-        migrate_project_trust_registry,
-        migrate_projects_and_memory,
-        migrate_runtime_artifacts,
-        migrate_runtime_home,
-        migrate_workspace_artifacts,
-    )
     from runtime_identity.paths import PuddingClawPaths
     from tools.skills_scanner import scan_skills
-
     user_paths = PuddingClawPaths.from_environment()
     user_paths.ensure_layout()
     backend_lease = BackendInstanceLease()
     lease_acquired = backend_lease.acquire(user_paths.state())
     if not lease_acquired:
-        print(f"⚠️ {backend_lease.diagnostic}")
-    migration = migrate_runtime_home(BASE_DIR, user_paths)
-    definitions_data_migration = migrate_definitions_and_data(BASE_DIR, user_paths)
-    projects_memory_migration = migrate_projects_and_memory(BASE_DIR, user_paths)
-    project_trust_migration = migrate_project_trust_registry(user_paths)
-    runtime_artifacts_migration = migrate_runtime_artifacts(BASE_DIR, user_paths)
-    workspace_artifacts_migration = migrate_workspace_artifacts(BASE_DIR, user_paths)
-    home_layout_migration = migrate_home_layout(user_paths)
-    if migration.get("conflicts"):
-        print(f"⚠️ Runtime migration retained {len(migration['conflicts'])} conflicts for review")
-    if definitions_data_migration.get("conflicts"):
-        print(
-            "⚠️ Definitions/data migration retained "
-            f"{len(definitions_data_migration['conflicts'])} conflicts for review"
-        )
-    if projects_memory_migration.get("conflicts"):
-        print(
-            "⚠️ Projects/memory migration retained "
-            f"{len(projects_memory_migration['conflicts'])} conflicts for review"
-        )
-    if project_trust_migration.get("upgraded"):
-        print(
-            "🔐 Preserved trust for "
-            f"{project_trust_migration['upgraded']} migrated projects"
-        )
-    if runtime_artifacts_migration.get("conflicts"):
-        print(
-            "⚠️ Runtime artifact migration retained "
-            f"{len(runtime_artifacts_migration['conflicts'])} conflicts for review"
-        )
-    if workspace_artifacts_migration.get("conflicts"):
-        print(
-            "⚠️ Workspace artifact migration retained "
-            f"{len(workspace_artifacts_migration['conflicts'])} conflicts for review"
-        )
-    if home_layout_migration.get("conflicts"):
-        print(
-            "⚠️ Home layout migration retained "
-            f"{len(home_layout_migration['conflicts'])} conflicts for review"
-        )
-    scan_skills(
-        BASE_DIR,
-        user_root=user_paths.user_skills(),
-        snapshot_path=user_paths.skill_management() / "SKILLS_SNAPSHOT.md",
-    )
-    knowledge_enabled = extension_enabled("knowledge")
-    analytics_enabled = extension_enabled("analytics")
-    headless_worker_enabled = extension_enabled("headless_worker")
-    query_result_cleanup_manager = None
-    knowledge_import_worker_manager = None
-    semantic_dimension_build_worker_manager = None
-    knowledge_catalog_watcher = None
-    if analytics_enabled:
-        from analytics.nl2sql.result_cleanup import query_result_cleanup_manager
-        from analytics.semantic_assets import get_semantic_asset_registry
-
-        semantic_assets = get_semantic_asset_registry(user_paths.user_definitions()).refresh()
-        print(f"🧭 Semantic assets loaded: {semantic_assets.get('count', 0)}")
-    if knowledge_enabled:
-        from knowledge.import_worker import knowledge_import_worker_manager
-        from knowledge.portal_search import knowledge_catalog_watcher
-
-        knowledge_catalog_watcher.start(user_paths.root)
-    if knowledge_enabled or analytics_enabled:
-        from knowledge.semantic_dimension_worker import semantic_dimension_build_worker_manager
-    project_registry.initialize(user_paths.root)
-    attachment_store.initialize(
-        user_paths.root,
-    )
-    # SQL Evidence catalog backfill needs the durable Session owner index.
-    session_manager.initialize(sessions_dir=user_paths.sessions())
-    cli_status = detect_cli_runtime(BASE_DIR)
-    if not cli_status.get("installed"):
-        print(
-            "ℹ️ Worker CLI not ready yet; backend startup will continue. "
-            f"Policy={cli_status.get('install_policy')}; "
-            "an optional background setup may install it."
-        )
-        if cli_status.get("install_policy") in {"auto", "prompt"}:
-            app.state.cli_runtime_install_task = asyncio.create_task(
-                _install_cli_runtime_in_background(),
-                name="puddingclaw-cli-runtime-setup",
-            )
-    db_ready = await init_database() if knowledge_enabled or analytics_enabled else False
-    if db_ready:
-        print("🗄️ Knowledge catalog database ready")
-        if query_result_cleanup_manager is not None:
-            query_result_cleanup_manager.start()
-        if lease_acquired:
-            catalog_maintenance_manager.start()
-    elif knowledge_enabled or analytics_enabled:
-        print("⚠️ Knowledge catalog database unavailable; knowledge management API will report degraded status")
-    # Confirm database startup before spawning database-backed stdio MCP
-    # servers. Keep discovery ahead of capability detection because Milvus can
-    # create gRPC worker threads and forking after that emits unsafe-fork
-    # warnings. Awaiting discovery here also keeps first-use latency out of the
-    # first Agent request whenever warm-up succeeds.
-    await _warm_mcp_discovery()
-    if knowledge_enabled or analytics_enabled:
-        caps = await capabilities.detect_capabilities(force=True)
-        print(f"🔌 Capabilities: {caps.to_dict()}")
-    # LEGACY compatibility bootstrap. /api/chat and one deep-research helper
-    # still depend on it while they await migration; new flows must not do so.
+        raise RuntimeError(f'Harness Home is already owned by another backend: {backend_lease.diagnostic}')
     try:
-        agent_manager.initialize(BASE_DIR, sessions_dir=user_paths.sessions())
-    except Exception as e:
-        print(f"⚠️ Legacy Chat compatibility runtime initialization failed: {e}")
-        traceback.print_exc()
-        print("ℹ️ Server will continue running; the maintained Agent runtime initializes separately.")
-    try:
-        deepagents_agent_manager.initialize(BASE_DIR, user_root=user_paths.root)
-        recovered_reviews = await deepagents_agent_manager.recover_pending_run_reviews()
-        if recovered_reviews:
-            print(f"🔁 Recovered {len(recovered_reviews)} pending ordinary Run review(s)")
-    except Exception as e:
-        print(f"⚠️ DeepAgents initialization failed: {e}")
-        traceback.print_exc()
-        print("ℹ️ Server will continue running, but /api/agent requires DeepAgents runtime.")
-    if db_ready:
-        # LLM Wiki jobs use the Agent harness without creating a user-visible
-        # conversation, so workers may only claim jobs after the harness owner
-        # has been initialized.
-        if knowledge_import_worker_manager is not None:
-            if lease_acquired:
-                knowledge_import_worker_manager.start(user_paths.root)
-            else:
-                print(
-                    "⚠️ 本实例不启动知识导入后台 Worker：另一 Backend 实例持有 "
-                    f"{backend_lease.path}"
-                )
-        if semantic_dimension_build_worker_manager is not None:
-            if lease_acquired:
-                semantic_dimension_build_worker_manager.start(user_paths.root)
-            else:
-                print(
-                    "⚠️ 本实例不启动语义维度构建后台 Worker：另一 Backend 实例持有 "
-                    f"{backend_lease.path}"
-                )
-
-    print("✅ PuddingClaw backend ready")
-    await evaluation_worker_manager.start_pending()
-    try:
+        if not await init_database():
+            raise RuntimeError(f"Harness database initialization failed: {get_database_status().get('last_error')}")
+        scan_skills(BASE_DIR, user_root=user_paths.user_skills(), snapshot_path=user_paths.skill_management() / 'SKILLS_SNAPSHOT.md')
+        project_registry.initialize(user_paths.root)
+        attachment_store.initialize(user_paths.root)
+        session_manager.initialize(sessions_dir=user_paths.sessions())
+        cli_status = detect_cli_runtime(BASE_DIR)
+        if not cli_status.get('installed'):
+            print(f"ℹ️ Worker CLI not ready yet; backend startup will continue. Policy={cli_status.get('install_policy')}; an optional background setup may install it.")
+            if cli_status.get('install_policy') in {'auto', 'prompt'}:
+                app.state.cli_runtime_install_task = asyncio.create_task(_install_cli_runtime_in_background(), name='puddingharness-cli-runtime-setup')
+        await _warm_mcp_discovery()
+        try:
+            deepagents_agent_manager.initialize(BASE_DIR, user_root=user_paths.root)
+            recovered_reviews = await deepagents_agent_manager.recover_pending_run_reviews()
+            if recovered_reviews:
+                print(f'🔁 Recovered {len(recovered_reviews)} pending ordinary Run review(s)')
+        except Exception as e:
+            print(f'⚠️ DeepAgents initialization failed: {e}')
+            traceback.print_exc()
+            print('ℹ️ Server will continue running, but /api/agent requires DeepAgents runtime.')
+        await evaluation_worker_manager.start_pending()
+        print('✅ PuddingHarness backend ready')
         yield
     finally:
-        cli_task = getattr(app.state, "cli_runtime_install_task", None)
+        cli_task = getattr(app.state, 'cli_runtime_install_task', None)
         if cli_task is not None and not cli_task.done():
             cli_task.cancel()
             await asyncio.gather(cli_task, return_exceptions=True)
-        await evaluation_worker_manager.stop()
-        if query_result_cleanup_manager is not None:
-            await query_result_cleanup_manager.stop()
-        if semantic_dimension_build_worker_manager is not None:
-            await semantic_dimension_build_worker_manager.stop()
-        if knowledge_import_worker_manager is not None:
-            await knowledge_import_worker_manager.stop()
-        if knowledge_catalog_watcher is not None:
-            await knowledge_catalog_watcher.stop()
-        await catalog_maintenance_manager.stop()
-        backend_lease.release()
-
-
-app = FastAPI(title="PuddingClaw", version="0.1.19", lifespan=lifespan)
-
-cors_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000",
-    ).split(",")
-    if origin.strip()
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.middleware("http")
-async def extension_route_boundary(request, call_next):
-    from extensions import disabled_extension_for_api_path, extension_disabled_payload
-
-    disabled = disabled_extension_for_api_path(request.url.path)
-    if disabled:
-        return JSONResponse(
-            status_code=404,
-            content=extension_disabled_payload(disabled),
-        )
-    return await call_next(request)
-
-
-from runtime_control import MaintenanceModeError  # noqa: E402
-
+        try:
+            await evaluation_worker_manager.stop()
+        finally:
+            try:
+                await close_database()
+            finally:
+                backend_lease.release()
+app = FastAPI(title='PuddingHarness', version='0.1.19', lifespan=lifespan)
+cors_origins = [origin.strip() for origin in os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if origin.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+from runtime_control import MaintenanceModeError
 
 @app.exception_handler(MaintenanceModeError)
 async def maintenance_mode_exception_handler(request, exc: MaintenanceModeError):
     """Map drain/maintenance write rejections to a uniform 503 + Retry-After."""
-
-    return JSONResponse(
-        status_code=503,
-        headers={"Retry-After": str(exc.retry_after)},
-        content={
-            "detail": str(exc),
-            "write_mode": exc.write_mode,
-            "retry_after": exc.retry_after,
-        },
-    )
-
-
+    return JSONResponse(status_code=503, headers={'Retry-After': str(exc.retry_after)}, content={'detail': str(exc), 'write_mode': exc.write_mode, 'retry_after': exc.retry_after})
+from api.connectors import router as connectors_router
 from api.agent import router as agent_router
 from api.attachments import router as attachments_router
 from api.capabilities import router as capabilities_router
-from api.chat import router as chat_router  # LEGACY: compatibility only; no longer maintained.
 from api.compress import router as compress_router
 from api.config_api import router as config_router
-from api.connectors import router as connectors_router
 from api.eval_api import router as eval_router
 from api.evaluation import router as evaluation_router
 from api.files import router as files_router
@@ -380,69 +160,35 @@ from api.toolchains import router as toolchains_router
 from api.user_input_requests import router as user_input_requests_router
 from api.kernel_fallback_requests import router as kernel_fallback_requests_router
 from api.web_search_config import router as web_search_config_router
+app.include_router(connectors_router, prefix='/api')
+app.include_router(agent_router, prefix='/api')
+app.include_router(skills_api_router, prefix='/api')
+app.include_router(files_router, prefix='/api')
+app.include_router(sessions_router, prefix='/api')
+app.include_router(tokens_router, prefix='/api')
+app.include_router(compress_router, prefix='/api')
+app.include_router(config_router, prefix='/api')
+app.include_router(eval_router, prefix='/api')
+app.include_router(evaluation_router, prefix='/api')
+app.include_router(stats_router, prefix='/api')
+app.include_router(mcp_router, prefix='/api')
+app.include_router(maintenance_router, prefix='/api')
+app.include_router(capabilities_router, prefix='/api')
+app.include_router(runtime_profile_router, prefix='/api')
+app.include_router(projects_router, prefix='/api')
+app.include_router(permissions_router, prefix='/api')
+app.include_router(skill_plans_router, prefix='/api')
+app.include_router(skill_secret_requests_router, prefix='/api')
+app.include_router(attachments_router, prefix='/api')
+app.include_router(user_input_requests_router, prefix='/api')
+app.include_router(kernel_fallback_requests_router, prefix='/api')
+app.include_router(toolchains_router, prefix='/api')
+app.include_router(web_search_config_router, prefix='/api')
+from api.headless import router as headless_router
+from api.headless import headless_activity_router
+app.include_router(headless_router, prefix='/api')
+app.include_router(headless_activity_router, prefix='/api')
 
-app.include_router(chat_router, prefix="/api")  # LEGACY: new conversations use /api/agent.
-app.include_router(agent_router, prefix="/api")
-app.include_router(skills_api_router, prefix="/api")  # Must come before files_router
-app.include_router(files_router, prefix="/api")
-app.include_router(sessions_router, prefix="/api")
-app.include_router(tokens_router, prefix="/api")
-app.include_router(compress_router, prefix="/api")
-app.include_router(config_router, prefix="/api")
-app.include_router(eval_router, prefix="/api")
-app.include_router(evaluation_router, prefix="/api")
-app.include_router(stats_router, prefix="/api")
-app.include_router(mcp_router, prefix="/api")
-app.include_router(maintenance_router, prefix="/api")  # Core-level: registered unconditionally
-app.include_router(capabilities_router, prefix="/api")
-app.include_router(runtime_profile_router, prefix="/api")
-app.include_router(projects_router, prefix="/api")
-app.include_router(permissions_router, prefix="/api")
-app.include_router(skill_plans_router, prefix="/api")
-app.include_router(skill_secret_requests_router, prefix="/api")
-app.include_router(attachments_router, prefix="/api")
-app.include_router(user_input_requests_router, prefix="/api")
-app.include_router(kernel_fallback_requests_router, prefix="/api")
-app.include_router(connectors_router, prefix="/api")
-app.include_router(toolchains_router, prefix="/api")
-app.include_router(web_search_config_router, prefix="/api")
-
-from extensions import extension_enabled
-
-if extension_enabled("knowledge"):
-    from api.brain_schema import router as brain_schema_router
-    from api.feishu_connector import router as feishu_connector_router
-    from api.knowledge import router as knowledge_router
-    from api.knowledge_sources import router as knowledge_sources_router
-    from api.llm_wiki import router as llm_wiki_router
-    from api.read_later import router as read_later_router
-
-    app.include_router(knowledge_router, prefix="/api")
-    app.include_router(knowledge_sources_router, prefix="/api")
-    app.include_router(feishu_connector_router, prefix="/api")
-    app.include_router(brain_schema_router, prefix="/api")
-    app.include_router(llm_wiki_router, prefix="/api")
-    app.include_router(read_later_router, prefix="/api")
-
-if extension_enabled("analytics"):
-    from api.analytics import router as analytics_router
-    from api.database_sql_revisions import router as database_sql_revisions_router
-    from api.dimension_build_rules import router as dimension_build_rules_router
-    from api.logical_dataset_rules import router as logical_dataset_rules_router
-
-    app.include_router(analytics_router, prefix="/api")
-    app.include_router(dimension_build_rules_router, prefix="/api")
-    app.include_router(logical_dataset_rules_router, prefix="/api")
-    app.include_router(database_sql_revisions_router, prefix="/api")
-
-if extension_enabled("headless_worker"):
-    from api.headless import router as headless_router
-    from api.headless import headless_activity_router
-
-    app.include_router(headless_router, prefix="/api")
-    app.include_router(headless_activity_router, prefix="/api")
-
-
-@app.get("/")
+@app.get('/')
 async def root():
-    return {"name": "PuddingClaw", "version": "0.1.19", "status": "running"}
+    return {'name': 'PuddingHarness', 'version': '0.1.19', 'status': 'running'}

@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-PROTOCOL_VERSION = "1.0"
+PROTOCOL_VERSION = "2.0"
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
@@ -233,7 +233,7 @@ class ResolvedEvaluatorBinding(EvaluatorBinding):
 
 
 class EvalCase(ProtocolModel):
-    protocol_version: Literal["1.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["1.0", "2.0"] = PROTOCOL_VERSION
     case_id: str = Field(default_factory=lambda: new_id("case"))
     revision_id: str = Field(default_factory=lambda: new_id("rev"))
     name: str = Field(min_length=1, max_length=200)
@@ -262,7 +262,7 @@ class EvalCase(ProtocolModel):
 
 
 class EvalDataset(ProtocolModel):
-    protocol_version: Literal["1.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["1.0", "2.0"] = PROTOCOL_VERSION
     dataset_id: str = Field(default_factory=lambda: new_id("ds"))
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
@@ -288,7 +288,7 @@ class EvalDataset(ProtocolModel):
 
 
 class DatasetBundle(ProtocolModel):
-    protocol_version: Literal["1.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["1.0", "2.0"] = PROTOCOL_VERSION
     exported_at: datetime = Field(default_factory=utc_now)
     dataset: EvalDataset
     version_id: str | None = None
@@ -300,8 +300,50 @@ class DatasetBundle(ProtocolModel):
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+_LEGACY_SELECTOR_FIELD = "analytics_model_id"
+
+
+def project_legacy_evaluation_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Project a protocol-1.0 artifact in memory without rewriting its source bytes.
+
+    The retired selector is deliberately discarded at the Harness boundary. The
+    caller may retain the original JSON for audit/export, but a projected
+    Candidate can never forward this field into a new Agent Run.
+    """
+
+    if not isinstance(payload, dict) or payload.get("protocol_version") != "1.0":
+        return payload
+    projected = dict(payload)
+    candidate = projected.get("candidate")
+    if isinstance(candidate, dict):
+        candidate = dict(candidate)
+        candidate.pop(_LEGACY_SELECTOR_FIELD, None)
+        config = candidate.get("config")
+        if isinstance(config, dict):
+            config = dict(config)
+            config.pop(_LEGACY_SELECTOR_FIELD, None)
+            candidate["config"] = config
+        candidate["protocol_version"] = PROTOCOL_VERSION
+        projected["candidate"] = candidate
+    projected["protocol_version"] = PROTOCOL_VERSION
+    # This excluded marker prevents a projected legacy row from being executed
+    # or persisted as if it were a newly authored experiment.
+    projected["historical_read_only"] = True
+    return projected
+
+
+class HistoricalEvaluationArtifact(ProtocolModel):
+    """Opaque read-only view of a legacy artifact plus its in-memory projection."""
+
+    protocol_version: Literal["1.0"]
+    payload: dict[str, Any]
+
+    def project(self) -> dict[str, Any]:
+        return project_legacy_evaluation_payload(self.payload)
+
+
 class ExperimentCandidate(ProtocolModel):
-    protocol_version: Literal["1.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["1.0", "2.0"] = PROTOCOL_VERSION
     candidate_id: str = Field(default_factory=lambda: new_id("candidate"))
     name: str = Field(min_length=1, max_length=200)
     target: Literal["puddingclaw_agent"] = "puddingclaw_agent"
@@ -309,7 +351,6 @@ class ExperimentCandidate(ProtocolModel):
     thinking_level: Literal["low", "high", "max"] | None = None
     credential_name: str | None = None
     project_id: str | None = None
-    analytics_model_id: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     fingerprint: str | None = None
     fingerprint_status: Literal["partial", "complete"] = "partial"
@@ -330,7 +371,15 @@ class ExecutionPolicy(ProtocolModel):
 
 
 class EvalExperiment(ProtocolModel):
-    protocol_version: Literal["1.0"] = PROTOCOL_VERSION
+    @model_validator(mode="before")
+    @classmethod
+    def project_legacy_artifact(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return project_legacy_evaluation_payload(value)
+        return value
+
+    protocol_version: Literal["1.0", "2.0"] = PROTOCOL_VERSION
+    historical_read_only: bool = Field(default=False, exclude=True, repr=False)
     experiment_id: str = Field(default_factory=lambda: new_id("exp"))
     name: str = Field(min_length=1, max_length=200)
     dataset_id: str
@@ -379,7 +428,7 @@ class TraceReference(ProtocolModel):
 
 
 class AgentRunEnvelope(ProtocolModel):
-    protocol_version: Literal["1.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["1.0", "2.0"] = PROTOCOL_VERSION
     eval_run_id: str = Field(default_factory=lambda: new_id("evalrun"))
     case_id: str
     experiment_id: str
@@ -415,7 +464,7 @@ class EvidenceReference(ProtocolModel):
 
 
 class TraceEvidence(ProtocolModel):
-    protocol_version: Literal["1.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["1.0", "2.0"] = PROTOCOL_VERSION
     provider: Literal["envelope", "langsmith", "puddingclaw_trace"] = "envelope"
     run_id: str | None = None
     trace_url: str | None = None
@@ -434,7 +483,7 @@ class TraceEvidence(ProtocolModel):
 
 
 class EvaluationResult(ProtocolModel):
-    protocol_version: Literal["1.0"] = PROTOCOL_VERSION
+    protocol_version: Literal["1.0", "2.0"] = PROTOCOL_VERSION
     evaluator_id: str
     evaluator_version: str
     dimension: EvaluationDimension
@@ -510,4 +559,7 @@ def protocol_json_schemas() -> dict[str, dict[str, Any]]:
         TraceEvidence,
         EvaluationResult,
     ]
-    return {model.__name__: model.model_json_schema() for model in models}
+    schemas = {model.__name__: model.model_json_schema() for model in models}
+    # Internal read-only provenance is an adapter guard, never a public protocol field.
+    schemas.get("EvalExperiment", {}).get("properties", {}).pop("historical_read_only", None)
+    return schemas

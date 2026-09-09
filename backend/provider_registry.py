@@ -577,11 +577,11 @@ def _environment_provider(name: str) -> dict[str, Any] | None:
 
 
 def _bootstrap_multimodal_binding(payload: dict[str, Any]) -> dict[str, Any]:
-    initial = _environment_provider("PUDDINGCLAW_INITIAL_MULTIMODAL_PROVIDER")
+    initial = _environment_provider("PUDDINGHARNESS_INITIAL_MULTIMODAL_PROVIDER")
     credential_ref = (
-        "env://PUDDINGCLAW_INITIAL_PROVIDER_API_KEY"
+        "env://PUDDINGHARNESS_INITIAL_PROVIDER_API_KEY"
         if initial and initial.get("reuse_primary_credential") is True
-        else "env://PUDDINGCLAW_INITIAL_MULTIMODAL_PROVIDER_API_KEY"
+        else "env://PUDDINGHARNESS_INITIAL_MULTIMODAL_PROVIDER_API_KEY"
     )
     _bootstrap_provider_binding(
         payload,
@@ -607,7 +607,7 @@ def _default_registry() -> dict[str, Any]:
             "vanna_embedding": "dashscope:dashscope-compatible:text-embedding-v4:text_embedding",
         },
     }
-    raw = os.getenv("PUDDINGCLAW_INITIAL_PROVIDER", "").strip()
+    raw = os.getenv("PUDDINGHARNESS_INITIAL_PROVIDER", "").strip()
     if not raw:
         return _bootstrap_multimodal_binding(payload)
     try:
@@ -622,7 +622,7 @@ def _default_registry() -> dict[str, Any]:
     model_name = str(initial.get("model") or "").strip()
     if not base_url or not model_name:
         return _bootstrap_multimodal_binding(payload)
-    credential_ref = "env://PUDDINGCLAW_INITIAL_PROVIDER_API_KEY"
+    credential_ref = "env://PUDDINGHARNESS_INITIAL_PROVIDER_API_KEY"
     configured_provider = next(
         (provider for provider in payload["providers"] if provider.get("id") == provider_id),
         None,
@@ -852,7 +852,7 @@ class ProviderRegistry:
         return payload
 
     def _bootstrap_id(self) -> str:
-        return os.getenv("PUDDINGCLAW_INITIAL_PROVIDER_BOOTSTRAP_ID", "").strip()
+        return os.getenv("PUDDINGHARNESS_INITIAL_PROVIDER_BOOTSTRAP_ID", "").strip()
 
     def _mark_environment_bootstrap(self) -> None:
         bootstrap_id = self._bootstrap_id()
@@ -872,9 +872,9 @@ class ProviderRegistry:
             return False
         _bootstrap_provider_binding(
             payload,
-            _environment_provider("PUDDINGCLAW_INITIAL_PROVIDER"),
+            _environment_provider("PUDDINGHARNESS_INITIAL_PROVIDER"),
             binding="agent",
-            credential_ref="env://PUDDINGCLAW_INITIAL_PROVIDER_API_KEY",
+            credential_ref="env://PUDDINGHARNESS_INITIAL_PROVIDER_API_KEY",
         )
         _bootstrap_multimodal_binding(payload)
         return True

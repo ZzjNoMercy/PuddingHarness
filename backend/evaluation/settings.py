@@ -48,7 +48,7 @@ class EvaluationSettingsStore:
         from runtime_identity.paths import PuddingClawPaths
 
         default = PuddingClawPaths.from_environment().evaluation_settings()
-        self.path = Path(path or os.getenv("PUDDINGCLAW_EVALUATION_SETTINGS") or default)
+        self.path = Path(path or os.getenv("PUDDINGHARNESS_EVALUATION_SETTINGS") or default)
 
     def _load_file(self) -> dict[str, Any]:
         payload: dict[str, Any] = {}

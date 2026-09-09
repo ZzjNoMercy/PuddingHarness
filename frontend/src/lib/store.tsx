@@ -1,3 +1,4 @@
+/* Target Harness store overlay: generic session, Goal, HITL, workspace, and MCP state. */
 "use client";
 
 import React, {
@@ -31,7 +32,6 @@ import {
   updateProject as apiUpdateProject,
   setProjectTrust as apiSetProjectTrust,
   removeProject as apiRemoveProject,
-  updateSessionAnalyticsModel as apiUpdateSessionAnalyticsModel,
   updateSessionLlmSelection as apiUpdateSessionLlmSelection,
   updateSessionRunReviewPolicy as apiUpdateSessionRunReviewPolicy,
   getSessionApprovalMode as apiGetSessionApprovalMode,
@@ -52,9 +52,6 @@ import {
   TraceMiddlewareInvocation,
   GraphStructure,
   PermissionRequest,
-  DimensionBuildRuleRequest,
-  LogicalDatasetRuleRequest,
-  DatabaseSqlRevisionRequest,
   UserInputRequest,
   SkillSecretRequest,
   KernelFallbackRequest,
@@ -289,9 +286,6 @@ export interface ChatMessage {
   sources?: SourceRecord[];
   citations?: CitationRef[];
   permissionRequests?: PermissionRequest[];
-  dimensionBuildRuleRequests?: DimensionBuildRuleRequest[];
-  logicalDatasetRuleRequests?: LogicalDatasetRuleRequest[];
-  databaseSqlRevisionRequests?: DatabaseSqlRevisionRequest[];
   userInputRequests?: UserInputRequest[];
   skillSecretRequests?: SkillSecretRequest[];
   kernelFallbackRequests?: KernelFallbackRequest[];
@@ -317,7 +311,6 @@ export interface SessionMeta {
   workspace_type?: string;
   workspace_path?: string;
   session_source?: string;
-  analytics_model_id?: string | null;
   llm_model_id?: string | null;
   thinking_level?: "low" | "high" | "max" | null;
   credential_name?: string | null;
@@ -381,8 +374,6 @@ interface AppState {
   setRuntimeMode: (mode: "agent") => void;
   currentProjectId: string | null;
   setCurrentProjectId: (id: string | null) => void;
-  analyticsModelId: string | null;
-  setAnalyticsModelId: (id: string | null) => void;
   llmModelId: string | null;
   thinkingLevel: "low" | "high" | "max" | null;
   credentialName: string | null;
@@ -1064,7 +1055,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const selectedTraceQueryMapRef = useRef<Record<string, string | null>>({});
   const graphsMapRef = useRef<Record<string, GraphStructure | null>>({});
   const graphActiveNodesRef = useRef<Record<string, string | null>>({});
-  const analyticsModelIdsMapRef = useRef<Record<string, string | null>>({});
   const llmSelectionsMapRef = useRef<Record<string, {
     modelId: string | null;
     thinkingLevel: "low" | "high" | "max" | null;
@@ -1158,7 +1148,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const runtimeMode = "agent" as const;
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [currentProjectId, setCurrentProjectIdRaw] = useState<string | null>(null);
-  const [analyticsModelId, setAnalyticsModelIdRaw] = useState<string | null>(null);
   const [llmModelId, setLlmModelIdRaw] = useState<string | null>(null);
   const [thinkingLevel, setThinkingLevelRaw] = useState<"low" | "high" | "max" | null>(null);
   const [credentialName, setCredentialNameRaw] = useState<string | null>(null);
@@ -1309,7 +1298,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const detail = (event as CustomEvent<{ binding?: string }>).detail;
       if (detail?.binding !== "agent") return;
 
-      // The unsent placeholder conversation inherits the global Agent binding.
+  // The unsent placeholder conversation inherits the global Agent binding.
       // Never turn that inherited default into a durable per-session override.
       llmSelectionsMapRef.current.default = {
         modelId: null,
@@ -1348,23 +1337,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [setInspectorActiveTab]);
   const closeAttachmentPreview = useCallback(() => {
     setActiveAttachmentPreview(null);
-  }, []);
-
-  const setAnalyticsModelId = useCallback((id: string | null) => {
-    const sid = sessionIdRef.current;
-    analyticsModelIdsMapRef.current[sid] = id;
-    setAnalyticsModelIdRaw(id);
-
-    if (sid === "default") return;
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sid ? { ...session, analytics_model_id: id } : session
-      )
-    );
-    apiUpdateSessionAnalyticsModel(sid, id).catch(() => {
-      // Keep the optimistic session-local selection. A subsequent Agent turn
-      // also persists the same value through its request metadata.
-    });
   }, []);
 
   const setLlmSelection = useCallback((
@@ -1952,9 +1924,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then((list) => {
         sessionsRef.current = list;
         for (const session of list) {
-          if (!Object.prototype.hasOwnProperty.call(analyticsModelIdsMapRef.current, session.id)) {
-            analyticsModelIdsMapRef.current[session.id] = session.analytics_model_id ?? null;
-          }
           if (!Object.prototype.hasOwnProperty.call(llmSelectionsMapRef.current, session.id)) {
             llmSelectionsMapRef.current[session.id] = {
               modelId: session.llm_model_id ?? null,
@@ -2090,7 +2059,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (id === "default") {
-        setAnalyticsModelIdRaw(analyticsModelIdsMapRef.current.default ?? null);
         setLlmModelIdRaw(llmSelectionsMapRef.current.default?.modelId ?? null);
         setThinkingLevelRaw(llmSelectionsMapRef.current.default?.thinkingLevel ?? null);
         setCredentialNameRaw(llmSelectionsMapRef.current.default?.credentialName ?? null);
@@ -2104,7 +2072,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setGoalRuns([]);
         setVerificationReport(null);
       } else {
-        setAnalyticsModelIdRaw(analyticsModelIdsMapRef.current[id] ?? null);
         setLlmModelIdRaw(llmSelectionsMapRef.current[id]?.modelId ?? null);
         setThinkingLevelRaw(llmSelectionsMapRef.current[id]?.thinkingLevel ?? null);
         setCredentialNameRaw(llmSelectionsMapRef.current[id]?.credentialName ?? null);
@@ -2796,7 +2763,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const existing = createSessionPromisesRef.current.get(originSessionId);
     if (existing) return existing;
     const snapshot = {
-      analyticsModelId: analyticsModelIdsMapRef.current[originSessionId] ?? null,
       llmSelection: llmSelectionsMapRef.current[originSessionId] || {
         modelId: null,
         thinkingLevel: null,
@@ -2811,7 +2777,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const creation = (async (): Promise<string | null> => {
       try {
         const meta = await apiCreateSession({
-          analytics_model_id: snapshot.analyticsModelId,
           llm_model_id: snapshot.llmSelection.modelId,
           thinking_level: snapshot.llmSelection.thinkingLevel,
           credential_name: snapshot.llmSelection.credentialName,
@@ -2820,7 +2785,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           runtime_mode: snapshot.runtimeMode,
           project_id: snapshot.projectId,
         });
-        analyticsModelIdsMapRef.current[meta.id] = snapshot.analyticsModelId;
         llmSelectionsMapRef.current[meta.id] = { ...snapshot.llmSelection };
         approvalModesMapRef.current[meta.id] = meta.approval_mode;
         approvalPolicyEpochsMapRef.current[meta.id] = meta.policy_epoch;
@@ -2834,7 +2798,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               updated_at: meta.updated_at || Date.now() / 1000,
               runtime_mode: meta.runtime_mode || snapshot.runtimeMode,
               project_id: meta.project_id ?? snapshot.projectId,
-              analytics_model_id: snapshot.analyticsModelId,
               llm_model_id: snapshot.llmSelection.modelId,
               thinking_level: snapshot.llmSelection.thinkingLevel,
               credential_name: snapshot.llmSelection.credentialName,
@@ -2856,7 +2819,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setSessionId(meta.id);
         }
         if (originSessionId === "default") {
-          analyticsModelIdsMapRef.current.default = null;
           llmSelectionsMapRef.current.default = { modelId: null, thinkingLevel: null, credentialName: null };
           approvalModesMapRef.current.default = "smart";
           approvalPolicyEpochsMapRef.current.default = 1;
@@ -2905,7 +2867,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         // Clean up map entries
         delete messagesMapRef.current[id];
-        delete analyticsModelIdsMapRef.current[id];
         delete llmSelectionsMapRef.current[id];
         delete llmSelectionSaveChainsRef.current[id];
         assistantIdsRef.current.delete(id);
@@ -3177,8 +3138,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const runOptions = {
         runtimeMode,
         projectId: currentProjectId,
-        analyticsModelId:
-          analyticsModelIdsMapRef.current[sendSessionId] ?? analyticsModelId ?? null,
         llmSelection: llmSelectionsMapRef.current[sendSessionId] || {
           modelId: llmModelId,
           thinkingLevel,
@@ -3456,7 +3415,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           controller.signal,
           userId,
           attachments,
-          runOptions.analyticsModelId,
           goalModeForRun,
           options.goalControlAction === "start" ? goalForRun?.goal_id || null : null,
           contextGoalIdForRun,
@@ -3934,13 +3892,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 ? event.data.ledger_revision
                 : undefined,
             );
-            if (workspaceView === "chat" && nextTodos.length > 0) {
-              setInspectorOpen(true);
-              setInspectorActiveTab("progress");
-            }
-            continue;
-          }
-
+           if (workspaceView === "chat" && nextTodos.length > 0) {
+             setInspectorOpen(true);
+             setInspectorActiveTab("progress");
+           }
+           continue;
+         }
           if (event.event === "task_preflight_started") {
             continue;
           }
@@ -4512,72 +4469,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             continue;
           }
 
-          if (event.event === "dimension_build_rule_required") {
-            updateSessionRunActivity(sendSessionId, {
-              phase: "permission",
-              label: "等待你确认数据口径",
-            });
-            const targetId = getAssistantId();
-            const request = event.data as unknown as DimensionBuildRuleRequest;
-            updateMsgs((prev) => {
-              const updated = [...prev];
-              const idx = updated.findIndex((message) => message.id === targetId);
-              if (idx === -1) return prev;
-              const message = { ...updated[idx] };
-              const existing = message.dimensionBuildRuleRequests || [];
-              message.dimensionBuildRuleRequests = existing.some((item) => item.id === request.id)
-                ? existing.map((item) => item.id === request.id ? request : item)
-                : [...existing, request];
-              updated[idx] = message;
-              return updated;
-            });
-            continue;
-          }
-
-          if (event.event === "logical_dataset_rule_required") {
-            updateSessionRunActivity(sendSessionId, {
-              phase: "permission",
-              label: "等待你确认数据规则",
-            });
-            const targetId = getAssistantId();
-            const request = event.data as unknown as LogicalDatasetRuleRequest;
-            updateMsgs((prev) => {
-              const updated = [...prev];
-              const idx = updated.findIndex((message) => message.id === targetId);
-              if (idx === -1) return prev;
-              const message = { ...updated[idx] };
-              const existing = message.logicalDatasetRuleRequests || [];
-              message.logicalDatasetRuleRequests = existing.some((item) => item.id === request.id)
-                ? existing.map((item) => item.id === request.id ? request : item)
-                : [...existing, request];
-              updated[idx] = message;
-              return updated;
-            });
-            continue;
-          }
-
-          if (event.event === "database_sql_revision_required") {
-            updateSessionRunActivity(sendSessionId, {
-              phase: "permission",
-              label: "等待你确认 SQL 口径",
-            });
-            const targetId = getAssistantId();
-            const request = event.data as unknown as DatabaseSqlRevisionRequest;
-            updateMsgs((prev) => {
-              const updated = [...prev];
-              const idx = updated.findIndex((message) => message.id === targetId);
-              if (idx === -1) return prev;
-              const message = { ...updated[idx] };
-              const existing = message.databaseSqlRevisionRequests || [];
-              message.databaseSqlRevisionRequests = existing.some((item) => item.id === request.id)
-                ? existing.map((item) => item.id === request.id ? request : item)
-                : [...existing, request];
-              updated[idx] = message;
-              return updated;
-            });
-            continue;
-          }
-
           if (event.event === "user_input_required") {
             updateSessionRunActivity(sendSessionId, {
               phase: "hitl",
@@ -4638,57 +4529,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               message.skillSecretRequests = existing.some((item) => item.id === request.id)
                 ? existing.map((item) => item.id === request.id ? request : item)
                 : [...existing, request];
-              updated[idx] = message;
-              return updated;
-            });
-            continue;
-          }
-
-          if (event.event === "dimension_build_rule_resolved") {
-            const targetId = getAssistantId();
-            const requestId = String(event.data.request_id || "");
-            updateMsgs((prev) => {
-              const updated = [...prev];
-              const idx = updated.findIndex((message) => message.id === targetId);
-              if (idx === -1 || !requestId) return prev;
-              const message = { ...updated[idx] };
-              message.dimensionBuildRuleRequests = (message.dimensionBuildRuleRequests || []).map((item) =>
-                item.id === requestId ? { ...item, status: "resolved" } : item
-              );
-              updated[idx] = message;
-              return updated;
-            });
-            continue;
-          }
-
-          if (event.event === "logical_dataset_rule_resolved") {
-            const targetId = getAssistantId();
-            const requestId = String(event.data.request_id || "");
-            updateMsgs((prev) => {
-              const updated = [...prev];
-              const idx = updated.findIndex((message) => message.id === targetId);
-              if (idx === -1 || !requestId) return prev;
-              const message = { ...updated[idx] };
-              message.logicalDatasetRuleRequests = (message.logicalDatasetRuleRequests || []).map((request) =>
-                request.id === requestId ? { ...request, status: "resolved" } : request
-              );
-              updated[idx] = message;
-              return updated;
-            });
-            continue;
-          }
-
-          if (event.event === "database_sql_revision_resolved") {
-            const targetId = getAssistantId();
-            const requestId = String(event.data.request_id || "");
-            updateMsgs((prev) => {
-              const updated = [...prev];
-              const idx = updated.findIndex((message) => message.id === targetId);
-              if (idx === -1 || !requestId) return prev;
-              const message = { ...updated[idx] };
-              message.databaseSqlRevisionRequests = (message.databaseSqlRevisionRequests || []).map((request) =>
-                request.id === requestId ? { ...request, status: "resolved" } : request
-              );
               updated[idx] = message;
               return updated;
             });
@@ -5348,16 +5188,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
           })
           .catch(() => {});
-        apiGetCurrentSessionTodos(sendSessionId)
-          .then((snapshot) => {
-            updateSessionTodos(
-              sendSessionId,
-              snapshot.todos,
-              snapshot.authority,
-              snapshot.ledger_revision,
-            );
-          })
-          .catch(() => {});
+       apiGetCurrentSessionTodos(sendSessionId)
+         .then((snapshot) => {
+           updateSessionTodos(
+             sendSessionId,
+             snapshot.todos,
+             snapshot.authority,
+             snapshot.ledger_revision,
+           );
+         })
+         .catch(() => {});
         loadSessions();
       }
         return true;
@@ -5373,9 +5213,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateSessionMessages,
       updateSessionTodos,
       runtimeMode,
-      currentProjectId,
-      analyticsModelId,
-      llmModelId,
+      currentProjectId,      llmModelId,
       thinkingLevel,
       credentialName,
       goalModeEnabled,
@@ -5403,8 +5241,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setRuntimeMode,
         currentProjectId,
         setCurrentProjectId,
-        analyticsModelId,
-        setAnalyticsModelId,
         llmModelId,
         thinkingLevel,
         credentialName,

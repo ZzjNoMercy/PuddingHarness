@@ -1,198 +1,390 @@
-"""Deep Research Tool — spawn 独立 sub-agent 处理大输入研究任务。
+"""Host-bound deep research tool.
 
-设计要点：
-- 用户消息匹配"研究/综述/分析/深入了解/帮我看 X"等场景时，主 agent 应优先调用此工具
-- 子 agent 拥有独立的 messages 上下文，主 agent 不会看到子 agent 的中间步骤和原始数据
-- 子 agent 工具集仅 read_file + terminal + fetch_url（read-only 类），不含任何写入或递归 deep_research
-- 复用主 agent 的 LLM 实例（避免双初始化）
-- 复用 compression middleware 链（让子 agent 自己也节流）
-- 失败降级：子 agent 异常时返回错误字符串，不抛异常给主 agent
+The target harness must not discover a second, process-global tool/model graph
+for research.  A host binds the already selected model, backend, tools and
+middleware before exposing this tool to an agent.  An unbound tool therefore
+fails closed instead of silently starting a legacy runtime.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Type
+from typing import Any
 
-from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import BaseTool, ToolException
+from langgraph.errors import GraphInterrupt
+from pydantic import BaseModel, Field, PrivateAttr
 
 logger = logging.getLogger(__name__)
 
 
-RESEARCH_SUBAGENT_SYSTEM_PROMPT = """你是研究子 agent，基于 query 和 scope 收集信息并产出结构化摘要。
+RESEARCH_SUBAGENT_SYSTEM_PROMPT = """你是一个受宿主授权的研究子 agent。
 
-工作流程：
-1. 调用 read_file / terminal / fetch_url 收集证据（建议 4-6 次，最多 10 次）
-2. 产出 400-500 字符的中文摘要（**少于 400 字符视为不合格**）
-3. 引用具体证据（文件:行号 / URL / 命令输出）
-
-输出格式（必须包含以下四部分）：
-[发现] 核心发现（100-150 字）
-[证据] 关键证据点（150-200 字）
-[结论] 一句话回答（50-100 字）
-[工具调用] X/10 次
-
-质量标准：
-- 总字符数必须在 400-500 之间
-- 每个部分必须有实质内容，不能只有标题
-- 证据必须具体（不能只说"文件中提到"，要说"cache.py:88 行"）
+你只能使用宿主传入的只读工具和 FilesystemMiddleware 的 read_file，收集
+query 与 scope 所需的证据，然后给出简洁、结构化的结论。不要写文件、执行
+命令、安装依赖、修改状态、调用 deep_research 自身，或自行发现其它工具。
+每个事实都应尽量引用文件路径/行号、URL 或工具返回的具体证据。
 """
 
 
-# 子 agent 子工具最大调用次数（防止失控循环消耗 token）
 _SUBAGENT_TOOL_CALL_LIMIT = 10
-
-# 摘要最大返回字符数（主 agent 看到的内容）
 _SUMMARY_MAX_CHARS = 500
+
+# FilesystemMiddleware's execute/terminal-like tools are deliberately excluded.
+# Names outside this set are accepted only when their host-provided metadata says
+# that they are read-only.  This keeps MCP extensibility without trusting an
+# arbitrary imported tool merely because it was handed to the binding.
+_FORBIDDEN_TOOL_NAMES = frozenset(
+    {
+        "terminal",
+        "execute",
+        "rawterminal",
+        "write_file",
+        "edit_file",
+        "delete",
+        "install_packages",
+        "deep_research",
+        "task_manager",
+        "request_skill_runtime",
+        "request_skill_secret",
+    }
+)
+_EXPLICIT_READ_ONLY_NAMES = frozenset(
+    {"read_file", "fetch_url", "read_resource", "read_evidence", "web_search"}
+)
 
 
 class DeepResearchInput(BaseModel):
-    query: str = Field(
-        description="要研究的具体问题，例如 '这个目录下的 markdown 主要讲什么' 或 '为什么这个 log 里会有 OOM'"
+    query: str = Field(description="要研究的具体问题")
+    scope: str = Field(description="研究范围，可包含文件路径、目录或 URL")
+
+
+class _ResearchFailure(RuntimeError):
+    """A result that must never be presented as a successful research result."""
+
+
+class ResearchHostBinding:
+    """Immutable references supplied by the owning agent host."""
+
+    __slots__ = (
+        "model",
+        "backend",
+        "tools",
+        "middleware_factory",
+        "run_context",
+        "runnable_config",
+        "state_schema",
     )
-    scope: str = Field(
-        description="研究范围的自然语言描述，可包含文件路径、目录、URL、glob 模式。例如 'docs/ 下所有 md' 或 'logs/app.log 最后 200 行' 或 'https://example.com/spec'"
-    )
+
+    def __init__(
+        self,
+        *,
+        model: Any,
+        backend: Any,
+        tools: Sequence[BaseTool],
+        middleware_factory: Callable[[], Sequence[Any]],
+        run_context: Any = None,
+        runnable_config: Mapping[str, Any] | None = None,
+        state_schema: type[Any] | None = None,
+    ) -> None:
+        self.model = model
+        self.backend = backend
+        self.tools = tuple(tools)
+        self.middleware_factory = middleware_factory
+        self.run_context = run_context
+        self.runnable_config = dict(runnable_config or {})
+        self.state_schema = state_schema
 
 
 class DeepResearchTool(BaseTool):
-    """子 agent 隔离的深度研究工具。
-
-    调用语义：
-    - 主 agent 把 query + scope 传进来
-    - 内部构造独立 create_agent + 三个 read-only 工具
-    - 子 agent 自主完成多步检索 + 综合
-    - 返回 ≤500 字符的结构化摘要
-    """
+    """A deep-research capability that is usable only after host binding."""
 
     name: str = "deep_research"
     description: str = (
-        "Spawn an isolated sub-agent to perform deep research on a topic involving "
-        "multiple files, large files, or web sources. The sub-agent runs in a separate "
-        "context and only returns a 500-char structured summary. "
-        "USE THIS when the user asks to: research/analyze/summarize multiple files, "
-        "investigate logs, study a project structure, or read & synthesize web pages. "
-        "DO NOT use for single small file reads (use read_file directly) or trivial questions."
+        "Use the host-bound read-only research sub-agent for multi-file or web "
+        "evidence gathering. It returns a short evidence-backed summary."
     )
-    args_schema: Type[BaseModel] = DeepResearchInput
+    args_schema: type[BaseModel] = DeepResearchInput
     risk_level: str = "safe"
+    # Let LangChain format ToolException as ToolMessage(status="error") so the
+    # parent agent can explain the failed/blocked research call and continue.
+    handle_tool_error: bool = True
+    # Kept for the discovery factory's compatibility signature. It is never used
+    # to resolve tools, models, workspaces, or provider configuration.
     base_dir: str = ""
+    _host_binding: ResearchHostBinding | None = PrivateAttr(default=None)
 
-    def _run(self, query: str, scope: str) -> str:
-        """主入口：构造并执行子 agent，返回摘要字符串。"""
-        logger.info("[deep_research] start: query=%.60s, scope=%.60s", query, scope)
+    def _bind(self, binding: ResearchHostBinding) -> "DeepResearchTool":
+        self._host_binding = binding
+        return self
 
+    def _run(
+        self, query: str, scope: str, config: RunnableConfig = None, **_: Any
+    ) -> str:
         try:
-            summary = self._invoke_subagent(query, scope)
-            truncated = summary[:_SUMMARY_MAX_CHARS]
-            logger.info(
-                "[deep_research] done: produced %d chars (truncated to %d)",
-                len(summary), len(truncated),
+            host = self._require_host()
+            result = self._invoke_subagent(query, scope, host, config=config)
+            summary = self._validate_result(result)
+            return f"[deep_research result]\n{summary[:_SUMMARY_MAX_CHARS]}"
+        except GraphInterrupt:
+            raise
+        except ToolException:
+            raise
+        except Exception as exc:
+            logger.warning("[deep_research] failed: %s: %s", type(exc).__name__, exc)
+            raise ToolException(
+                f"[deep_research error] {type(exc).__name__}: {exc}"
+            ) from exc
+
+    async def _arun(
+        self, query: str, scope: str, config: RunnableConfig = None, **_: Any
+    ) -> str:
+        try:
+            host = self._require_host()
+            result = await self._ainvoke_subagent(query, scope, host, config=config)
+            summary = self._validate_result(result)
+            return f"[deep_research result]\n{summary[:_SUMMARY_MAX_CHARS]}"
+        except GraphInterrupt:
+            raise
+        except ToolException:
+            raise
+        except Exception as exc:
+            logger.warning("[deep_research] failed: %s: %s", type(exc).__name__, exc)
+            raise ToolException(
+                f"[deep_research error] {type(exc).__name__}: {exc}"
+            ) from exc
+
+    def _require_host(self) -> ResearchHostBinding:
+        if self._host_binding is None:
+            raise _ResearchFailure(
+                "deep_research requires an explicit host binding "
+                "(model, backend, tools, middleware_factory)"
             )
-            return f"[deep_research result]\n{truncated}"
-        except Exception as e:
-            logger.warning("[deep_research] failed: %s: %s", type(e).__name__, e)
-            return f"[deep_research error] sub-agent failed: {type(e).__name__}: {e}"
+        return self._host_binding
 
-    def _invoke_subagent(self, query: str, scope: str) -> str:
-        """构造独立子 agent 并 invoke 一次。"""
-        # 延迟 import 防循环依赖
+    @staticmethod
+    def _merge_config(
+        host: ResearchHostBinding, config: Any = None
+    ) -> dict[str, Any]:
+        merged = dict(host.runnable_config)
+        if config is not None:
+            if isinstance(config, Mapping):
+                merged.update(config)
+            else:
+                raise _ResearchFailure("parent RunnableConfig must be a mapping")
+        # The child must remain bounded even when a parent supplies a larger
+        # recursion limit.  ToolCallLimitMiddleware is the authoritative tool
+        # budget; this graph limit only prevents pathological model loops.
+        merged["recursion_limit"] = min(int(merged.get("recursion_limit", 100)), 100)
+        return merged
+
+    @staticmethod
+    def _prompt(query: str, scope: str) -> str:
+        return f"研究 query: {query}\n\n研究 scope: {scope}\n\n请只使用宿主授权的只读工具给出证据支持的结论。"
+
+    def _make_agent(self, host: ResearchHostBinding) -> Any:
+        from deepagents.middleware.filesystem import FilesystemMiddleware
         from langchain.agents import create_agent
+        from langchain.agents.middleware import ToolCallLimitMiddleware
+
+        # read_file is native to this middleware.  execute/write/edit/delete are
+        # never requested, so no raw terminal capability is exposed.
+        filesystem = FilesystemMiddleware(backend=host.backend, tools=["read_file"])
+        host_middleware = list(host.middleware_factory())
+        middleware = [filesystem, *host_middleware]
+        middleware.append(
+            ToolCallLimitMiddleware(
+                run_limit=_SUBAGENT_TOOL_CALL_LIMIT,
+                exit_behavior="error",
+            )
+        )
+        kwargs: dict[str, Any] = {
+            "model": host.model,
+            "tools": list(host.tools),
+            "system_prompt": RESEARCH_SUBAGENT_SYSTEM_PROMPT,
+            "middleware": middleware,
+        }
+        if host.state_schema is not None:
+            kwargs["state_schema"] = host.state_schema
+        return create_agent(**kwargs)
+
+    def _invoke_subagent(
+        self,
+        query: str,
+        scope: str,
+        host: ResearchHostBinding,
+        *,
+        config: Any = None,
+    ) -> Mapping[str, Any]:
         from langchain_core.messages import HumanMessage
-        # LEGACY DEPENDENCY: this helper still borrows the retired Chat
-        # runtime's model. Migrate it before removing graph.agent; do not add
-        # new dependencies on that unmaintained runtime.
-        from graph.agent import agent_manager
-        from graph.middlewares import build_compression_middlewares
-        from config import get_middleware_config
-        from tools import get_tools_by_categories
 
-        base_dir = Path(self.base_dir)
-
-        # 拿主 agent 的 llm 实例（已配置好 DeepSeek + temperature + streaming）
-        llm = agent_manager._llm
-        if llm is None:
-            raise RuntimeError("agent_manager._llm not initialized; deep_research requires main agent to be initialized first")
-
-        # 构造子 agent 工具集：只保留 read-only 工具，按 name 去重
-        # 注意：get_tools_by_categories({'knowledge'}) 实现上会隐式包含 core，
-        # 所以 core+knowledge 拼接会产生 read_file/terminal 重复，必须按 name 去重
-        # 同时严格排除 write_file 和 deep_research 自身（防递归）
-        _ALLOWED_SUB_TOOL_NAMES = ("read_file", "terminal", "fetch_url", "llamaindex_knowledge_query")
-        all_candidates = get_tools_by_categories(base_dir, {"core"}) + \
-                         get_tools_by_categories(base_dir, {"knowledge"})
-        seen_names: set[str] = set()
-        sub_tools = []
-        for tt in all_candidates:
-            if tt.name in _ALLOWED_SUB_TOOL_NAMES and tt.name not in seen_names:
-                sub_tools.append(tt)
-                seen_names.add(tt.name)
-
-        # 子 agent 的 middleware：复用主 agent 的 compression 链
-        # 不使用 ModelCallLimitMiddleware，因为：
-        # 1. recursion_limit: 100 已提供足够保护
-        # 2. system prompt 明确要求最多 10 次工具调用
-        # 3. ModelCallLimitMiddleware 的错误信息会干扰正常输出
-        compression_mws = build_compression_middlewares(llm, get_middleware_config())
-        mws = list(compression_mws)
-
-        logger.info("[deep_research] subagent starting with %d tools, recursion_limit=100, tool_call_limit=%d",
-                    len(sub_tools), _SUBAGENT_TOOL_CALL_LIMIT)
-
-        sub_agent = create_agent(
-            model=llm,
-            tools=sub_tools,
-            system_prompt=RESEARCH_SUBAGENT_SYSTEM_PROMPT,
-            middleware=mws,
+        agent = self._make_agent(host)
+        return agent.invoke(
+            {"messages": [HumanMessage(content=self._prompt(query, scope))]},
+            config=self._merge_config(host, config),
+            context=host.run_context,
         )
 
-        # 构造子 agent 的输入消息
-        prompt = f"研究 query: {query}\n\n研究 scope: {scope}\n\n请按 system prompt 要求收集证据并输出结构化摘要。"
+    async def _ainvoke_subagent(
+        self,
+        query: str,
+        scope: str,
+        host: ResearchHostBinding,
+        *,
+        config: Any = None,
+    ) -> Mapping[str, Any]:
+        from langchain_core.messages import HumanMessage
 
-        try:
-            result = sub_agent.invoke(
-                {"messages": [HumanMessage(content=prompt)]},
-                config={"recursion_limit": 100}
+        agent = self._make_agent(host)
+        return await agent.ainvoke(
+            {"messages": [HumanMessage(content=self._prompt(query, scope))]},
+            config=self._merge_config(host, config),
+            context=host.run_context,
+        )
+
+    @classmethod
+    def _validate_result(cls, result: Any) -> str:
+        from langchain_core.messages import AIMessage, ToolMessage
+
+        if not isinstance(result, Mapping):
+            raise _ResearchFailure("sub-agent returned no state")
+        if "__interrupt__" in result:
+            raise _ResearchFailure("sub-agent interrupted before completion")
+        messages = result.get("messages")
+        if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)) or not messages:
+            raise _ResearchFailure("sub-agent returned no messages")
+
+        evidence = False
+        for message in messages:
+            if isinstance(message, ToolMessage) or getattr(message, "type", None) == "tool":
+                status = getattr(message, "status", None)
+                metadata = getattr(message, "response_metadata", {}) or {}
+                additional = getattr(message, "additional_kwargs", {}) or {}
+                if status == "error" or metadata.get("error") or additional.get("error"):
+                    raise _ResearchFailure("sub-agent tool returned an error")
+                # read_resource currently reports adapter failures as ordinary
+                # strings.  Treat only its stable error marker as failure; a
+                # normal evidence body containing the ❌ character remains valid.
+                tool_content = getattr(message, "content", "")
+                if isinstance(tool_content, list):
+                    tool_content = "".join(
+                        block.get("text", "") if isinstance(block, Mapping) else str(block)
+                        for block in tool_content
+                    )
+                if str(tool_content).lstrip().startswith("❌ MCP Resource"):
+                    raise _ResearchFailure("sub-agent MCP resource read failed")
+                evidence = True
+        if not evidence:
+            raise _ResearchFailure("sub-agent produced no successful tool evidence")
+
+        final = messages[-1]
+        if not isinstance(final, AIMessage) and getattr(final, "type", None) != "ai":
+            raise _ResearchFailure("sub-agent did not finish with an AI message")
+        if getattr(final, "tool_calls", None):
+            raise _ResearchFailure("sub-agent final AI message still requests a tool")
+
+        metadata = getattr(final, "response_metadata", {}) or {}
+        additional = getattr(final, "additional_kwargs", {}) or {}
+        stop_values = [
+            metadata.get(key)
+            for key in ("stop_reason", "stopReason", "finish_reason", "finishReason")
+        ] + [
+            additional.get(key)
+            for key in ("stop_reason", "stopReason", "finish_reason", "finishReason")
+        ] + [
+            result.get(key)
+            for key in ("stop_reason", "stopReason", "finish_reason", "finishReason")
+        ]
+        bad_stops = {"length", "max_tokens", "error", "content_filter", "cancelled", "canceled"}
+        if any(str(value).lower() in bad_stops for value in stop_values if value is not None):
+            raise _ResearchFailure("sub-agent stopped without a complete answer")
+
+        content = getattr(final, "content", "")
+        if isinstance(content, list):
+            content = "".join(
+                block.get("text", "") if isinstance(block, Mapping) else str(block)
+                for block in content
             )
+        text = str(content).strip()
+        if not text:
+            raise _ResearchFailure("sub-agent returned an empty final answer")
+        return text
 
-            logger.info("[deep_research] subagent completed, result keys: %s", list(result.keys()))
-            final_messages = result.get("messages", [])
-            logger.info("[deep_research] final_messages count: %d", len(final_messages))
 
-            # 新增：记录所有消息的类型和内容摘要
-            for i, msg in enumerate(final_messages):
-                msg_type = getattr(msg, "type", "unknown")
-                content_preview = str(msg.content)[:100] if hasattr(msg, "content") else "N/A"
-                logger.info("[deep_research] msg[%d]: type=%s, content_preview=%s...", i, msg_type, content_preview)
+def _tool_metadata(tool: Any) -> Mapping[str, Any]:
+    metadata = getattr(tool, "metadata", None)
+    return metadata if isinstance(metadata, Mapping) else {}
 
-            # 取最后一条 AIMessage 的 content 作为摘要
-            for msg in reversed(final_messages):
-                if hasattr(msg, "type") and msg.type == "ai" and msg.content:
-                    content = msg.content
-                    logger.info("[deep_research] found AIMessage, raw content type: %s, length: %d",
-                                type(content).__name__, len(str(content)))
 
-                    if isinstance(content, list):
-                        content = "".join(
-                            block.get("text", "") if isinstance(block, dict) else str(block)
-                            for block in content
-                        )
+def _is_read_only_tool(tool: Any) -> bool:
+    name = str(getattr(tool, "name", ""))
+    metadata = _tool_metadata(tool)
+    if metadata.get("destructiveHint") is True or metadata.get("destructive_hint") is True:
+        return False
+    if name in _EXPLICIT_READ_ONLY_NAMES:
+        return True
+    return (
+        metadata.get("readOnlyHint") is True
+        or metadata.get("read_only_hint") is True
+    )
 
-                    final_output = str(content).strip()
-                    logger.info("[deep_research] final output length: %d chars", len(final_output))
-                    return final_output
 
-            return "(子 agent 未产生任何 AIMessage 输出)"
+def bind_research_tool(
+    tool: DeepResearchTool,
+    *,
+    model: Any,
+    backend: Any,
+    tools: Sequence[BaseTool],
+    middleware_factory: Callable[[], Sequence[Any]],
+    run_context: Any = None,
+    runnable_config: Mapping[str, Any] | None = None,
+    state_schema: type[Any] | None = None,
+) -> DeepResearchTool:
+    """Bind research to the owning agent's already selected runtime objects."""
 
-        except Exception as e:
-            logger.error("[deep_research] subagent failed with exception: %s", e, exc_info=True)
-            return f"(子 agent 执行失败: {e})"
+    if not isinstance(tool, DeepResearchTool):
+        raise TypeError("tool must be a DeepResearchTool")
+    if model is None or backend is None:
+        raise ValueError("model and backend are required for research binding")
+    if not callable(middleware_factory):
+        raise TypeError("middleware_factory must be callable")
+
+    bound: list[BaseTool] = []
+    seen: set[str] = set()
+    for candidate in tools:
+        name = str(getattr(candidate, "name", ""))
+        if not name or name in seen:
+            continue
+        if name in _FORBIDDEN_TOOL_NAMES or not _is_read_only_tool(candidate):
+            raise ValueError(f"research tool is not explicitly read-only: {name or '<unnamed>'}")
+        # FilesystemMiddleware owns the native read_file tool.  Passing another
+        # implementation would create an ambiguous graph tool name.
+        if name != "read_file":
+            bound.append(candidate)
+        seen.add(name)
+
+    # Factory discovery may cache the returned BaseTool.  Never mutate that
+    # shared instance: every host/run receives its own binding snapshot.
+    bound_tool = tool.model_copy(deep=False)
+    return bound_tool._bind(
+        ResearchHostBinding(
+            model=model,
+            backend=backend,
+            tools=bound,
+            middleware_factory=middleware_factory,
+            run_context=run_context,
+            runnable_config=runnable_config,
+            state_schema=state_schema,
+        )
+    )
 
 
 def create_deep_research_tool(base_dir: Path) -> DeepResearchTool:
-    """工厂函数：tools/__init__.py 自动发现要求的 create_* 入口。"""
+    """Factory entry point; discovery does not imply runtime binding."""
+
     tool = DeepResearchTool()
     tool.base_dir = str(base_dir)
     return tool

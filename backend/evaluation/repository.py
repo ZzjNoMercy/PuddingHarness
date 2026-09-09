@@ -55,7 +55,7 @@ class EvaluationRepository:
         from runtime_identity.paths import PuddingClawPaths
 
         default = PuddingClawPaths.from_environment().databases() / "evaluation.sqlite3"
-        self.db_path = Path(db_path or os.getenv("PUDDINGCLAW_EVALUATION_DB") or default)
+        self.db_path = Path(db_path or os.getenv("PUDDINGHARNESS_EVALUATION_DB") or default)
         self._lock = threading.RLock()
         self.initialize()
 
@@ -566,6 +566,41 @@ class EvaluationRepository:
             raise NotFoundError(f"Experiment not found: {experiment_id}")
         return EvalExperiment.model_validate_json(row["payload_json"])
 
+    @staticmethod
+    def _reject_historical_mutation(row: sqlite3.Row | None, experiment_id: str) -> None:
+        """Keep protocol-1.0 rows read-only even after model revalidation.
+
+        The in-memory projection intentionally hides its internal guard from
+        ``model_dump``. Mutation paths therefore inspect the authoritative raw
+        JSON row rather than trusting a projected Pydantic object.
+        """
+
+        if row is None:
+            raise NotFoundError(f"Experiment not found: {experiment_id}")
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(f"Experiment {experiment_id} has invalid stored payload") from exc
+        if isinstance(payload, dict) and payload.get("protocol_version") == "1.0":
+            raise ConflictError("Historical protocol-1.0 Experiments are read-only")
+
+    @classmethod
+    def _reject_historical_attempt_mutation(
+        cls,
+        connection: sqlite3.Connection,
+        attempt_id: str,
+    ) -> None:
+        row = connection.execute(
+            "SELECT a.experiment_id, e.payload_json "
+            "FROM eval_case_attempts a "
+            "JOIN eval_experiments e ON e.experiment_id=a.experiment_id "
+            "WHERE a.attempt_id=?",
+            (attempt_id,),
+        ).fetchone()
+        if row is None:
+            raise NotFoundError(f"Attempt not found: {attempt_id}")
+        cls._reject_historical_mutation(row, str(row["experiment_id"]))
+
     def delete_experiment(self, experiment_id: str) -> None:
         """Delete one terminal Experiment and all of its local ledger records."""
 
@@ -577,11 +612,10 @@ class EvaluationRepository:
         with self._lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT status FROM eval_experiments WHERE experiment_id=?",
+                "SELECT status, payload_json FROM eval_experiments WHERE experiment_id=?",
                 (experiment_id,),
             ).fetchone()
-            if row is None:
-                raise NotFoundError(f"Experiment not found: {experiment_id}")
+            self._reject_historical_mutation(row, experiment_id)
             if str(row["status"]) not in terminal_statuses:
                 raise ConflictError("Only terminal Experiments can be deleted; cancel the Experiment first")
 
@@ -602,6 +636,11 @@ class EvaluationRepository:
         expected_status: ExperimentStatus | str | None = None,
     ) -> EvalExperiment:
         with self._lock, self._connect() as connection:
+            current = connection.execute(
+                "SELECT payload_json FROM eval_experiments WHERE experiment_id=?",
+                (experiment.experiment_id,),
+            ).fetchone()
+            self._reject_historical_mutation(current, experiment.experiment_id)
             if expected_status is None:
                 cursor = connection.execute(
                     "UPDATE eval_experiments SET payload_json=?, status=?, updated_at=? WHERE experiment_id=?",
@@ -646,8 +685,7 @@ class EvaluationRepository:
                 "SELECT status FROM eval_experiments WHERE experiment_id=?",
                 (experiment.experiment_id,),
             ).fetchone()
-            if row is None:
-                raise NotFoundError(f"Experiment not found: {experiment.experiment_id}")
+            self._reject_historical_mutation(row, experiment.experiment_id)
             if str(row["status"]) != str(expected_status):
                 raise ConflictError(
                     f"Experiment {experiment.experiment_id} status changed; expected {expected_status}"
@@ -683,6 +721,11 @@ class EvaluationRepository:
         attempt_id = new_id("attempt")
         now = utc_now().isoformat()
         with self._lock, self._connect() as connection:
+            experiment = connection.execute(
+                "SELECT payload_json FROM eval_experiments WHERE experiment_id=?",
+                (experiment_id,),
+            ).fetchone()
+            self._reject_historical_mutation(experiment, experiment_id)
             connection.execute(
                 "INSERT INTO eval_case_attempts VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
                 (attempt_id, experiment_id, case_id, repetition, ExperimentStatus.QUEUED, now, now),
@@ -691,6 +734,7 @@ class EvaluationRepository:
 
     def finish_attempt(self, attempt_id: str, *, status: str, run: Any = None, error: Any = None) -> None:
         with self._lock, self._connect() as connection:
+            self._reject_historical_attempt_mutation(connection, attempt_id)
             connection.execute(
                 "UPDATE eval_case_attempts SET status=?, run_envelope_json=?, error_json=?, "
                 "updated_at=? WHERE attempt_id=?",
@@ -705,6 +749,7 @@ class EvaluationRepository:
 
     def update_attempt_status(self, attempt_id: str, status: str) -> None:
         with self._lock, self._connect() as connection:
+            self._reject_historical_attempt_mutation(connection, attempt_id)
             cursor = connection.execute(
                 "UPDATE eval_case_attempts SET status=?, updated_at=? WHERE attempt_id=?",
                 (status, utc_now().isoformat(), attempt_id),
@@ -715,6 +760,11 @@ class EvaluationRepository:
     def cancel_running_attempts(self, experiment_id: str, reason: str) -> int:
         now = utc_now().isoformat()
         with self._lock, self._connect() as connection:
+            current = connection.execute(
+                "SELECT payload_json FROM eval_experiments WHERE experiment_id=?",
+                (experiment_id,),
+            ).fetchone()
+            self._reject_historical_mutation(current, experiment_id)
             cursor = connection.execute(
                 "UPDATE eval_case_attempts SET status='cancelled', error_json=?, updated_at=? "
                 "WHERE experiment_id=? AND status IN ('queued', 'running')",
@@ -766,6 +816,7 @@ class EvaluationRepository:
 
     def update_attempt_run(self, attempt_id: str, run: Any) -> None:
         with self._lock, self._connect() as connection:
+            self._reject_historical_attempt_mutation(connection, attempt_id)
             cursor = connection.execute(
                 "UPDATE eval_case_attempts SET run_envelope_json=?, updated_at=? WHERE attempt_id=?",
                 (_json(run), utc_now().isoformat(), attempt_id),
@@ -845,6 +896,11 @@ class EvaluationRepository:
         now = utc_now().isoformat()
         with self._lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT payload_json FROM eval_experiments WHERE experiment_id=?",
+                (experiment.experiment_id,),
+            ).fetchone()
+            self._reject_historical_mutation(current, experiment.experiment_id)
             updated = connection.execute(
                 "UPDATE eval_experiments SET payload_json=?, status=?, updated_at=? "
                 "WHERE experiment_id=? AND status='completed'",
@@ -862,6 +918,11 @@ class EvaluationRepository:
 
     def save_result(self, experiment_id: str, attempt_id: str, result: EvaluationResult) -> None:
         with self._lock, self._connect() as connection:
+            experiment = connection.execute(
+                "SELECT payload_json FROM eval_experiments WHERE experiment_id=?",
+                (experiment_id,),
+            ).fetchone()
+            self._reject_historical_mutation(experiment, experiment_id)
             connection.execute(
                 "INSERT INTO eval_results VALUES (?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(attempt_id, evaluator_id, evaluator_version) "

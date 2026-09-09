@@ -1,7 +1,7 @@
-"""Async database wiring for PuddingClaw.
+"""Async database wiring for the standalone PuddingHarness runtime.
 
-The Core catalog defaults to a local SQLite file at
-``$PUDDINGCLAW_HOME/db/catalog.sqlite3`` so desktop, local and
+The Harness database defaults to a local SQLite file at
+``$PUDDINGHARNESS_HOME/db/catalog.sqlite3`` so desktop, local and
 single-instance deployments need no external database service. PostgreSQL
 remains the server-side option for multi-replica, multi-worker and
 multi-tenant deployments and is enabled by configuring an explicit database
@@ -13,8 +13,10 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from urllib.parse import quote, unquote
 
-from sqlalchemy import event, text
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -37,14 +39,22 @@ _last_schema_version: int | None = None
 
 
 class DatabaseUnsupportedError(RuntimeError):
-    """The configured database cannot satisfy Core's minimum requirements."""
+    """The configured database cannot satisfy Harness minimum requirements."""
 
 
 def get_database_url() -> str:
     configured = get_database_config().get("url") or DEFAULT_SQLITE_URL
     if configured:
         return configured
-    return f"sqlite+aiosqlite:///{PuddingClawPaths.from_environment().databases() / 'catalog.sqlite3'}"
+    catalog_path = PuddingClawPaths.from_environment().databases() / "catalog.sqlite3"
+    path_text = str(catalog_path)
+    # A plain SQLAlchemy SQLite URL treats ``?``/``#`` (and literal ``%``)
+    # as URL syntax.  Keep the ordinary URL stable for the capabilities
+    # contract, but use a file URI when the host path needs escaping.
+    if any(character in path_text for character in "?#%"):
+        encoded = quote(path_text, safe="/:")
+        return f"sqlite+aiosqlite:///file:{encoded}?uri=true"
+    return f"sqlite+aiosqlite:///{path_text}"
 
 
 def is_sqlite_url(url: str) -> bool:
@@ -112,7 +122,7 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
 
 
 async def _verify_sqlite_runtime(engine: AsyncEngine) -> None:
-    """Fail closed when SQLite cannot host a reliable Core catalog."""
+    """Fail closed when SQLite cannot host a reliable Harness database."""
 
     async with engine.connect() as conn:
         version_text = str(await conn.scalar(text("SELECT sqlite_version()")))
@@ -120,7 +130,7 @@ async def _verify_sqlite_runtime(engine: AsyncEngine) -> None:
         if version < MIN_SQLITE_VERSION:
             required = ".".join(str(part) for part in MIN_SQLITE_VERSION)
             raise DatabaseUnsupportedError(
-                f"SQLite {required}+ is required for the Core catalog (the queue lease "
+                f"SQLite {required}+ is required for the Harness database (the queue lease "
                 f"protocol relies on UPDATE ... RETURNING, added in SQLite 3.35.0); "
                 f"current SQLite is {version_text}. Upgrade SQLite (e.g. upgrade Python) "
                 "or configure a supported database URL."
@@ -129,12 +139,63 @@ async def _verify_sqlite_runtime(engine: AsyncEngine) -> None:
         if journal_mode != "wal":
             raise DatabaseUnsupportedError(
                 f"Failed to enable SQLite WAL journal mode (got {journal_mode!r}). "
-                "The catalog database must live on a reliable local single-writer filesystem."
+                "The Harness database must live on a reliable local single-writer filesystem."
             )
 
 
+def _sqlite_database_path(url: str) -> Path | None:
+    """Resolve the path using the same escaping semantics as SQLAlchemy's engine."""
+
+    parsed = make_url(url)
+    database = parsed.database
+    if not database or database == ":memory:":
+        return None
+    # SQLAlchemy treats a normal SQLite URL's percent characters literally.
+    # Decode only the explicit file URI form, where percent escapes are part
+    # of the URI grammar; otherwise preflight must inspect the exact engine
+    # path rather than a different decoded filename.
+    is_file_uri = database.startswith("file:") and str(parsed.query.get("uri", "")).lower() == "true"
+    if is_file_uri:
+        database = database.removeprefix("file:")
+        database = unquote(database)
+    path = Path(database).expanduser()
+    if not path.is_absolute():
+        path = path.resolve(strict=False)
+    return path
+
+
+def _sqlite_read_only_url(url: str) -> str | None:
+    """Build an existing-file-only URL for the preflight identity check."""
+
+    path = _sqlite_database_path(url)
+    if path is None:
+        return None
+    encoded = quote(str(path), safe="/:")
+    return f"sqlite:///file:{encoded}?mode=ro&uri=true"
+
+
+def _preflight_sqlite_identity(url: str) -> None:
+    """Reject foreign/legacy schemas before the writable engine can touch SQLite."""
+
+    read_only_url = _sqlite_read_only_url(url)
+    if read_only_url is None:
+        return
+    database = _sqlite_database_path(url)
+    assert database is not None
+    if not database.exists():
+        return
+    from schema_migrations import validate_database_identity
+
+    engine = create_engine(read_only_url, pool_pre_ping=True)
+    try:
+        with engine.connect() as conn:
+            validate_database_identity(conn)
+    finally:
+        engine.dispose()
+
+
 async def init_database() -> bool:
-    """Verify, migrate and maintain the Core catalog database.
+    """Verify, migrate and maintain the standalone Harness database.
 
     Schema migrations run transactionally, so a failed or interrupted
     migration leaves the previous database recoverable instead of serving a
@@ -144,33 +205,36 @@ async def init_database() -> bool:
 
     global _last_error, _last_schema_version
     try:
+        database_url = get_database_url()
+        if is_sqlite_url(database_url):
+            _preflight_sqlite_identity(database_url)
         engine = get_engine()
-        if is_sqlite_url(get_database_url()):
+        if is_sqlite_url(database_url):
             await _verify_sqlite_runtime(engine)
         from schema_migrations import CURRENT_SCHEMA_VERSION, migrate_to_latest
 
         async with engine.begin() as conn:
             applied = await conn.run_sync(migrate_to_latest)
         if applied:
-            logger.info("[db] core schema migrations applied: %s", applied)
+            logger.info("[db] Harness schema migrations applied: %s", applied)
         _last_schema_version = CURRENT_SCHEMA_VERSION
-        from analytics.nl2sql.result_store import (
-            backfill_query_result_catalogs,
-            cleanup_expired_query_results,
-            scavenge_orphaned_query_result_files,
-        )
-
-        sessionmaker = get_sessionmaker()
-        async with sessionmaker() as session:
-            await backfill_query_result_catalogs(session)
-            await cleanup_expired_query_results(session)
-            await scavenge_orphaned_query_result_files(session)
         _last_error = None
         return True
     except Exception as exc:
         _last_error = str(exc)
-        logger.warning("[db] core catalog init failed: %s", exc)
+        logger.warning("[db] Harness database init failed: %s", exc)
         return False
+
+
+async def close_database() -> None:
+    """Dispose the Harness engine and release SQLite/PostgreSQL resources."""
+
+    global _engine, _sessionmaker
+    engine = _engine
+    _engine = None
+    _sessionmaker = None
+    if engine is not None:
+        await engine.dispose()
 
 
 def get_database_status() -> dict[str, object]:
@@ -195,7 +259,7 @@ def get_database_status() -> dict[str, object]:
             safe_url = (
                 "postgresql+asyncpg://***@"
                 f"{config.get('host') or '127.0.0.1'}:{config.get('port') or 5432}/"
-                f"{config.get('database') or 'puddingclaw'}"
+                f"{config.get('database') or 'puddingharness'}"
             )
     if "@" in safe_url and "://" in safe_url:
         scheme, rest = safe_url.split("://", 1)

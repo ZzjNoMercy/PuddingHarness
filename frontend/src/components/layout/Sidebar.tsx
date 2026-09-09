@@ -1,3 +1,14 @@
+/**
+ * PuddingHarness extraction overlay for the generic Claw sidebar.
+ *
+ * This overlay deliberately keeps the host's generic store, API, folder-picker,
+ * and session-search contracts so the existing Chat/Task/Session/Workspace
+ * behavior remains intact. Those host imports are unresolved extraction
+ * dependencies until the Harness frontend supplies equivalent generic ports;
+ * this file is therefore an overlay source, not a standalone frontend claim.
+ *
+ * The source frontend is intentionally left untouched during extraction.
+ */
 "use client";
 
 import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from "react";
@@ -16,8 +27,6 @@ import {
   X,
   Search,
   Puzzle,
-  Database,
-  BarChart3,
   FolderKanban,
   Workflow,
   Settings,
@@ -31,7 +40,6 @@ import {
 import { useApp } from "@/lib/store";
 import { openProject, type SessionSearchResult } from "@/lib/api";
 import { useProjectFolderPicker } from "@/components/projects/useProjectFolderPicker";
-import { useRuntimeProfile } from "@/lib/useRuntimeProfile";
 import SessionSearchDialog from "./SessionSearchDialog";
 
 const PROJECT_EXPANSION_STORAGE_KEY = "puddingclaw_sidebar_project_expansion";
@@ -66,7 +74,6 @@ export default function Sidebar() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => new Set());
   const [projectExpansionRestored, setProjectExpansionRestored] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const runtimeExtensions = useRuntimeProfile();
   const hasSavedProjectExpansionRef = useRef(false);
 
   useEffect(() => {
@@ -254,32 +261,6 @@ export default function Sidebar() {
           muted
           onClick={() => setSearchOpen(true)}
         />
-        {runtimeExtensions.knowledge && (
-          <Link
-            href="/knowledge"
-            className={`w-full flex items-center gap-2 px-3 py-2 text-[13px] rounded-xl transition-all ${
-              runtimeReady && pathname.startsWith("/knowledge")
-                ? "bg-[#002fa7] text-white font-medium shadow-sm shadow-[#002fa7]/20"
-                : "text-gray-600 hover:text-gray-900 hover:bg-white/50"
-            }`}
-          >
-            <Database className="w-4 h-4" />
-            知识库
-          </Link>
-        )}
-        {runtimeExtensions.analytics && (
-          <Link
-            href="/analytics"
-            className={`w-full flex items-center gap-2 px-3 py-2 text-[13px] rounded-xl transition-all ${
-              runtimeReady && pathname.startsWith("/analytics")
-                ? "bg-[#002fa7] text-white font-medium shadow-sm shadow-[#002fa7]/20"
-                : "text-gray-600 hover:text-gray-900 hover:bg-white/50"
-            }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            智能问数
-          </Link>
-        )}
         <Link
           href="/extension/connectors"
           className={`w-full flex items-center gap-2 px-3 py-2 text-[13px] rounded-xl transition-all ${
@@ -289,7 +270,7 @@ export default function Sidebar() {
           }`}
         >
           <Puzzle className="w-4 h-4" />
-          扩展
+          MCP
         </Link>
         <Link
           href="/evaluation/datasets"
@@ -558,6 +539,12 @@ function ProjectItem({
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (menuOpen) return;
+    setConfirmRemove(false);
+    setRenaming(false);
+  }, [menuOpen]);
+
   const handleOpenProject = useCallback(async () => {
     setOpening(true);
     try {
@@ -679,87 +666,119 @@ function ProjectItem({
         </button>
 
         {menuOpen && (
-          <div className="absolute right-0 top-full mt-1 w-56 rounded-2xl border border-black/[0.08] bg-white p-1.5 shadow-2xl shadow-slate-900/15 animate-fade-in-scale">
-            <button
-              type="button"
-              onClick={handleTogglePin}
-              disabled={pinning}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] text-gray-700 transition-colors hover:bg-black/[0.04] hover:text-gray-950 disabled:cursor-wait disabled:opacity-60"
-            >
-              <Pin className="h-4 w-4" />
-              {pinned ? "取消置顶" : "置顶项目"}
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenProject}
-              disabled={opening}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] text-gray-700 transition-colors hover:bg-black/[0.04] hover:text-gray-950 disabled:cursor-wait disabled:opacity-60"
-            >
-              <FolderKanban className="h-4 w-4" />
-              在“{fileManagerLabel}”中打开
-            </button>
-            {renaming ? (
-              <div className="mt-1 rounded-xl bg-black/[0.025] p-2">
-                <input
-                  value={renameValue}
-                  onChange={(event) => setRenameValue(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void handleSaveRename();
-                    if (event.key === "Escape") setRenaming(false);
-                  }}
-                  className="h-8 w-full rounded-lg border border-black/[0.08] bg-white px-2 text-[12px] outline-none focus:border-[#002fa7]/40 focus:ring-2 focus:ring-[#002fa7]/10"
-                  autoFocus
-                />
-                <div className="mt-2 flex justify-end gap-1.5">
+          <div
+            role="menu"
+            aria-label="项目操作"
+            className={`absolute right-0 top-full mt-1 overflow-hidden rounded-xl border border-black/[0.08] bg-white p-1.5 shadow-xl shadow-slate-900/15 animate-fade-in-scale ${
+              confirmRemove ? "w-64" : "w-56"
+            }`}
+          >
+            {confirmRemove ? (
+              <div className="p-1" aria-live="polite">
+                <div className="flex items-start gap-2.5 px-2 py-1.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600">
+                    <Trash2 className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 pt-0.5">
+                    <p className="text-[13px] font-semibold text-gray-900">移除此项目？</p>
+                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500">只从侧栏移除，不会删除本地文件。</p>
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setRenaming(false)}
-                    className="rounded-lg px-2 py-1 text-[11px] text-gray-500 hover:bg-black/[0.04]"
+                    onClick={() => setConfirmRemove(false)}
+                    className="inline-flex h-8 items-center justify-center rounded-lg border border-black/[0.08] bg-white px-3 text-[12px] font-medium text-gray-600 transition-colors hover:bg-black/[0.035] hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#002fa7]/20"
                   >
                     取消
                   </button>
                   <button
                     type="button"
-                    onClick={handleSaveRename}
-                    disabled={savingRename || !renameValue.trim()}
-                    className="rounded-lg bg-[#002fa7] px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+                    onClick={handleRemove}
+                    disabled={removing}
+                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 disabled:cursor-wait disabled:opacity-60"
                   >
-                    保存
+                    {removing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    确认移除
                   </button>
                 </div>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={handleStartRename}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] text-gray-700 transition-colors hover:bg-black/[0.04] hover:text-gray-950"
-              >
-                <Pencil className="h-4 w-4" />
-                重命名项目
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleRemove}
-              disabled={removing}
-              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] transition-colors disabled:cursor-wait disabled:opacity-60 ${
-                confirmRemove
-                  ? "bg-red-50 text-red-600 hover:bg-red-100"
-                  : "text-red-500 hover:bg-red-50 hover:text-red-600"
-              }`}
-            >
-              <Trash2 className="h-4 w-4" />
-              {confirmRemove ? "确认移除" : "移除"}
-            </button>
-            {confirmRemove && (
-              <button
-                type="button"
-                onClick={() => setConfirmRemove(false)}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left text-[12px] text-gray-400 transition-colors hover:bg-black/[0.04] hover:text-gray-600"
-              >
-                <X className="h-3.5 w-3.5" />
-                取消移除
-              </button>
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleTogglePin}
+                  disabled={pinning}
+                  className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-gray-700 transition-colors hover:bg-black/[0.04] hover:text-gray-950 focus-visible:bg-black/[0.04] focus-visible:outline-none disabled:cursor-wait disabled:opacity-60"
+                >
+                  <Pin className="h-4 w-4 text-gray-500" />
+                  {pinned ? "取消置顶" : "置顶项目"}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleOpenProject}
+                  disabled={opening}
+                  className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-gray-700 transition-colors hover:bg-black/[0.04] hover:text-gray-950 focus-visible:bg-black/[0.04] focus-visible:outline-none disabled:cursor-wait disabled:opacity-60"
+                >
+                  <FolderKanban className="h-4 w-4 text-gray-500" />
+                  在“{fileManagerLabel}”中打开
+                </button>
+                {renaming ? (
+                  <div className="my-1 rounded-lg bg-black/[0.025] p-2">
+                    <input
+                      value={renameValue}
+                      onChange={(event) => setRenameValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void handleSaveRename();
+                        if (event.key === "Escape") setRenaming(false);
+                      }}
+                      aria-label="项目名称"
+                      className="h-8 w-full rounded-lg border border-black/[0.08] bg-white px-2 text-[12px] outline-none focus:border-[#002fa7]/40 focus:ring-2 focus:ring-[#002fa7]/10"
+                      autoFocus
+                    />
+                    <div className="mt-2 flex justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setRenaming(false)}
+                        className="inline-flex h-7 items-center rounded-lg px-2.5 text-[11px] text-gray-500 hover:bg-black/[0.04]"
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveRename}
+                        disabled={savingRename || !renameValue.trim()}
+                        className="inline-flex h-7 items-center rounded-lg bg-[#002fa7] px-2.5 text-[11px] font-medium text-white disabled:opacity-50"
+                      >
+                        保存
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleStartRename}
+                    className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-gray-700 transition-colors hover:bg-black/[0.04] hover:text-gray-950 focus-visible:bg-black/[0.04] focus-visible:outline-none"
+                  >
+                    <Pencil className="h-4 w-4 text-gray-500" />
+                    重命名项目
+                  </button>
+                )}
+                <div className="my-1 h-px bg-black/[0.06]" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleRemove}
+                  disabled={removing}
+                  className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-red-600 transition-colors hover:bg-red-50 focus-visible:bg-red-50 focus-visible:outline-none disabled:cursor-wait disabled:opacity-60"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  移除项目
+                </button>
+              </>
             )}
           </div>
         )}

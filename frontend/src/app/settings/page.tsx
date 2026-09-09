@@ -1,3 +1,4 @@
+/* Target Harness settings overlay: AI/provider, core database, Harness, worker, memory, and system settings. */
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -37,7 +38,6 @@ import {
 import {
   getSettings,
   updateSettings,
-  resetKnowledgeVectorCollections,
   testDatabaseConnection,
   getCapabilities,
   getProviders,
@@ -55,20 +55,12 @@ import {
   type ProviderModelCategory,
 } from "@/lib/settingsApi";
 import { useApp } from "@/lib/store";
-import {
-  getLlmWikiWorkspaceStatus,
-  initializeLlmWikiGbrain,
-  type LlmWikiWorkspaceStatus,
-} from "@/lib/api";
 import MemoryEditor from "@/components/settings/MemoryEditor";
 import CapabilitiesStatus from "@/components/settings/CapabilitiesStatus";
 import HeadlessActivityPanel from "@/components/settings/HeadlessActivityPanel";
-import DocumentParserSettings from "@/components/settings/DocumentParserSettings";
-import SettingsAnchorLayout, { type SettingsAnchorSection } from "@/components/settings/SettingsAnchorLayout";
 import SettingsNavigation, { SETTINGS_CATEGORIES, settingsCategoryEnabled, type SettingsCategory } from "@/components/settings/SettingsNavigation";
 import { useRuntimeProfile } from "@/lib/useRuntimeProfile";
 import Navbar from "@/components/layout/Navbar";
-import Link from "next/link";
 import deepseekLogo from "@lobehub/icons-static-svg/icons/deepseek-color.svg";
 import bailianLogo from "@lobehub/icons-static-svg/icons/bailian-color.svg";
 import moonshotLogo from "@lobehub/icons-static-svg/icons/moonshot.svg";
@@ -100,33 +92,10 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { id: "runtime", label: "运行保护", description: "运行保护与权限策略", icon: ShieldCheck },
 ];
 
-const DATABASE_QA_SECTIONS: SettingsAnchorSection[] = [
-  { id: "preview", label: "结果预览", description: "直传、摘要与读取体量", icon: Database },
-  { id: "storage", label: "持久化存储", description: "落盘、保留与导出", icon: FileText },
-];
-
-const RAG_SECTIONS: SettingsAnchorSection[] = [
-  { id: "recall", label: "基础召回", description: "Top-K 与相似度阈值", icon: Search },
-  { id: "hybrid", label: "混合检索", description: "关键词、语义与图文融合", icon: Network },
-  { id: "rerank", label: "重排", description: "候选池与 Rerank", icon: Filter },
-];
-
-const KNOWLEDGE_SECTIONS: SettingsAnchorSection[] = [
-  { id: "directory", label: "本地目录", description: "知识库资产根目录", icon: FolderOpen },
-  { id: "parsers", label: "文档解析器", description: "导入转换与云端授权", icon: FileText },
-  { id: "wiki", label: "LLM Wiki", description: "编译与混合检索", icon: Bot },
-  { id: "gbrain", label: "GBrain", description: "模型与独立数据库", icon: Brain },
-  { id: "embedding", label: "多模态 Embedding", description: "模型绑定与批量数", icon: Network },
-  { id: "index", label: "检索索引", description: "向量服务与索引维护", icon: Database },
-];
-
 const SETTINGS_CATEGORY_KEY = "settings:activeCategory";
-const SETTINGS_CATEGORY_DESCRIPTIONS: Record<SettingsCategory, string> = {
+const SETTINGS_CATEGORY_DESCRIPTIONS: Partial<Record<SettingsCategory, string>> = {
   ai: "统一管理模型供应商、接口、模型分类与默认工作负载。",
   database: "PuddingClaw Core 的持久化连接，与知识库和智能问数扩展开关解耦。",
-  databaseQa: "控制查询结果如何进入模型、持久化、分页与导出。",
-  rag: "配置知识库检索的召回、图文融合与重排策略。",
-  knowledge: "管理本地知识库目录、Wiki 编译与向量索引。",
   memory: "维护全局与项目级 Agent 记忆。",
   harness: "管理 Agent 编排、上下文、执行预算与运行保护。",
   worker: "查看本机 CLI 状态与 Headless 调用记录。",
@@ -414,7 +383,10 @@ export default function SettingsPage() {
     return (valid ? (saved as SettingsCategory) : "ai");
   });
   const runtimeExtensions = useRuntimeProfile();
-  const activeCategory = settingsCategoryEnabled(category, runtimeExtensions) ? category : "ai";
+  const harnessSettingsExtensions = runtimeExtensions
+    ? { ...runtimeExtensions, analytics: false, knowledge: false }
+    : runtimeExtensions;
+  const activeCategory = settingsCategoryEnabled(category, harnessSettingsExtensions) ? category : "ai";
   useEffect(() => {
     if (runtimeExtensions && activeCategory !== category) setCategory(activeCategory);
   }, [activeCategory, category, runtimeExtensions]);
@@ -467,35 +439,6 @@ export default function SettingsPage() {
     localStorage.setItem(SETTINGS_CATEGORY_KEY, category);
   }, [category]);
 
-  // RAG form state
-  const [ragTopK, setRagTopK] = useState(10);
-  const [ragThreshold, setRagThreshold] = useState(0.5);
-  const [ragTextVectorWeight, setRagTextVectorWeight] = useState(0.7);
-  const [ragImageVectorWeight, setRagImageVectorWeight] = useState(0.4);
-  const [ragHybridCandidateTopK, setRagHybridCandidateTopK] = useState(30);
-  const [ragRerankEnabled, setRagRerankEnabled] = useState(true);
-  const [ragRerankCandidateTopK, setRagRerankCandidateTopK] = useState(50);
-  const ragBm25Weight = Math.max(0, Math.min(1, 1 - ragTextVectorWeight));
-  const ragTextGroupWeight = Math.max(0, Math.min(1, 1 - ragImageVectorWeight));
-
-  // Smart Database Q&A
-  const [dbQaFullRowsTokenBudget, setDbQaFullRowsTokenBudget] = useState("10000");
-  const [dbQaPreviewRowsTokenBudget, setDbQaPreviewRowsTokenBudget] = useState("3000");
-  const [dbQaProfileTokenBudget, setDbQaProfileTokenBudget] = useState("3000");
-  const [dbQaFullRowsHardRowCap, setDbQaFullRowsHardRowCap] = useState("200");
-  const [dbQaFullRowsHardColumnCap, setDbQaFullRowsHardColumnCap] = useState("20");
-  const [dbQaMaxCellCharsForLlm, setDbQaMaxCellCharsForLlm] = useState("500");
-  const [dbQaResultMaterializationRowCap, setDbQaResultMaterializationRowCap] = useState("99999");
-  const [dbQaQueryTimeoutSeconds, setDbQaQueryTimeoutSeconds] = useState("30");
-  const [dbQaSqlGenerationTimeoutSeconds, setDbQaSqlGenerationTimeoutSeconds] = useState("210");
-  const [dbQaResultStoreEnabled, setDbQaResultStoreEnabled] = useState(true);
-  const [dbQaResultStoreTtlHours, setDbQaResultStoreTtlHours] = useState("168");
-  const [dbQaDefaultPageSize, setDbQaDefaultPageSize] = useState("100");
-  const [dbQaMaxPageSize, setDbQaMaxPageSize] = useState("500");
-  const [dbQaExportEnabled, setDbQaExportEnabled] = useState(false);
-  const [dbQaProfileEnabled, setDbQaProfileEnabled] = useState(true);
-  const [dbQaAgentSqlFallbackEnabled, setDbQaAgentSqlFallbackEnabled] = useState(true);
-
   // Core database
   const [databaseMode, setDatabaseMode] = useState<"sqlite" | "bundled" | "external">("sqlite");
   const [databaseHost, setDatabaseHost] = useState("127.0.0.1");
@@ -513,36 +456,6 @@ export default function SettingsPage() {
   const [databaseAppliedProvider, setDatabaseAppliedProvider] = useState<"sqlite" | "postgresql">("sqlite");
   const [databaseTesting, setDatabaseTesting] = useState(false);
   const [databaseTestResult, setDatabaseTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [knowledgeRootDir, setKnowledgeRootDir] = useState("");
-  const [knowledgeConfiguredBy, setKnowledgeConfiguredBy] = useState("default");
-  const [knowledgeEnvOverride, setKnowledgeEnvOverride] = useState(false);
-  const [wikiCompilerModelId, setWikiCompilerModelId] = useState("");
-  const [wikiHybridEnabled, setWikiHybridEnabled] = useState(false);
-  const [wikiHybridSaving, setWikiHybridSaving] = useState(false);
-  const [wikiGbrainEmbeddingModelId, setWikiGbrainEmbeddingModelId] = useState("");
-  const [wikiGbrainThinkModelId, setWikiGbrainThinkModelId] = useState("");
-  const [gbrainWorkspace, setGbrainWorkspace] = useState<LlmWikiWorkspaceStatus | null>(null);
-  const [gbrainDatabaseHost, setGbrainDatabaseHost] = useState("127.0.0.1");
-  const [gbrainDatabasePort, setGbrainDatabasePort] = useState("5432");
-  const [gbrainDatabaseName, setGbrainDatabaseName] = useState("llm_wiki");
-  const [gbrainDatabaseUsername, setGbrainDatabaseUsername] = useState("pet");
-  const [gbrainDatabasePassword, setGbrainDatabasePassword] = useState("");
-  const [gbrainDatabaseTesting, setGbrainDatabaseTesting] = useState(false);
-  const [gbrainInitializing, setGbrainInitializing] = useState(false);
-  const [gbrainDatabaseTestResult, setGbrainDatabaseTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  useEffect(() => {
-    if (!gbrainDatabaseTestResult?.ok) return;
-    const timer = window.setTimeout(() => setGbrainDatabaseTestResult(null), 3000);
-    return () => window.clearTimeout(timer);
-  }, [gbrainDatabaseTestResult]);
-  const [mmBatchSize, setMmBatchSize] = useState("10");
-  const [kbIndexEnabled, setKbIndexEnabled] = useState(true);
-  const [kbVectorStore, setKbVectorStore] = useState("milvus");
-  const [kbMilvusUri, setKbMilvusUri] = useState("http://localhost:19530");
-  const [kbTextCollection, setKbTextCollection] = useState("puddingclaw_knowledge_text");
-  const [kbImageCollection, setKbImageCollection] = useState("puddingclaw_knowledge_image");
-
   // Harness context engineering (DeepAgents only)
   const [contextSummaryModelId, setContextSummaryModelId] = useState("");
   const [contextSummaryTriggerTokens, setContextSummaryTriggerTokens] = useState("200000");
@@ -632,34 +545,6 @@ export default function SettingsPage() {
     getSettings()
       .then((s) => {
         setProviderRegistry(s.provider_registry || null);
-        // Populate RAG fields
-        setRagTopK(s.rag.top_k);
-        setRagThreshold(s.rag.similarity_threshold);
-        const textWeight = s.rag.hybrid?.text_vector_weight ?? 0.7;
-        const keywordWeight = s.rag.hybrid?.bm25_weight ?? 0.3;
-        const textMixTotal = textWeight + keywordWeight;
-        setRagTextVectorWeight(textMixTotal > 0 ? textWeight / textMixTotal : 0.7);
-        setRagImageVectorWeight(s.rag.hybrid?.image_vector_weight ?? 0.4);
-        setRagHybridCandidateTopK(s.rag.hybrid?.candidate_top_k ?? 30);
-        setRagRerankEnabled(s.rag.rerank?.enabled ?? true);
-        setRagRerankCandidateTopK(s.rag.rerank?.candidate_top_k ?? 50);
-        const databaseQa = s.analytics?.database_qa;
-        setDbQaFullRowsTokenBudget(String(databaseQa?.full_rows_token_budget ?? 10000));
-        setDbQaPreviewRowsTokenBudget(String(databaseQa?.preview_rows_token_budget ?? 3000));
-        setDbQaProfileTokenBudget(String(databaseQa?.profile_token_budget ?? 3000));
-        setDbQaFullRowsHardRowCap(String(databaseQa?.full_rows_hard_row_cap ?? 200));
-        setDbQaFullRowsHardColumnCap(String(databaseQa?.full_rows_hard_column_cap ?? 20));
-        setDbQaMaxCellCharsForLlm(String(databaseQa?.max_cell_chars_for_llm ?? 500));
-        setDbQaResultMaterializationRowCap(String(databaseQa?.result_materialization_row_cap ?? 99999));
-        setDbQaQueryTimeoutSeconds(String(Math.max(1, Math.round((databaseQa?.query_timeout_ms ?? 30000) / 1000))));
-        setDbQaSqlGenerationTimeoutSeconds(String(Math.max(30, Math.round((databaseQa?.sql_generation_timeout_ms ?? 210000) / 1000))));
-        setDbQaResultStoreEnabled(databaseQa?.result_store_enabled ?? true);
-        setDbQaResultStoreTtlHours(String(databaseQa?.result_store_ttl_hours ?? 168));
-        setDbQaDefaultPageSize(String(databaseQa?.default_page_size ?? 100));
-        setDbQaMaxPageSize(String(databaseQa?.max_page_size ?? 500));
-        setDbQaExportEnabled(databaseQa?.export_enabled ?? true);
-        setDbQaProfileEnabled(databaseQa?.profile_enabled ?? true);
-        setDbQaAgentSqlFallbackEnabled(databaseQa?.database_agent_sql_fallback_enabled ?? true);
         // Core database. "bundled" is deployment provenance, not a third
         // database type users should select in the standalone settings UI.
         // Newer backends report a `provider` field (sqlite / postgresql);
@@ -693,37 +578,6 @@ export default function SettingsPage() {
         setDatabaseSource(s.database?.source || "config");
         setDatabaseCatalogPath(s.database?.catalog_path || "$PUDDINGCLAW_HOME/db/catalog.sqlite3");
         setDatabaseEnvOverride(databaseEnvironmentOverride);
-        setKnowledgeRootDir(s.knowledge?.root_dir || "");
-        setKnowledgeConfiguredBy(s.knowledge?.configured_by || "default");
-        setKnowledgeEnvOverride(Boolean(s.knowledge?.environment_override));
-        setWikiCompilerModelId(s.knowledge?.llm_wiki?.compiler_agent?.model_id || "");
-        setWikiHybridEnabled(s.knowledge?.llm_wiki?.retrieval?.hybrid_enabled ?? true);
-        setWikiGbrainEmbeddingModelId(s.knowledge?.llm_wiki?.gbrain?.embedding_model_id || "");
-        setWikiGbrainThinkModelId(s.knowledge?.llm_wiki?.gbrain?.think_model_id || "");
-        setGbrainDatabaseHost(s.database?.host || "127.0.0.1");
-        setGbrainDatabasePort(String(s.database?.port || 5432));
-        setGbrainDatabaseName("llm_wiki");
-        setGbrainDatabaseUsername(s.database?.username || "puddingclaw");
-        setGbrainDatabasePassword(s.database?.password || "");
-        if (runtimeExtensions?.knowledge) getLlmWikiWorkspaceStatus()
-          .then((workspace) => {
-            setGbrainWorkspace(workspace);
-            const postgres = workspace.gbrain.postgres;
-            if (postgres?.configured) {
-              setGbrainDatabaseHost(postgres.host || "127.0.0.1");
-              setGbrainDatabasePort(String(postgres.port || 5432));
-              setGbrainDatabaseName(postgres.database || "llm_wiki");
-              setGbrainDatabaseUsername(postgres.username || "puddingclaw");
-              setGbrainDatabasePassword("");
-            }
-          })
-          .catch(() => {});
-        setMmBatchSize(String(s.knowledge?.multimodal_index?.embedding_batch_size || 10));
-        setKbIndexEnabled(s.knowledge?.multimodal_index?.enabled ?? true);
-        setKbVectorStore(s.knowledge?.multimodal_index?.vector_store || "milvus");
-        setKbMilvusUri(s.knowledge?.multimodal_index?.milvus_uri || "http://localhost:19530");
-        setKbTextCollection(s.knowledge?.multimodal_index?.text_collection || "puddingclaw_knowledge_text");
-        setKbImageCollection(s.knowledge?.multimodal_index?.image_collection || "puddingclaw_knowledge_image");
         setContextSummaryModelId(s.compression.deepagents?.summarization?.model_id || "");
         setContextSummaryTriggerTokens(
           String(s.compression.deepagents?.summarization?.trigger_tokens ?? 272000)
@@ -1102,45 +956,6 @@ export default function SettingsPage() {
         throw new Error("工具上下文保留预算必须在 1,000 到 500,000 tokens 之间");
       }
       const updates: Record<string, unknown> = {
-        ...(runtimeExtensions?.knowledge ? { rag: {
-          top_k: ragTopK,
-          similarity_threshold: ragThreshold,
-          hybrid: {
-            enabled: true,
-            mode: "reciprocal_rerank",
-            text_vector_weight: ragTextVectorWeight,
-            image_vector_weight: ragImageVectorWeight,
-            bm25_weight: ragBm25Weight,
-            candidate_top_k: ragHybridCandidateTopK,
-          },
-          rerank: {
-            enabled: ragRerankEnabled,
-            provider: "dashscope",
-            model: "qwen3-vl-rerank",
-            top_n: ragTopK,
-            candidate_top_k: ragRerankCandidateTopK,
-          },
-        }} : {}),
-        ...(runtimeExtensions?.analytics ? { analytics: {
-          database_qa: {
-            full_rows_token_budget: positiveIntOrNull(dbQaFullRowsTokenBudget) ?? 10000,
-            preview_rows_token_budget: positiveIntOrNull(dbQaPreviewRowsTokenBudget) ?? 3000,
-            profile_token_budget: positiveIntOrNull(dbQaProfileTokenBudget) ?? 3000,
-            full_rows_hard_row_cap: positiveIntOrNull(dbQaFullRowsHardRowCap) ?? 200,
-            full_rows_hard_column_cap: positiveIntOrNull(dbQaFullRowsHardColumnCap) ?? 20,
-            max_cell_chars_for_llm: positiveIntOrNull(dbQaMaxCellCharsForLlm) ?? 500,
-            result_materialization_row_cap: positiveIntOrNull(dbQaResultMaterializationRowCap) ?? 99999,
-            query_timeout_ms: (positiveIntOrNull(dbQaQueryTimeoutSeconds) ?? 30) * 1000,
-            sql_generation_timeout_ms: (positiveIntOrNull(dbQaSqlGenerationTimeoutSeconds) ?? 210) * 1000,
-            result_store_enabled: dbQaResultStoreEnabled,
-            result_store_ttl_hours: positiveIntOrNull(dbQaResultStoreTtlHours) ?? 168,
-            default_page_size: positiveIntOrNull(dbQaDefaultPageSize) ?? 100,
-            max_page_size: positiveIntOrNull(dbQaMaxPageSize) ?? 500,
-            export_enabled: dbQaExportEnabled,
-            profile_enabled: dbQaProfileEnabled,
-            database_agent_sql_fallback_enabled: dbQaAgentSqlFallbackEnabled,
-          },
-        }} : {}),
         ...(activeCategory === "database" ? { database: {
           provider: databaseMode === "sqlite" ? "sqlite" : "postgresql",
           source: databaseMode === "sqlite" ? "local_file" : "external",
@@ -1151,29 +966,6 @@ export default function SettingsPage() {
           password: databasePassword,
           // sqlite 模式下不发送 url 字段：空串会清掉 config.json 里用户手配的完整连接 URL。
           ...(databaseMode === "sqlite" ? {} : { url: "" }),
-        }} : {}),
-        ...(runtimeExtensions?.knowledge ? { knowledge: {
-          root_dir: knowledgeRootDir,
-          llm_wiki: {
-            compiler_agent: {
-              model_id: wikiCompilerModelId,
-            },
-            retrieval: {
-              hybrid_enabled: wikiHybridEnabled,
-            },
-            gbrain: {
-              embedding_model_id: wikiGbrainEmbeddingModelId,
-              think_model_id: wikiGbrainThinkModelId,
-            },
-          },
-          multimodal_index: {
-            enabled: kbIndexEnabled,
-            vector_store: kbVectorStore,
-            milvus_uri: kbMilvusUri,
-            text_collection: kbTextCollection,
-            image_collection: kbImageCollection,
-            embedding_batch_size: Number.parseInt(mmBatchSize, 10) || 10,
-          },
         }} : {}),
         compression: {
           deepagents: {
@@ -1266,46 +1058,12 @@ export default function SettingsPage() {
           ? freshProvider
           : fresh.database?.mode === "sqlite" ? "sqlite" : "postgresql",
       );
-      setKnowledgeConfiguredBy(fresh.knowledge?.configured_by || "default");
-      setKnowledgeEnvOverride(Boolean(fresh.knowledge?.environment_override));
-      setWikiHybridEnabled(fresh.knowledge?.llm_wiki?.retrieval?.hybrid_enabled ?? true);
-      if (runtimeExtensions?.knowledge) {
-        getLlmWikiWorkspaceStatus().then(setGbrainWorkspace).catch(() => {});
-      }
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "保存失败");
     } finally {
       setSaving(false);
     }
-  }, [activeCategory, ragTopK, ragThreshold, ragTextVectorWeight, ragImageVectorWeight, ragBm25Weight, ragHybridCandidateTopK, ragRerankEnabled, ragRerankCandidateTopK, dbQaFullRowsTokenBudget, dbQaPreviewRowsTokenBudget, dbQaProfileTokenBudget, dbQaFullRowsHardRowCap, dbQaFullRowsHardColumnCap, dbQaMaxCellCharsForLlm, dbQaResultMaterializationRowCap, dbQaQueryTimeoutSeconds, dbQaSqlGenerationTimeoutSeconds, dbQaResultStoreEnabled, dbQaResultStoreTtlHours, dbQaDefaultPageSize, dbQaMaxPageSize, dbQaExportEnabled, dbQaProfileEnabled, dbQaAgentSqlFallbackEnabled, databaseMode, databaseHost, databasePort, databaseName, databaseUsername, databasePassword, mmBatchSize, knowledgeRootDir, wikiCompilerModelId, wikiHybridEnabled, wikiGbrainEmbeddingModelId, wikiGbrainThinkModelId, kbIndexEnabled, kbVectorStore, kbMilvusUri, kbTextCollection, kbImageCollection, contextSummaryTriggerTokens, contextSummaryKeepTokens, toolContextEnabled, immediateToolCompactionEnabled, singleToolTriggerTokens, backgroundMinResultTokens, retainToolContextTokens, modelCallLimitEnabled, modelCallRunLimit, modelCallThreadLimit, modelCallExitBehavior, modelTransportRetryEnabled, modelTransportMaxAttempts, modelTransportInitialDelay, modelTransportMaxDelay, terminalResponseGuardEnabled, terminalResponseRecoveryAttempts, runReviewPolicy, runReviewManualEnabled, rubricEnabled, rubricMaxIterations, rubricMaxStagnantRepairs, customRubricRulesEnabled, customRubricRules, goalsEnabled, goalMaxRounds, executionMode, subagentItems, showToast, runtimeExtensions]);
-
-  const handleWikiHybridChange = useCallback(async (enabled: boolean) => {
-    if (wikiHybridSaving) return;
-    const previous = wikiHybridEnabled;
-    setWikiHybridEnabled(enabled);
-    setWikiHybridSaving(true);
-    try {
-      await updateSettings({
-        knowledge: {
-          llm_wiki: {
-            retrieval: { hybrid_enabled: enabled },
-          },
-        },
-      });
-      const fresh = await getSettings();
-      const persisted = fresh.knowledge?.llm_wiki?.retrieval?.hybrid_enabled ?? true;
-      if (persisted !== enabled) {
-        throw new Error("后端未返回刚保存的混合检索配置");
-      }
-      setWikiHybridEnabled(persisted);
-      showToast("success", enabled ? "Wiki 混合检索已开启" : "Wiki 混合检索已关闭");
-    } catch (err) {
-      setWikiHybridEnabled(previous);
-      showToast("error", err instanceof Error ? err.message : "混合检索配置保存失败");
-    } finally {
-      setWikiHybridSaving(false);
-    }
-  }, [showToast, wikiHybridEnabled, wikiHybridSaving]);
+  }, [activeCategory, databaseMode, databaseHost, databasePort, databaseName, databaseUsername, databasePassword, contextSummaryModelId, contextSummaryTriggerTokens, contextSummaryKeepTokens, toolContextEnabled, immediateToolCompactionEnabled, singleToolTriggerTokens, backgroundMinResultTokens, retainToolContextTokens, modelCallLimitEnabled, modelCallRunLimit, modelCallThreadLimit, modelCallExitBehavior, modelTransportRetryEnabled, modelTransportMaxAttempts, modelTransportInitialDelay, modelTransportMaxDelay, terminalResponseGuardEnabled, terminalResponseRecoveryAttempts, runReviewPolicy, runReviewManualEnabled, rubricEnabled, rubricMaxIterations, rubricMaxStagnantRepairs, customRubricRulesEnabled, customRubricRules, goalsEnabled, goalMaxRounds, executionMode, subagentItems, showToast, runtimeExtensions]);
 
   const handleDatabaseModeChange = useCallback((mode: "sqlite" | "bundled" | "external") => {
     if (mode === "sqlite" && databaseAppliedProvider === "postgresql" && databaseMode !== "sqlite") {
@@ -1374,19 +1132,8 @@ export default function SettingsPage() {
     try {
       const result = await testDatabaseConnection(databaseConnectionPayload(false));
       if (result.success) {
-        if (runtimeExtensions?.knowledge && result.pgvector && !result.pgvector.available) {
-          const message = `PostgreSQL 已连接，但缺少必备 pgvector。请运行：${result.pgvector.install_command}`;
-          setDatabaseTestResult({ ok: false, msg: message });
-          showToast("error", "PostgreSQL 缺少 pgvector");
-        } else {
-          const pgvectorDetail = result.pgvector?.available
-            ? " · pgvector 可用"
-            : runtimeExtensions?.knowledge
-              ? ""
-              : " · pgvector 未安装（仅知识库需要）";
-          setDatabaseTestResult({ ok: true, msg: result.created ? `数据库已创建并连接成功${pgvectorDetail}` : `连接成功${pgvectorDetail} · ${result.latency_ms}ms` });
-          showToast("success", result.created ? "数据库已创建并连接成功" : "数据库连接成功");
-        }
+        setDatabaseTestResult({ ok: true, msg: result.created ? "数据库已创建并连接成功" : `连接成功 · ${result.latency_ms}ms` });
+        showToast("success", result.created ? "数据库已创建并连接成功" : "数据库连接成功");
       } else if (result.database_missing && result.can_create) {
         setDatabaseTesting(false);
         const shouldCreate = window.confirm(
@@ -1398,18 +1145,8 @@ export default function SettingsPage() {
         }
         setDatabaseTesting(true);
         const created = await testDatabaseConnection(databaseConnectionPayload(true));
-        if (runtimeExtensions?.knowledge && created.pgvector && !created.pgvector.available) {
-          setDatabaseTestResult({ ok: false, msg: `数据库已创建，但缺少必备 pgvector。请运行：${created.pgvector.install_command}` });
-          showToast("error", "数据库已创建，但 pgvector 未安装");
-        } else {
-          const pgvectorDetail = created.pgvector?.available
-            ? " · pgvector 可用"
-            : runtimeExtensions?.knowledge
-              ? ""
-              : " · pgvector 未安装（仅知识库需要）";
-          setDatabaseTestResult({ ok: true, msg: `数据库已创建并连接成功${pgvectorDetail} · ${created.latency_ms}ms` });
-          showToast("success", "数据库已创建并连接成功");
-        }
+        setDatabaseTestResult({ ok: true, msg: `数据库已创建并连接成功 · ${created.latency_ms}ms` });
+        showToast("success", "数据库已创建并连接成功");
       } else {
         setDatabaseTestResult({ ok: false, msg: result.message || "数据库连接失败" });
       }
@@ -1420,104 +1157,7 @@ export default function SettingsPage() {
     } finally {
       setDatabaseTesting(false);
     }
-  }, [databaseCatalogPath, databaseConnectionPayload, databaseMode, databaseName, runtimeExtensions?.knowledge, showToast]);
-
-  const gbrainDatabaseConnectionPayload = useCallback((createIfMissing = false) => ({
-    mode: "external" as const,
-    host: gbrainDatabaseHost || "127.0.0.1",
-    port: positiveIntOrNull(gbrainDatabasePort) ?? 5432,
-    database: gbrainDatabaseName || "llm_wiki",
-    username: gbrainDatabaseUsername || "puddingclaw",
-    password: gbrainDatabasePassword,
-    create_if_missing: createIfMissing,
-  }), [gbrainDatabaseHost, gbrainDatabaseName, gbrainDatabasePassword, gbrainDatabasePort, gbrainDatabaseUsername]);
-
-  const ensureGbrainDatabase = useCallback(async () => {
-    let result = await testDatabaseConnection(gbrainDatabaseConnectionPayload(false));
-    if (result.database_missing && result.can_create) {
-      const shouldCreate = window.confirm(
-        `gbrain 独立数据库“${gbrainDatabaseName || "llm_wiki"}”不存在。是否现在创建？`
-      );
-      if (!shouldCreate) return result;
-      result = await testDatabaseConnection(gbrainDatabaseConnectionPayload(true));
-    }
-    return result;
-  }, [gbrainDatabaseConnectionPayload, gbrainDatabaseName]);
-
-  const handleTestGbrainDatabase = useCallback(async () => {
-    setGbrainDatabaseTesting(true);
-    setGbrainDatabaseTestResult(null);
-    try {
-      const result = await ensureGbrainDatabase();
-      if (!result.success) {
-        setGbrainDatabaseTestResult({ ok: false, msg: result.message || "gbrain 数据库连接失败" });
-        return;
-      }
-      if (result.pgvector && !result.pgvector.available) {
-        const message = `PostgreSQL 已连接，但缺少必备 pgvector。请运行：${result.pgvector.install_command}`;
-        setGbrainDatabaseTestResult({ ok: false, msg: message });
-        showToast("error", "PostgreSQL 缺少 pgvector");
-        return;
-      }
-      const message = result.created
-        ? "gbrain 独立数据库已创建并连接成功，pgvector 可用"
-        : `连接成功 · pgvector 可用 · ${result.latency_ms}ms`;
-      setGbrainDatabaseTestResult({ ok: true, msg: message });
-      showToast("success", "gbrain 数据库连接成功");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "gbrain 数据库连接失败";
-      setGbrainDatabaseTestResult({ ok: false, msg: message });
-      showToast("error", message);
-    } finally {
-      setGbrainDatabaseTesting(false);
-    }
-  }, [ensureGbrainDatabase, showToast]);
-
-  const handleInitializeGbrain = useCallback(async () => {
-    setGbrainInitializing(true);
-    setGbrainDatabaseTestResult(null);
-    try {
-      const result = await ensureGbrainDatabase();
-      if (!result.success) throw new Error(result.message || "gbrain 数据库连接失败");
-      if (result.pgvector && !result.pgvector.available) {
-        throw new Error(`PostgreSQL 缺少必备 pgvector。请运行：${result.pgvector.install_command}`);
-      }
-      const payload = gbrainDatabaseConnectionPayload(false);
-      await initializeLlmWikiGbrain(postgresConnectionUrl({
-        host: payload.host,
-        port: payload.port,
-        database: payload.database,
-        username: payload.username,
-        password: payload.password || "",
-      }));
-      const workspace = await getLlmWikiWorkspaceStatus();
-      setGbrainWorkspace(workspace);
-      setGbrainDatabaseTestResult({ ok: true, msg: "gbrain 数据库已连接，Schema Pack 已安装" });
-      showToast("success", "gbrain 数据库配置已生效");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "gbrain 初始化失败";
-      setGbrainDatabaseTestResult({ ok: false, msg: message });
-      showToast("error", message);
-    } finally {
-      setGbrainInitializing(false);
-    }
-  }, [ensureGbrainDatabase, gbrainDatabaseConnectionPayload, showToast]);
-
-  const handleResetVectorCollections = useCallback(async () => {
-    const confirmed = window.confirm(
-      "确认清空知识库索引吗？\n\n这只会删除已生成的检索索引，不会删除你上传的 PDF、Markdown 或图片文件。"
-    );
-    if (!confirmed) return;
-    setSaving(true);
-    try {
-      const result = await resetKnowledgeVectorCollections();
-      showToast("success", result.dropped.length > 0 ? "知识库索引已清空" : "没有找到需要清空的索引");
-    } catch (err) {
-      showToast("error", err instanceof Error ? err.message : "操作失败");
-    } finally {
-      setSaving(false);
-    }
-  }, [showToast]);
+  }, [databaseCatalogPath, databaseConnectionPayload, databaseMode, databaseName, showToast]);
 
   const handleRefreshAgentModels = useCallback(async () => {
     setRefreshingModels(true);
@@ -1529,17 +1169,6 @@ export default function SettingsPage() {
       setRefreshingModels(false);
     }
   }, [refreshProviders, showToast]);
-
-  const handleChooseKnowledgeFolder = useCallback(async () => {
-    if (!window.electron?.selectKnowledgeFolder) {
-      showToast("error", "当前环境不支持系统文件夹选择，请手动粘贴本地目录路径。");
-      return;
-    }
-    const selected = await window.electron.selectKnowledgeFolder();
-    if (selected?.trim()) {
-      setKnowledgeRootDir(selected.trim());
-    }
-  }, [showToast]);
 
   const handleAddSubAgent = useCallback(() => {
     setSubagentItems((prev) => {
@@ -1705,12 +1334,9 @@ export default function SettingsPage() {
   const editableModelCategories = MODEL_CATEGORY_OPTIONS.filter((option) => (
     pendingModelEndpoint?.capabilities.includes(option.capability)
     && (!pendingModelCategoryEdit?.capability || option.capability === pendingModelCategoryEdit.capability)
-    && (runtimeExtensions?.knowledge || option.capability === "llm")
+    && (option.capability === "llm")
   ));
-  const showPageSave = activeCategory === "databaseQa"
-    || activeCategory === "rag"
-    || activeCategory === "knowledge"
-    || activeCategory === "harness"
+  const showPageSave = activeCategory === "harness"
     || (activeCategory === "database" && !databaseEnvOverride);
 
   return (
@@ -1732,7 +1358,7 @@ export default function SettingsPage() {
         >
           <div className="h-full w-52 flex flex-col">
             <div className="h-11 shrink-0" />
-            <SettingsNavigation active={activeCategory} extensions={runtimeExtensions} onSelectCategory={setCategory} onReturnToApp={handleReturnToApp} />
+            <SettingsNavigation active={activeCategory} extensions={harnessSettingsExtensions} onSelectCategory={setCategory} onReturnToApp={handleReturnToApp} />
           </div>
         </div>
 
@@ -1742,7 +1368,7 @@ export default function SettingsPage() {
             <div className="mx-auto w-full max-w-6xl space-y-6">
               <SettingsWorkspaceHeader
                 category={activeCategory}
-                description={SETTINGS_CATEGORY_DESCRIPTIONS[activeCategory]}
+                description={SETTINGS_CATEGORY_DESCRIPTIONS[activeCategory] || ""}
                 onSave={handleSave}
                 saving={saving}
                 showSave={showPageSave}
@@ -1851,7 +1477,7 @@ export default function SettingsPage() {
                             ["multimodal_embedding", "多模态 Embedding", "图片与图文混合内容"],
                             ["rerank", "Rerank", "召回结果的相关性重排"],
                           ] as const).filter(([binding]) => (
-                            runtimeExtensions?.knowledge || binding === "agent" || binding === "image_analyzer"
+                            binding === "agent" || binding === "image_analyzer"
                           )).map(([binding, label, description]) => {
                             const capability = binding === "agent" || binding === "image_analyzer" ? "llm" : binding;
                             const boundId = providerRegistry?.bindings[binding] || "";
@@ -1923,7 +1549,7 @@ export default function SettingsPage() {
 
                             <div className="space-y-3">
                               {MODEL_CATEGORY_OPTIONS.filter((categoryOption) => (
-                                runtimeExtensions?.knowledge || categoryOption.capability === "llm"
+                                categoryOption.capability === "llm"
                               )).map((categoryOption) => {
                                 const models = activeProvider.models.filter((model) => modelCategories(model).includes(categoryOption.id));
                                 if (!models.length) return null;
@@ -1944,399 +1570,6 @@ export default function SettingsPage() {
                 </div>
               </section>
             )}
-            {activeCategory === "databaseQa" && (
-              <SettingsAnchorLayout prefix="database-qa" sections={DATABASE_QA_SECTIONS}>
-                <section id="database-qa-section-preview" className="scroll-mt-6 space-y-5">
-                <div className="overflow-hidden rounded-2xl border border-[#002fa7]/10 bg-[#002fa7]/[0.025]">
-                  <div className="border-b border-[#002fa7]/10 px-5 py-3.5">
-                    <p className="text-[12px] font-semibold text-gray-800">一条查询结果的处理顺序</p>
-                    <p className="mt-1 text-[10px] leading-4 text-gray-500">
-                      这些设置不会改变 SQL 的业务口径，只决定结果以什么体量进入模型和是否保留完整副本。
-                    </p>
-                  </div>
-                  <div className="grid gap-px bg-[#002fa7]/10 md:grid-cols-4">
-                    {[
-                      ["1", "执行 SQL", `最长 ${dbQaQueryTimeoutSeconds || "30"} 秒`],
-                      ["2", "尝试完整直传", `行 ≤ ${dbQaFullRowsHardRowCap || "200"} · 列 ≤ ${dbQaFullRowsHardColumnCap || "20"}`],
-                      ["3", "超限则发送预览", `预览 ≤ ${dbQaPreviewRowsTokenBudget || "3000"} Token`],
-                      ["4", "保留完整结果", `物化 ≤ ${dbQaResultMaterializationRowCap || "5000"} 行`],
-                    ].map(([step, label, detail]) => (
-                      <div key={step} className="bg-white/90 px-4 py-3.5">
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#002fa7] text-[9px] font-semibold text-white">
-                            {step}
-                          </span>
-                          <span className="text-[11px] font-semibold text-gray-700">{label}</span>
-                        </div>
-                        <p className="mt-1.5 pl-7 text-[10px] leading-4 text-gray-400">{detail}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <SettingsCard title="完整结果直传条件" icon={ShieldCheck} color="#0f172a">
-                  <div className="rounded-xl bg-blue-50/60 px-3.5 py-3 text-[10px] leading-4 text-blue-700">
-                    完整结果只有在<strong>行数、列数和估算 Token 三项同时达标</strong>时才会直接发送给模型。
-                    这些条件不限制 SQL 实际返回多少行，也不决定完整结果能否落盘。
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-[10px] text-slate-600">
-                    <span className="font-semibold text-slate-800">完整直传 =</span>
-                    <span className="rounded-full bg-white px-2 py-1 shadow-sm">行数 ≤ {dbQaFullRowsHardRowCap || "200"}</span>
-                    <span className="font-semibold text-slate-400">AND</span>
-                    <span className="rounded-full bg-white px-2 py-1 shadow-sm">列数 ≤ {dbQaFullRowsHardColumnCap || "20"}</span>
-                    <span className="font-semibold text-slate-400">AND</span>
-                    <span className="rounded-full bg-white px-2 py-1 shadow-sm">结果 ≤ {dbQaFullRowsTokenBudget || "10000"} Token</span>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <DatabaseQaParameterField
-                      label="最大行数"
-                      description="完整结果超过该行数时改发预览；不是 SQL 查询或落盘上限。"
-                      unit="行"
-                      value={dbQaFullRowsHardRowCap}
-                      onChange={setDbQaFullRowsHardRowCap}
-                    />
-                    <DatabaseQaParameterField
-                      label="最大列数"
-                      description="宽表超过该列数时改发预览，避免一次占满模型上下文。"
-                      unit="列"
-                      value={dbQaFullRowsHardColumnCap}
-                      onChange={setDbQaFullRowsHardColumnCap}
-                    />
-                    <DatabaseQaParameterField
-                      label="最大内容体量"
-                      description="完整结果经过单元格截短后的近似 Token 上限。"
-                      unit="Token"
-                      value={dbQaFullRowsTokenBudget}
-                      onChange={setDbQaFullRowsTokenBudget}
-                    />
-                  </div>
-                  <div className="border-t border-slate-100 pt-4">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <DatabaseQaParameterField
-                        label="SQL 执行超时"
-                        description="只计算数据库执行时间，不包含 SQL 生成、模型思考和后续文件写入。"
-                        unit="秒"
-                        value={dbQaQueryTimeoutSeconds}
-                        onChange={setDbQaQueryTimeoutSeconds}
-                      />
-                      <DatabaseQaParameterField
-                        label="SQL 生成总超时"
-                        description="覆盖召回、候选生成、实体画像、语义修正和确定性预检；最后 30 秒仅用于收尾。"
-                        unit="秒"
-                        value={dbQaSqlGenerationTimeoutSeconds}
-                        onChange={setDbQaSqlGenerationTimeoutSeconds}
-                      />
-                    </div>
-                  </div>
-                </SettingsCard>
-
-                <SettingsCard title="预览与摘要内容" icon={Database} color="#002fa7">
-                  <div className="rounded-xl bg-blue-50/60 px-3.5 py-3 text-[10px] leading-4 text-blue-700">
-                    完整结果无法直传时，模型收到的是<strong>预览行 + Profile 摘要</strong>。
-                    以下 Token 是本次数据库 Tool Result 的近似预算，不是模型的 272k 总上下文窗口。
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <DatabaseQaParameterField
-                      label="预览内容上限"
-                      description="完整结果无法直传时，逐步减少预览行，直到预览内容落入该预算。"
-                      unit="Token"
-                      value={dbQaPreviewRowsTokenBudget}
-                      onChange={setDbQaPreviewRowsTokenBudget}
-                    />
-                    <div className={`rounded-xl border px-3.5 py-3 ${dbQaProfileEnabled ? "border-blue-100 bg-blue-50/35" : "border-amber-100 bg-amber-50/40"}`}>
-                      <div className="mb-3 flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-[11px] font-semibold text-gray-700">生成 Profile 摘要</p>
-                            <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-medium text-[#002fa7] shadow-sm">
-                              默认开启
-                            </span>
-                          </div>
-                          <p className="mt-1 text-[10px] leading-4 text-gray-400">
-                            进入预览模式时，补充分布、日期范围和数值范围，避免模型只依据预览行判断。
-                          </p>
-                        </div>
-                        <SwitchButton
-                          checked={dbQaProfileEnabled}
-                          onChange={setDbQaProfileEnabled}
-                          ariaLabel="生成 Profile 摘要"
-                        />
-                      </div>
-                      <DatabaseQaParameterField
-                        label="摘要内容上限"
-                        description={dbQaProfileEnabled
-                          ? "限制 Profile 进入模型的近似体量；不影响完整结果文件。"
-                          : "已关闭：模型在结果超限时只会收到预览行。"}
-                        unit="Token"
-                        value={dbQaProfileTokenBudget}
-                        onChange={setDbQaProfileTokenBudget}
-                        disabled={!dbQaProfileEnabled}
-                      />
-                    </div>
-                    <DatabaseQaParameterField
-                      label="单个文本值最大长度"
-                      description="完整直传和预览都会应用：单个文本超过该长度时，模型只看到前 N 个字符和省略号；数字不截断，落盘仍保存原值。"
-                      unit="字符"
-                      value={dbQaMaxCellCharsForLlm}
-                      onChange={setDbQaMaxCellCharsForLlm}
-                    />
-                  </div>
-                </SettingsCard>
-                <SettingsCard title="SQL 可靠性" icon={Route} color="#7c3aed">
-                  <ToggleRow
-                    label="允许基础设施故障回退"
-                    description="仅当 evidence search 超时、数据库不可用或 Agent 协议不可用时，允许临时调用兼容生成器；业务歧义、越权和证据不足不会回退。"
-                    checked={dbQaAgentSqlFallbackEnabled}
-                    onChange={setDbQaAgentSqlFallbackEnabled}
-                  />
-                </SettingsCard>
-                </section>
-
-                <section id="database-qa-section-storage" className="scroll-mt-6">
-                  <SettingsCard title="持久化存储" icon={FileText} color="#10b981">
-                  <ToggleRow
-                    label="持久化结果集"
-                    description="为超出直传条件的完整结果生成 result_id 和 JSONL；关闭后不落盘，也不提供后续分页与导出。"
-                    checked={dbQaResultStoreEnabled}
-                    onChange={setDbQaResultStoreEnabled}
-                  />
-                  <div className={`grid gap-4 rounded-xl border p-3.5 transition-opacity md:grid-cols-2 ${
-                    dbQaResultStoreEnabled
-                      ? "border-emerald-100 bg-emerald-50/20"
-                      : "border-slate-100 bg-slate-50/60 opacity-50"
-                  }`}>
-                    <DatabaseQaParameterField
-                      label="单个结果集最大行数"
-                      description="开启持久化后，只有完整结果不超过该行数才会生成 result_id 并落盘。"
-                      unit="行"
-                      value={dbQaResultMaterializationRowCap}
-                      onChange={setDbQaResultMaterializationRowCap}
-                      disabled={!dbQaResultStoreEnabled}
-                    />
-                    <DatabaseQaParameterField
-                      label="结果保留时间"
-                      description="仅适用于已持久化的结果；到期后 JSONL、分页与导出入口会被清理。"
-                      unit="小时"
-                      value={dbQaResultStoreTtlHours}
-                      onChange={setDbQaResultStoreTtlHours}
-                      disabled={!dbQaResultStoreEnabled}
-                    />
-                    <div className="md:col-span-2">
-                      <ToggleRow
-                        label="允许导出"
-                        description="控制已持久化结果页的 CSV 导出按钮和后端导出 API。"
-                        checked={dbQaExportEnabled}
-                        onChange={setDbQaExportEnabled}
-                        disabled={!dbQaResultStoreEnabled}
-                      />
-                    </div>
-                  </div>
-                  <div className={`rounded-xl px-3.5 py-3 text-[10px] leading-4 ${
-                    dbQaResultStoreEnabled
-                      ? "bg-emerald-50/70 text-emerald-700"
-                      : "bg-slate-50 text-slate-500"
-                  }`}>
-                    {dbQaResultStoreEnabled ? (
-                      <>
-                        落盘条件：结果未完整直传，且完整结果行数不超过
-                        <strong> {dbQaResultMaterializationRowCap || "5000"} 行</strong>。成功后 Trace
-                        会显示以 <code>qr_</code> 开头的 result_id、文件路径和过期时间。
-                      </>
-                    ) : (
-                      "持久化已关闭：查询仍会返回模型预览和 Profile，但不会生成 result_id 或结果文件。"
-                    )}
-                  </div>
-                  <div className={`border-t pt-4 ${dbQaResultStoreEnabled ? "border-emerald-100" : "border-slate-100 opacity-50"}`}>
-                    <div className="mb-3">
-                      <p className="text-[12px] font-semibold text-gray-800">分页读取</p>
-                      <p className="mt-1 text-[10px] leading-4 text-gray-500">
-                        控制模型或结果页每次从已持久化文件中读取多少行。
-                      </p>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <DatabaseQaParameterField
-                        label="默认每页行数"
-                        description="未指定 page_size 时使用。"
-                        unit="行"
-                        value={dbQaDefaultPageSize}
-                        onChange={setDbQaDefaultPageSize}
-                        disabled={!dbQaResultStoreEnabled}
-                      />
-                      <DatabaseQaParameterField
-                        label="单页最大行数"
-                        description="限制单次分页请求体量，不会提高持久化行数上限。"
-                        unit="行"
-                        value={dbQaMaxPageSize}
-                        onChange={setDbQaMaxPageSize}
-                        disabled={!dbQaResultStoreEnabled}
-                      />
-                    </div>
-                  </div>
-                  </SettingsCard>
-                </section>
-              </SettingsAnchorLayout>
-            )}
-
-            {/* RAG Settings */}
-            {activeCategory === "rag" && (
-              <SettingsAnchorLayout prefix="rag" sections={RAG_SECTIONS}>
-                <section id="rag-section-recall" className="scroll-mt-6">
-                <SettingsCard title="基础召回" icon={Search} color="#002fa7">
-                <div className="rounded-lg border border-black/[0.06] bg-white/50 px-3.5 py-3">
-                  <p className="text-[12px] font-medium text-gray-700">知识库检索默认开启</p>
-                  <p className="mt-0.5 text-[11px] leading-5 text-gray-500">
-                    这里配置 LlamaIndex 工具的召回策略。Top-K 是最终交给 Agent/LLM 的结果数量；候选数量是中间召回池。
-                  </p>
-                </div>
-                <FormField label={`最终结果数 Top-K: ${ragTopK}`}>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value={ragTopK}
-                    onChange={(e) => setRagTopK(parseInt(e.target.value))}
-                    className="w-full accent-[#002fa7]"
-                  />
-                  <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
-                    <span>精确 (1)</span>
-                    <span>广泛 (10)</span>
-                  </div>
-                </FormField>
-                <FormField label={`相似度阈值: ${ragThreshold}`}>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={ragThreshold}
-                    onChange={(e) => setRagThreshold(parseFloat(e.target.value))}
-                    className="w-full accent-[#002fa7]"
-                  />
-                  <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
-                    <span>宽松 (0)</span>
-                    <span>严格 (1)</span>
-                  </div>
-                </FormField>
-				</SettingsCard>
-				</section>
-				<section id="rag-section-hybrid" className="scroll-mt-6">
-				<SettingsCard title="混合检索" icon={Network} color="#002fa7">
-				<div className="rounded-xl border border-[#002fa7]/10 bg-[#002fa7]/[0.04] p-3.5 space-y-3">
-	                  <div className="min-w-0">
-	                    <p className="text-[12px] font-semibold text-gray-800">混合检索权重</p>
-	                    <p className="mt-0.5 text-[11px] text-gray-500">
-	                      先做文本混合检索，再和图片结果一起排序。
-	                    </p>
-	                  </div>
-	                  <FormField label={`召回池大小: ${ragHybridCandidateTopK}`}>
-	                    <input
-	                      type="range"
-	                      min="3"
-                      max="50"
-                      step="1"
-                      value={ragHybridCandidateTopK}
-                      onChange={(e) => setRagHybridCandidateTopK(parseInt(e.target.value))}
-	                      className="w-full accent-[#002fa7]"
-	                    />
-	                  </FormField>
-	                  <div className="rounded-2xl border border-black/[0.04] bg-white/60 p-3">
-	                    <div className="mb-3 flex items-center justify-between gap-3">
-	                      <p className="text-[11px] font-semibold text-gray-700">文本混合检索</p>
-	                      <p className="text-[11px] text-gray-400">合计 100%</p>
-	                    </div>
-	                    <div className="flex items-center justify-between text-[12px] font-medium text-gray-600">
-	                      <span>关键词匹配 {Math.round(ragBm25Weight * 100)}%</span>
-	                      <span>语义理解 {Math.round(ragTextVectorWeight * 100)}%</span>
-	                    </div>
-	                    <input
-	                      type="range"
-	                      min="0"
-	                      max="1"
-	                      step="0.05"
-	                      value={ragTextVectorWeight}
-	                      onChange={(e) => setRagTextVectorWeight(parseFloat(e.target.value))}
-	                      className="mt-3 w-full accent-[#002fa7]"
-	                    />
-	                    <div className="mt-1 flex justify-between text-[10px] text-gray-400">
-	                      <span>更偏关键词</span>
-	                      <span>更偏语义</span>
-	                    </div>
-	                  </div>
-	                  <div className="rounded-2xl border border-black/[0.04] bg-white/60 p-3">
-	                    <div className="mb-3 flex items-center justify-between gap-3">
-	                      <p className="text-[11px] font-semibold text-gray-700">图文融合</p>
-	                      <p className="text-[11px] text-gray-400">合计 100%</p>
-	                    </div>
-	                    <div className="flex items-center justify-between text-[12px] font-medium text-gray-600">
-	                      <span>文本整体 {Math.round(ragTextGroupWeight * 100)}%</span>
-	                      <span>图片理解 {Math.round(ragImageVectorWeight * 100)}%</span>
-	                    </div>
-	                      <input
-	                        type="range"
-	                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={ragImageVectorWeight}
-	                        onChange={(e) => setRagImageVectorWeight(parseFloat(e.target.value))}
-	                        className="mt-3 w-full accent-[#002fa7]"
-	                      />
-	                    <div className="mt-1 flex justify-between text-[10px] text-gray-400">
-	                      <span>更偏文本</span>
-	                      <span>更偏图片</span>
-	                    </div>
-	                  </div>
-				</div>
-				</SettingsCard>
-				</section>
-				<section id="rag-section-rerank" className="scroll-mt-6">
-				<SettingsCard title="重排 Rerank" icon={Filter} color="#002fa7">
-                <div className="rounded-xl border border-[#002fa7]/10 bg-white/70 p-3.5 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[12px] font-semibold text-gray-800">重排 Rerank</p>
-                      <p className="mt-0.5 text-[11px] text-gray-500">
-                        对召回候选重新排序。开启后，最终结果会优先看重排模型判断。
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setRagRerankEnabled((value) => !value)}
-                      className={`relative h-7 w-12 rounded-full transition ${
-                        ragRerankEnabled ? "bg-[#002fa7]" : "bg-gray-200"
-                      }`}
-                      aria-pressed={ragRerankEnabled}
-                    >
-                      <span
-                        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition ${
-                          ragRerankEnabled ? "left-6" : "left-1"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  <div className="grid gap-3">
-                    <FormField label={`重排候选池: ${ragRerankCandidateTopK}`}>
-                      <input
-                        type="range"
-                        min="10"
-                        max="100"
-                        step="5"
-                        value={ragRerankCandidateTopK}
-                        onChange={(e) => setRagRerankCandidateTopK(parseInt(e.target.value))}
-                        className="w-full accent-[#002fa7]"
-                      />
-                    </FormField>
-                  </div>
-                  <p className="text-[11px] leading-5 text-gray-400">
-                    重排后的最终输出数量跟随上面的 Top-K。
-                  </p>
-                </div>
-              </SettingsCard>
-			  </section>
-			</SettingsAnchorLayout>
-            )}
-
-            {/* Core Database Settings */}
             {activeCategory === "database" && (
               <div className="space-y-5">
                 <SettingsCard title="核心数据库" icon={Database} color="#0f172a">
@@ -2415,7 +1648,7 @@ export default function SettingsPage() {
                             <p className="mt-1 break-all font-mono text-[11px] text-slate-700">{databaseCatalogPath}</p>
                           </div>
                           <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
-                            gbrain / pgvector 与外部业务数据源是独立可选项，不会改变 Core 的存储方式。
+                            Core 存储与外部服务连接彼此独立，不会改变本地 Catalog 的存储方式。
                           </p>
                         </div>
                       </div>
@@ -2522,394 +1755,6 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Knowledge Base Settings */}
-            {activeCategory === "knowledge" && (
-              <SettingsAnchorLayout prefix="knowledge" sections={KNOWLEDGE_SECTIONS}>
-                <section id="knowledge-section-directory" className="scroll-mt-6">
-                <SettingsCard title="本地知识库目录" icon={FolderOpen} color="#002fa7">
-                  <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-3.5 py-3">
-                    <p className="text-[11px] leading-relaxed text-blue-700">
-                      知识库目录是用户资产目录：PDF 原件、MinerU Markdown、图片 assets、md glob/grep 与 LlamaIndex 索引都会围绕这个目录工作。建议选择 Documents 下的长期目录，而不是项目代码目录。
-                    </p>
-                  </div>
-                  {knowledgeEnvOverride && (
-                    <div className="rounded-xl border border-amber-100 bg-amber-50/60 px-3.5 py-3 text-[11px] text-amber-700">
-                      当前目录由环境变量 PUDDINGCLAW_KNOWLEDGE_DIR 覆盖；保存 config.json 后不会改变运行时覆盖值。
-                    </div>
-                  )}
-                  <FormField label="知识库根目录">
-                    <div className="flex gap-2">
-                      <input
-                        value={knowledgeRootDir}
-                        onChange={(e) => setKnowledgeRootDir(e.target.value)}
-                        className="form-input"
-                        placeholder="/Users/you/Documents/PuddingClawKnowledge（留空使用默认知识库目录）"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleChooseKnowledgeFolder}
-                        className="shrink-0 rounded-lg bg-[#002fa7]/10 px-3 py-1.5 text-[11px] font-medium text-[#002fa7] hover:bg-[#002fa7]/15"
-                      >
-                        选择目录
-                      </button>
-                    </div>
-                  </FormField>
-                  <Link
-                    href="/knowledge"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-black/[0.06] bg-white px-3 py-2 text-[11px] font-medium text-gray-600 hover:bg-black/[0.02]"
-                  >
-                    打开知识库管理页
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </Link>
-                </SettingsCard>
-                </section>
-
-                <section id="knowledge-section-parsers" className="scroll-mt-6">
-                  <SettingsCard title="文档解析器" icon={FileText} color="#002fa7">
-                    <DocumentParserSettings />
-                  </SettingsCard>
-                </section>
-
-                <section id="knowledge-section-wiki" className="scroll-mt-6">
-                <SettingsCard title="LLM Wiki" icon={Bot} color="#7c3aed">
-                  <div className="flex items-center gap-2">
-                    <Bot className="h-4 w-4 text-violet-600" />
-                    <p className="text-[12px] font-semibold text-gray-800">编译 Agent</p>
-                  </div>
-                  <div className="rounded-xl border border-violet-100 bg-violet-50/50 px-3.5 py-3">
-                    <p className="text-[11px] leading-relaxed text-violet-700">
-                      专门在后台把 Raw 编译成 Wiki。它不进入聊天 Session，只加载 Context、Publish 和 Lint 三个工具；模型接口与密钥仍由「模型服务」统一管理。
-                    </p>
-                  </div>
-                  <FormField label="编译模型">
-                    <ModelBindingSelect
-                      value={wikiCompilerModelId}
-                      onChange={setWikiCompilerModelId}
-                      variant="light"
-                      options={[
-                        { id: "", label: "跟随主 Agent 模型" },
-                        ...allProviderModels
-                          .filter((model) => model.capability === "llm")
-                          .map((model) => ({
-                            id: model.id,
-                            label: `${model.provider.name} · ${model.name}`,
-                          })),
-                      ]}
-                    />
-                    <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
-                      新任务会锁定提交时的模型；修改设置不会改变已经排队或正在运行的任务。
-                    </p>
-                  </FormField>
-                  <button
-                    type="button"
-                    onClick={() => setCategory("ai")}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-700 transition hover:border-[#002fa7]/20 hover:text-[#002fa7]"
-                  >
-                    管理模型与密钥
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </button>
-
-                  <div className="border-t border-black/[0.06] pt-4">
-                    <div className="mb-3 flex items-center gap-2">
-                      <Search className="h-4 w-4 text-[#002fa7]" />
-                      <p className="text-[12px] font-semibold text-gray-800">查询与 Embedding</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 rounded-xl border border-black/[0.06] bg-white/60 px-3.5 py-3">
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-medium text-gray-800">启用关键词 + Embedding 混合检索</p>
-                      <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
-                        关闭时完全沿用当前 Markdown Query；开启后在同一 LlamaIndex Text Collection 中加入 Wiki 语义召回，并与关键词结果融合。向量不可用时自动回退，不影响 Wiki 查询。
-                      </p>
-                    </div>
-                    <SwitchButton
-                      checked={wikiHybridEnabled}
-                      onChange={(enabled) => void handleWikiHybridChange(enabled)}
-                      ariaLabel="启用 LLM Wiki 混合检索"
-                      disabled={wikiHybridSaving}
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${wikiHybridEnabled ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-                      {wikiHybridEnabled ? "混合检索" : "仅 Markdown Query"}
-                    </span>
-                    <p className="text-[11px] text-gray-400">
-                      {wikiHybridSaving ? "正在保存…" : "开关会自动保存；首次开启请到 Studio 同步已有页面。"}
-                    </p>
-                  </div>
-                  <Link
-                    href="/knowledge/schema"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-black/[0.06] bg-white px-3 py-2 text-[11px] font-medium text-gray-600 hover:text-[#002fa7]"
-                  >
-                    管理 Wiki Embedding
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </Link>
-                </SettingsCard>
-                </section>
-
-                <section id="knowledge-section-gbrain" className="scroll-mt-6">
-                  <SettingsCard title="GBrain" icon={Brain} color="#0f766e">
-                    <div className="rounded-xl border border-teal-100 bg-teal-50/50 px-3.5 py-3">
-                      <p className="text-[11px] leading-relaxed text-teal-700">
-                        统一配置 GBrain 的检索模型、Think 模型与独立 PostgreSQL。模型接口和密钥复用「模型服务」；数据库保存 Wiki 页面、关系与向量，不与 PuddingClaw 主数据库混用。
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                      <span className={`rounded-full px-2.5 py-1 font-medium ${gbrainWorkspace?.gbrain.postgres_configured ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                        PostgreSQL {gbrainWorkspace?.gbrain.postgres_configured ? "已配置" : "未配置"}
-                      </span>
-                      <span className={`rounded-full px-2.5 py-1 font-medium ${gbrainWorkspace?.gbrain.cli_installed ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-                        CLI {gbrainWorkspace?.gbrain.cli_installed ? "已安装" : "未安装"}
-                      </span>
-                      <span className={`rounded-full px-2.5 py-1 font-medium ${gbrainWorkspace?.gbrain.models.configured ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                        模型 {gbrainWorkspace?.gbrain.models.configured ? "已配置" : "未配置"}
-                      </span>
-                    </div>
-                    <div className="border-t border-black/[0.06] pt-4">
-                      <p className="mb-3 text-[12px] font-semibold text-gray-800">检索与推理模型</p>
-                    </div>
-                  <FormField label="Embedding 模型">
-                    <ModelBindingSelect
-                      value={wikiGbrainEmbeddingModelId}
-                      onChange={setWikiGbrainEmbeddingModelId}
-                      variant="light"
-                      options={[
-                        { id: "", label: "跟随文本 Embedding 模型" },
-                        ...allProviderModels
-                          .filter((model) => model.capability === "text_embedding")
-                          .map((model) => ({
-                            id: model.id,
-                            label: `${model.provider.name} · ${model.name}${model.dimension ? ` · ${model.dimension} 维` : ""}`,
-                          })),
-                      ]}
-                    />
-                    <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
-                      初始化 PostgreSQL Brain 时固定向量维度；更换后需重新初始化或迁移 Embedding。
-                    </p>
-                  </FormField>
-                  <FormField label="Think 模型">
-                    <ModelBindingSelect
-                      value={wikiGbrainThinkModelId}
-                      onChange={setWikiGbrainThinkModelId}
-                      variant="light"
-                      options={[
-                        { id: "", label: "跟随主 Agent 模型" },
-                        ...allProviderModels
-                          .filter((model) => model.capability === "llm")
-                          .map((model) => ({
-                            id: model.id,
-                            label: `${model.provider.name} · ${model.name}`,
-                          })),
-                      ]}
-                    />
-                    <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
-                      用于 GBrain Think 的多跳综合；可独立调整，不要求重建向量。
-                    </p>
-                  </FormField>
-                  <button
-                    type="button"
-                    onClick={() => setCategory("ai")}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-700 transition hover:border-[#002fa7]/20 hover:text-[#002fa7]"
-                  >
-                    管理模型与密钥
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </button>
-
-                    <div className="border-t border-black/[0.06] pt-4">
-                      <div className="mb-3">
-                        <p className="text-[12px] font-semibold text-gray-800">PostgreSQL 数据库</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
-                          复用本机 PostgreSQL 服务，但为 GBrain 使用独立 database。Studio 只执行预检和入库，不再维护数据库连接。
-                        </p>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <FormField label="模式">
-                          <select value="external" disabled className="form-select disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500">
-                            <option value="external">本机 PostgreSQL</option>
-                          </select>
-                        </FormField>
-                        <FormField label="本机端口">
-                          <input
-                            type="number"
-                            min="1"
-                            max="65535"
-                            value={gbrainDatabasePort}
-                            onChange={(event) => setGbrainDatabasePort(event.target.value)}
-                            className="form-input"
-                            placeholder="5432"
-                          />
-                        </FormField>
-                        <FormField label="数据库名">
-                          <input
-                            value={gbrainDatabaseName}
-                            onChange={(event) => setGbrainDatabaseName(event.target.value)}
-                            className="form-input"
-                            placeholder="llm_wiki"
-                          />
-                        </FormField>
-                        <FormField label="用户名">
-                          <input
-                            value={gbrainDatabaseUsername}
-                            onChange={(event) => setGbrainDatabaseUsername(event.target.value)}
-                            className="form-input"
-                            placeholder="pet"
-                          />
-                        </FormField>
-                        <FormField label="密码">
-                          <input
-                            type="password"
-                            value={gbrainDatabasePassword}
-                            onChange={(event) => setGbrainDatabasePassword(event.target.value)}
-                            className="form-input"
-                            placeholder={gbrainWorkspace?.gbrain.postgres_configured ? "重新配置时输入数据库密码" : "数据库密码（本机免密可留空）"}
-                            autoComplete="new-password"
-                          />
-                        </FormField>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleTestGbrainDatabase()}
-                        disabled={gbrainDatabaseTesting || gbrainInitializing || !gbrainDatabaseName.trim() || !gbrainDatabaseUsername.trim()}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-gray-950 px-3 py-2 text-[11px] font-medium text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {gbrainDatabaseTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-                        测试连接
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleInitializeGbrain()}
-                        disabled={gbrainDatabaseTesting || gbrainInitializing || !gbrainDatabaseName.trim() || !gbrainDatabaseUsername.trim() || !gbrainWorkspace?.gbrain.cli_installed || !gbrainWorkspace?.gbrain.models.configured}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#002fa7] px-3 py-2 text-[11px] font-medium text-white hover:bg-[#001f7a] disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {gbrainInitializing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
-                        {gbrainWorkspace?.gbrain.postgres_configured ? "重新连接并初始化" : "连接并初始化"}
-                      </button>
-                      {gbrainWorkspace?.gbrain.postgres?.configured ? (
-                        <span className="text-[11px] text-gray-400">
-                          当前：{gbrainWorkspace.gbrain.postgres.username}@{gbrainWorkspace.gbrain.postgres.host}:{gbrainWorkspace.gbrain.postgres.port}/{gbrainWorkspace.gbrain.postgres.database}
-                        </span>
-                      ) : null}
-                    </div>
-
-                    {!gbrainWorkspace?.gbrain.models.configured ? (
-                      <p className="rounded-xl border border-amber-100 bg-amber-50/60 px-3.5 py-3 text-[11px] leading-relaxed text-amber-700">
-                        连接并初始化前，请先选择上方的 Embedding 与 Think 模型并保存设置。
-                      </p>
-                    ) : null}
-
-                    {gbrainDatabaseTestResult ? (
-                      <div className={`rounded-xl border px-3.5 py-3 text-[11px] ${gbrainDatabaseTestResult.ok ? "border-emerald-100 bg-emerald-50 text-emerald-700" : "border-red-100 bg-red-50 text-red-700"}`}>
-                        {gbrainDatabaseTestResult.msg}
-                      </div>
-                    ) : null}
-                  </SettingsCard>
-                </section>
-
-                <section id="knowledge-section-embedding" className="scroll-mt-6">
-                <SettingsCard title="多模态 Embedding" icon={Database} color="#002fa7">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[12px] font-medium text-slate-700">
-                          {multimodalEmbeddingSelection
-                            ? `${multimodalEmbeddingSelection.provider.name} · ${multimodalEmbeddingSelection.model.name}`
-                            : "尚未绑定多模态 Embedding 模型"}
-                        </p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                          {multimodalEmbeddingSelection?.model.dimension
-                            ? `${multimodalEmbeddingSelection.model.dimension} 维 · 模型、接口和密钥由「模型服务」统一管理`
-                            : "模型、维度、接口和密钥由「模型服务」统一管理"}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setCategory("ai")}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-700 transition hover:border-[#002fa7]/20 hover:text-[#002fa7]"
-                      >
-                        前往模型服务
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="max-w-sm">
-                    <FormField label="多模态批量数">
-                      <input value={mmBatchSize} onChange={(e) => setMmBatchSize(e.target.value)} className="form-input" placeholder="10" />
-                      <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
-                        qwen3-vl-embedding 单次最多处理 20 条文本或 10 张图片。
-                      </p>
-                    </FormField>
-                  </div>
-                </SettingsCard>
-                </section>
-
-                <section id="knowledge-section-index" className="scroll-mt-6">
-                <SettingsCard title="知识库检索索引" icon={Database} color="#10b981">
-                  <div className="flex items-center justify-between gap-4 rounded-lg border border-black/[0.06] bg-white/50 px-3.5 py-3">
-                    <div>
-                      <p className="text-[12px] font-medium text-gray-700">让知识库支持语义搜索和图文检索</p>
-                      <p className="mt-0.5 text-[11px] text-gray-500">建议保持开启。关闭后只保留本地文件检索。</p>
-                    </div>
-                    <SwitchButton checked={kbIndexEnabled} onChange={setKbIndexEnabled} ariaLabel="启用知识库多模态索引" />
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <FormField label="索引服务地址">
-                      <input value={kbMilvusUri} onChange={(e) => setKbMilvusUri(e.target.value)} className="form-input" />
-                    </FormField>
-                    <div className="flex items-end">
-                      <p className="pb-2 text-[11px] leading-relaxed text-gray-500">
-                        默认使用本机 Milvus：<span className="font-medium text-gray-700">http://localhost:19530</span>
-                      </p>
-                    </div>
-                    <details className="md:col-span-2 rounded-xl border border-black/[0.06] bg-white/60 p-3">
-                      <summary className="cursor-pointer text-[11px] font-medium text-gray-600">
-                        高级选项
-                      </summary>
-                      <div className="mt-3 grid gap-4 md:grid-cols-2">
-                        <FormField label="索引存储">
-                          <select value={kbVectorStore} onChange={(e) => setKbVectorStore(e.target.value)} className="form-select">
-                            <option value="milvus">Milvus</option>
-                            <option value="local">本地 LlamaIndex 存储</option>
-                          </select>
-                        </FormField>
-                        <FormField label="文本索引名称">
-                          <input value={kbTextCollection} onChange={(e) => setKbTextCollection(e.target.value)} className="form-input" />
-                        </FormField>
-                        <FormField label="图片索引名称">
-                          <input value={kbImageCollection} onChange={(e) => setKbImageCollection(e.target.value)} className="form-input" />
-                        </FormField>
-                      </div>
-                    </details>
-                    <div className="md:col-span-2 rounded-xl border border-red-100 bg-red-50/50 p-3">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-[12px] font-medium text-red-700">清空知识库索引</p>
-                          <p className="mt-1 text-[11px] leading-relaxed text-red-600/80">
-                            删除已生成的搜索缓存。不会删除你上传的文件；下次使用时会重新生成。
-                          </p>
-                          <p className="mt-1 text-[11px] text-red-600/70">
-                            不确定时不用点它。
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleResetVectorCollections}
-                          disabled={saving}
-                          className="shrink-0 rounded-lg bg-red-600 px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-red-700 disabled:cursor-wait disabled:opacity-60"
-                        >
-                          立即清空
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </SettingsCard>
-                </section>
-              </SettingsAnchorLayout>
-            )}
-
-            {/* Agent / Harness Config */}
             {activeCategory === "harness" && (
               <div className="flex flex-col lg:flex-row gap-5">
                 {/* Left: harness category sidebar */}

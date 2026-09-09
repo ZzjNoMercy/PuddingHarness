@@ -167,16 +167,16 @@ async def ensure_swebench_instance_image(
     environment = {
         **environment,
         "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
-        "PUDDINGCLAW_SWEBENCH_RUN_ID": run_id,
+        "PUDDINGHARNESS_SWEBENCH_RUN_ID": run_id,
         SWEBENCH_ARCHITECTURE_ENV: architecture,
     }
     for name in (
-        "PUDDINGCLAW_SWEBENCH_ISOLATED_DOCKER",
-        "PUDDINGCLAW_SWEBENCH_NAMESPACE",
+        "PUDDINGHARNESS_SWEBENCH_ISOLATED_DOCKER",
+        "PUDDINGHARNESS_SWEBENCH_NAMESPACE",
     ):
         if name in os.environ:
             environment[name] = os.environ[name]
-    timeout_seconds = _bounded_int("PUDDINGCLAW_SWEBENCH_IMAGE_TIMEOUT_SECONDS", 1800, 60, 3600)
+    timeout_seconds = _bounded_int("PUDDINGHARNESS_SWEBENCH_IMAGE_TIMEOUT_SECONDS", 1800, 60, 3600)
     try:
         result = await _run_process(
             [
@@ -281,9 +281,9 @@ class SWEbenchAgentWorkspaceBackend(FilesystemBackend, SandboxBackendProtocol):
             "conda_plugins": "disabled",
             "no_new_privileges": True,
             "memory": _bounded_memory(),
-            "cpus": _bounded_int("PUDDINGCLAW_SWEBENCH_CONTAINER_CPUS", 4, 1, 16),
-            "pids": _bounded_int("PUDDINGCLAW_SWEBENCH_CONTAINER_PIDS", 1024, 64, 4096),
-            "workspace_layer_gb": _bounded_int("PUDDINGCLAW_SWEBENCH_AGENT_WORKSPACE_GB", 2, 1, 2),
+            "cpus": _bounded_int("PUDDINGHARNESS_SWEBENCH_CONTAINER_CPUS", 4, 1, 16),
+            "pids": _bounded_int("PUDDINGHARNESS_SWEBENCH_CONTAINER_PIDS", 1024, 64, 4096),
+            "workspace_layer_gb": _bounded_int("PUDDINGHARNESS_SWEBENCH_AGENT_WORKSPACE_GB", 2, 1, 2),
         }
         return "sha256:" + hashlib.sha256(
             json.dumps(policy, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -311,13 +311,13 @@ class SWEbenchAgentWorkspaceBackend(FilesystemBackend, SandboxBackendProtocol):
                 cap_drop=["ALL"],
                 security_opt=["no-new-privileges:true"],
                 mem_limit=_bounded_memory(),
-                nano_cpus=_bounded_int("PUDDINGCLAW_SWEBENCH_CONTAINER_CPUS", 4, 1, 16)
+                nano_cpus=_bounded_int("PUDDINGHARNESS_SWEBENCH_CONTAINER_CPUS", 4, 1, 16)
                 * 1_000_000_000,
-                pids_limit=_bounded_int("PUDDINGCLAW_SWEBENCH_CONTAINER_PIDS", 1024, 64, 4096),
+                pids_limit=_bounded_int("PUDDINGHARNESS_SWEBENCH_CONTAINER_PIDS", 1024, 64, 4096),
                 # The source tree used by shell commands lives in the writable
                 # layer (not a host RW bind), so this is a real hard quota.
                 storage_opt={
-                    "size": f'{_bounded_int("PUDDINGCLAW_SWEBENCH_AGENT_WORKSPACE_GB", 2, 1, 2)}G'
+                    "size": f'{_bounded_int("PUDDINGHARNESS_SWEBENCH_AGENT_WORKSPACE_GB", 2, 1, 2)}G'
                 },
                 init=True,
                 read_only=False,
@@ -339,7 +339,7 @@ class SWEbenchAgentWorkspaceBackend(FilesystemBackend, SandboxBackendProtocol):
                     "XDG_CONFIG_HOME": "/scratch/home/.config",
                     "XDG_CACHE_HOME": "/scratch/home/.cache",
                     "CONDA_NO_PLUGINS": "true",
-                    "PUDDINGCLAW_EVALUATION": "1",
+                    "PUDDINGHARNESS_EVALUATION": "1",
                     "GIT_OPTIONAL_LOCKS": "0",
                     "GIT_CONFIG_COUNT": "1",
                     "GIT_CONFIG_KEY_0": "safe.directory",

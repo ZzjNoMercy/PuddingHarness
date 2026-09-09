@@ -22,8 +22,6 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from analytics.models import get_analytics_model_registry
-from analytics.models.router import AnalyticsModelRoute, AnalyticsModelRouter
 from cli_runtime import current_cli_runtime_status
 from graph.deepagents_manager import deepagents_agent_manager
 from graph.headless_resolver import headless_authority_from_environment
@@ -38,7 +36,6 @@ from headless_session_lifecycle import (
     headless_session_ttl_seconds,
     is_headless_session_expired,
 )
-from llm.model_client import ModelClientChatModel
 from projects.registry import project_registry
 from headless_activity import headless_activity_log_store
 
@@ -116,7 +113,7 @@ def _prune_headless_executions() -> None:
 
 
 def _cleanup_interval_seconds() -> float:
-    raw = os.getenv("PUDDINGCLAW_HEADLESS_SESSION_CLEANUP_INTERVAL_S", "3600").strip()
+    raw = os.getenv("PUDDINGHARNESS_HEADLESS_SESSION_CLEANUP_INTERVAL_S", "3600").strip()
     try:
         return max(0.0, float(raw))
     except ValueError:
@@ -214,7 +211,7 @@ def _headless_artifacts(session_id: str, project_id: str) -> list[dict[str, Any]
         try:
             relative = target.relative_to(workspace).as_posix()
         except ValueError:
-            # A PuddingClaw CLI caller can only safely export files in the
+            # A PuddingHarness CLI caller can only safely export files in the
             # worker project; never leak or guess a server-side absolute path.
             continue
         if not target.is_file():
@@ -250,15 +247,11 @@ class _HeadlessExecution:
         session_id: str,
         project_id: str,
         approval_mode: str,
-        analytics_model_id: str,
-        analytics_model_match: dict[str, Any],
     ) -> None:
         self.stream = stream
         self.session_id = session_id
         self.project_id = project_id
         self.approval_mode = approval_mode
-        self.analytics_model_id = analytics_model_id
-        self.analytics_model_match = dict(analytics_model_match)
         self.token = secrets.token_urlsafe(32)
         self.run_id = ""
         self.query_id = ""
@@ -504,7 +497,7 @@ class _HeadlessExecution:
             )
 
     async def wait_for_boundary(self, *, after_revision: int = -1) -> None:
-        timeout_s = max(1.0, float(os.getenv("PUDDINGCLAW_TIMEOUT_S", "600")))
+        timeout_s = max(1.0, float(os.getenv("PUDDINGHARNESS_TIMEOUT_S", "600")))
         async with asyncio.timeout(timeout_s):
             async with self.updated:
                 await self.updated.wait_for(
@@ -539,8 +532,6 @@ class _HeadlessExecution:
                 "run_id": self.run_id or None,
                 "session_id": self.session_id,
                 "project_id": self.project_id,
-                "analytics_model_id": self.analytics_model_id,
-                "analytics_model_match": self.analytics_model_match,
                 "approval_mode": self.approval_mode,
                 "status": "needs_input",
                 "outcome": "waiting_hitl",
@@ -558,8 +549,6 @@ class _HeadlessExecution:
                 "run_id": self.run_id or None,
                 "session_id": self.session_id,
                 "project_id": self.project_id,
-                "analytics_model_id": self.analytics_model_id,
-                "analytics_model_match": self.analytics_model_match,
                 "approval_mode": self.approval_mode,
                 "status": "cancelled",
                 "outcome": "cancelled",
@@ -577,8 +566,6 @@ class _HeadlessExecution:
             "run_id": self.outcome.get("run_id") or self.run_id or None,
             "session_id": self.session_id,
             "project_id": self.project_id,
-            "analytics_model_id": self.analytics_model_id,
-            "analytics_model_match": self.analytics_model_match,
             "approval_mode": self.approval_mode,
             "status": status_value,
             "outcome": final_outcome,
@@ -598,117 +585,8 @@ class _HeadlessExecution:
         }
 
 
-def _safe_model(item: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: item.get(key)
-        for key in ("id", "name", "description", "version", "tags")
-    }
-
-
-def _model_options() -> list[dict[str, Any]]:
-    from runtime_identity.paths import PuddingClawPaths
-
-    snapshot = get_analytics_model_registry(PuddingClawPaths.from_environment().user_definitions()).list_models()
-    return [_safe_model(item) for item in snapshot.get("models") or [] if isinstance(item, dict)]
-
-
-def _model_routing_candidates() -> list[dict[str, Any]]:
-    """Return configured models enriched with bounded routing guidance."""
-
-    from runtime_identity.paths import PuddingClawPaths
-
-    registry = get_analytics_model_registry(PuddingClawPaths.from_environment().user_definitions())
-    candidates: list[dict[str, Any]] = []
-    for option in _model_options():
-        candidate = dict(option)
-        try:
-            detail = registry.get_model(str(option.get("id") or ""))
-            candidate["applicability"] = str(detail.get("body") or "")[:4_000]
-        except Exception:
-            # Registry summaries still provide a useful fail-closed candidate.
-            candidate["applicability"] = ""
-        candidates.append(candidate)
-    return candidates
-
-
-async def _route_analytics_model(message: str) -> AnalyticsModelRoute:
-    """Resolve one configured Analytics Model without giving the CLI selection authority."""
-
-    candidates = _model_routing_candidates()
-    deterministic = AnalyticsModelRouter.deterministic(message, candidates)
-    if deterministic is not None:
-        return deterministic
-    try:
-        model = ModelClientChatModel(
-            role="analytics_model_router",
-            temperature=0,
-            streaming=False,
-            thinking_enabled=False,
-        )
-        timeout_s = max(
-            1.0,
-            float(os.getenv("PUDDINGCLAW_ANALYTICS_MODEL_ROUTER_TIMEOUT_S", "15")),
-        )
-        return await asyncio.wait_for(
-            AnalyticsModelRouter.route(
-                message=message,
-                candidates=candidates,
-                model=model,
-            ),
-            timeout=timeout_s,
-        )
-    except TimeoutError:
-        return AnalyticsModelRoute("ambiguous", None, 0.0, "fallback", "classifier_timeout")
-    except Exception as exc:
-        return AnalyticsModelRoute(
-            "ambiguous",
-            None,
-            0.0,
-            "fallback",
-            f"classifier_error:{type(exc).__name__}",
-        )
-
-
-def _model_routing_needs_input(
-    route: AnalyticsModelRoute,
-    models: list[dict[str, Any]],
-) -> dict[str, Any]:
-    unavailable = route.status == "unmatched" and (
-        not models or route.reason == "bound_model_no_longer_allowed"
-    )
-    if route.reason == "bound_model_no_longer_allowed":
-        prompt = "该连续任务绑定的分析模型已不可用，请联系管理员恢复权限或创建一个新任务。"
-    elif unavailable:
-        prompt = "当前 PuddingClaw 没有可用的分析模型，请先在 PuddingClaw 中完成模型配置。"
-    else:
-        prompt = "无法根据当前问题唯一匹配分析模型，请补充要分析的业务对象、指标或场景。"
-    return {
-        "schema_version": "1",
-        "status": "needs_input",
-        "outcome": "analytics_model_unavailable" if unavailable else "analytics_model_clarification_required",
-        "analytics_model_match": route.to_dict(),
-        "needs_input": {
-            "type": "analytics_model_unavailable" if unavailable else "analytics_model_clarification",
-            "prompt": prompt,
-            "options": models,
-        },
-    }
-
-
-def _model_binding(model_id: str) -> dict[str, Any]:
-    from runtime_identity.paths import PuddingClawPaths
-
-    model = get_analytics_model_registry(PuddingClawPaths.from_environment().user_definitions()).get_model(model_id)
-    body = str(model.get("body") or "").encode("utf-8")
-    return {
-        "id": model_id,
-        "version": str(model.get("version") or ""),
-        "content_sha256": hashlib.sha256(body).hexdigest(),
-    }
-
-
 def _projects_root() -> Path:
-    configured = os.getenv("PUDDINGCLAW_PROJECTS_ROOT", "").strip()
+    configured = os.getenv("PUDDINGHARNESS_PROJECTS_ROOT", "").strip()
     return (Path(configured).expanduser() if configured else Path.home()).resolve() / _WORKER_PROJECT_NAME
 
 
@@ -814,8 +692,8 @@ def _caller_identity(metadata: dict[str, Any] | None) -> tuple[str, str]:
 
     values = metadata if isinstance(metadata, dict) else {}
     caller_id = str(values.get("caller_id") or values.get("source") or "local-cli").strip()
-    caller_name = str(values.get("caller_name") or values.get("source_name") or "PuddingClaw CLI").strip()
-    return (caller_id or "local-cli")[:120], (caller_name or "PuddingClaw CLI")[:120]
+    caller_name = str(values.get("caller_name") or values.get("source_name") or "PuddingHarness CLI").strip()
+    return (caller_id or "local-cli")[:120], (caller_name or "PuddingHarness CLI")[:120]
 
 
 def _resume_request_hash(request: HeadlessResumeRequest) -> str:
@@ -894,9 +772,6 @@ def _needs_input(event_name: str, payload: dict[str, Any]) -> dict[str, Any] | N
         "permission_required": "permission_request",
         "user_input_required": "user_input",
         "skill_secret_required": "skill_secret",
-        "database_sql_revision_required": "database_sql_revision",
-        "dimension_build_rule_required": "dimension_build_rule",
-        "logical_dataset_rule_required": "logical_dataset_rule",
         "skill_plan_confirmation_required": "skill_plan_confirmation",
     }
     input_type = mapping.get(event_name)
@@ -951,8 +826,6 @@ async def _consume_run(
     approval_mode: str,
     authority: dict[str, Any],
     request_received_at: float,
-    analytics_model_id: str,
-    analytics_model_match: dict[str, Any],
 ) -> dict[str, Any]:
     execution = await _start_headless_execution(
         request=request,
@@ -961,8 +834,6 @@ async def _consume_run(
         approval_mode=approval_mode,
         authority=authority,
         request_received_at=request_received_at,
-        analytics_model_id=analytics_model_id,
-        analytics_model_match=analytics_model_match,
     )
     try:
         await execution.wait_for_boundary()
@@ -980,8 +851,6 @@ async def _start_headless_execution(
     approval_mode: str,
     authority: dict[str, Any],
     request_received_at: float,
-    analytics_model_id: str,
-    analytics_model_match: dict[str, Any],
 ) -> _HeadlessExecution:
     """Create and start a live Headless Run without waiting for a boundary.
 
@@ -993,8 +862,6 @@ async def _start_headless_execution(
         message=request.message,
         session_id=session_id,
         project_id=project_id,
-        analytics_model_id=analytics_model_id or None,
-        analytics_model_snapshot=_model_binding(analytics_model_id) if analytics_model_id else None,
         user_id="worker",
         # Headless is externally interactive: unlike ``auto`` it must never
         # fabricate or reject a user's approval decision.  The background
@@ -1011,8 +878,6 @@ async def _start_headless_execution(
         session_id=session_id,
         project_id=project_id,
         approval_mode=approval_mode,
-        analytics_model_id=analytics_model_id,
-        analytics_model_match=analytics_model_match,
     )
     _prune_headless_executions()
     with _headless_executions_lock:
@@ -1160,7 +1025,7 @@ def _resolve_external_user_input(
     session_id: str,
     decision: HeadlessResumeDecision,
 ) -> None:
-    """Apply one structured business answer to the live user-input registry."""
+    """Apply one structured user answer to the live user-input registry."""
 
     pending = user_input_resume_registry.get(decision.request_id)
     if pending is None:
@@ -1199,24 +1064,12 @@ async def worker_health(request: Request):
         "server_version": "0.1.19",
         "project_id": project_id,
         "workspace_ready": path.is_dir(),
-        "capabilities": ["data.query", "data.analysis", "data.nl2sql", "knowledge.query"],
+        "capabilities": ["agent.run", "workspace.files", "mcp"],
         "operations": {"run": True, "continue": True, "respond": True, "cancel": True},
         "interaction_kinds": ["permission_request", "user_input"],
         "progress": "jsonl",
         "transport_scope": "local_loopback",
         "cli": cli_status,
-    }
-
-
-@router.get("/models")
-async def worker_models(request: Request):
-    _require_loopback_request(request)
-    return {
-        "schema_version": "1",
-        "model_type": "analytics_model",
-        "required": False,
-        "selection": "backend_auto",
-        "models": _model_options(),
     }
 
 
@@ -1240,7 +1093,6 @@ async def create_headless_run(
     except Exception as exc:
         # Audit persistence must not make an otherwise valid Worker unavailable.
         logger.warning("Failed to persist Headless activity log: %s", type(exc).__name__)
-    models = _model_options()
     key = _idempotency_key(request, idempotency_key)
     request_hash = _request_hash(request)
     previous = _reserve_idempotency(key, request_hash)
@@ -1255,10 +1107,8 @@ async def create_headless_run(
     session_id = requested_session_id or f"worker-session-{uuid.uuid4().hex[:16]}"
     project_id = ""
     workspace_path: Path | None = None
-    selected = ""
-    model_route: AnalyticsModelRoute | None = None
     authority = headless_authority_from_environment()
-    configured_mode = os.getenv("PUDDINGCLAW_HEADLESS_APPROVAL_MODE", "smart").strip().lower()
+    configured_mode = os.getenv("PUDDINGHARNESS_HEADLESS_APPROVAL_MODE", "smart").strip().lower()
     if configured_mode not in {"strict", "smart"}:
         configured_mode = "smart"
     authority_profile = str(
@@ -1316,59 +1166,8 @@ async def create_headless_run(
                 },
             )
             approval_mode = str(metadata.get("approval_mode") or approval_mode)
-            selected = str(metadata.get("analytics_model_id") or "").strip()
-            allowed_ids = {str(item.get("id") or "") for item in models}
-            if selected and selected not in allowed_ids:
-                model_route = AnalyticsModelRoute(
-                    "unmatched",
-                    None,
-                    1.0,
-                    "session_bound",
-                    "bound_model_no_longer_allowed",
-                )
-                response = _model_routing_needs_input(model_route, models)
-                response["session_id"] = session_id
-                _attach_session_lifecycle(response, session_id)
-                if key:
-                    _finish_idempotency(key, response)
-                    idempotency_finished = True
-                return response
-            if selected:
-                model_route = AnalyticsModelRoute(
-                    "matched",
-                    selected,
-                    1.0,
-                    "session_bound",
-                    "continuous_session_model",
-                )
-            else:
-                model_route = await _route_analytics_model(request.message)
-                if model_route.status == "general":
-                    selected = ""
-                else:
-                    selected = str(model_route.selected_id or "")
-                    if model_route.status != "matched" or not selected:
-                        response = _model_routing_needs_input(model_route, models)
-                        response["session_id"] = session_id
-                        _attach_session_lifecycle(response, session_id)
-                        if key:
-                            _finish_idempotency(key, response)
-                            idempotency_finished = True
-                        return response
-                    session_manager.update_metadata(session_id, {"analytics_model_id": selected})
         else:
             project_id, workspace_path = _resolve_worker_project(request.workspace_path)
-            model_route = await _route_analytics_model(request.message)
-            if model_route.status == "general":
-                selected = ""
-            else:
-                selected = str(model_route.selected_id or "")
-                if model_route.status != "matched" or not selected:
-                    response = _model_routing_needs_input(model_route, models)
-                    if key:
-                        _finish_idempotency(key, response)
-                        idempotency_finished = True
-                    return response
             session_manager.create_session(
                 session_id,
                 metadata={
@@ -1378,7 +1177,6 @@ async def create_headless_run(
                     "headless_caller_id": caller_id,
                     "headless_caller_name": caller_name,
                     "interaction_mode": "external",
-                    "analytics_model_id": selected,
                     "workspace_path": str(workspace_path),
                     "project_id": project_id,
                     "session_source": "cli",
@@ -1388,7 +1186,6 @@ async def create_headless_run(
 
         _maybe_cleanup_stale_headless_sessions(now=request_received_at)
         assert workspace_path is not None
-        assert model_route is not None
         if stream is True:
             # Do not wait for the first Agent boundary here.  Starting the
             # consumer task and returning the response immediately is what
@@ -1401,8 +1198,6 @@ async def create_headless_run(
                 approval_mode=approval_mode,
                 authority={**authority, "profile": authority_profile},
                 request_received_at=request_received_at,
-                analytics_model_id=selected,
-                analytics_model_match=model_route.to_dict(),
             )
             streaming_lifecycle = True
 
@@ -1455,15 +1250,11 @@ async def create_headless_run(
                 approval_mode=approval_mode,
                 authority={**authority, "profile": authority_profile},
                 request_received_at=request_received_at,
-                analytics_model_id=selected,
-                analytics_model_match=model_route.to_dict(),
             )
         except asyncio.TimeoutError:
             response = {
                 "schema_version": "1",
                 "session_id": session_id,
-                "analytics_model_id": selected,
-                "analytics_model_match": model_route.to_dict(),
                 "status": "failed",
                 "outcome": "timeout",
                 "needs_input": None,

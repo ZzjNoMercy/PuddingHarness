@@ -1,10 +1,25 @@
+/* Target Harness ChatMessage overlay: generic messages, attachments, citations, and HITL cards. */
 "use client";
 
 import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Copy, Database, Download, FileSpreadsheet, FileText, FolderOpen, Globe2, HelpCircle, ImageIcon, Key, KeyRound, Layers3, Loader2, Maximize2, PauseCircle, Plus, ShieldCheck, Sparkles, SquareTerminal, Trash2, XCircle } from "lucide-react";
-import { denyPermissionRequest, grantExternalFilePermission, grantShellDirectoryPermission, grantToolActionPermission, resolveDatabaseSqlRevisionRequest, resolveDimensionBuildRuleRequest, resolveKernelFallbackRequest, resolveLogicalDatasetRuleRequest, resolveSkillSecretRequest, resolveUserInputRequest, type AgentAttachment, type DatabaseSqlRevisionRequest, type DimensionBuildRuleRequest, type KernelFallbackRequest, type LogicalDatasetRuleRequest, type PermissionRequest, type SkillSecretRequest, type UserInputAnswer, type UserInputRequest } from "@/lib/api";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileSpreadsheet, FileText, FolderOpen, Globe2, HelpCircle, ImageIcon, Key, KeyRound, Loader2, Maximize2, PauseCircle, Plus, ShieldCheck, Sparkles, SquareTerminal, Trash2, XCircle } from "lucide-react";
+import {
+  denyPermissionRequest,
+  grantExternalFilePermission,
+  grantShellDirectoryPermission,
+  grantToolActionPermission,
+  resolveKernelFallbackRequest,
+  resolveSkillSecretRequest,
+  resolveUserInputRequest,
+  type AgentAttachment,
+  type KernelFallbackRequest,
+  type PermissionRequest,
+  type SkillSecretRequest,
+  type UserInputAnswer,
+  type UserInputRequest,
+} from "@/lib/api";
 import { markdownRemarkPlugins, markdownUrlTransform, normalizeLooseStrongMarkdown } from "@/lib/markdown";
 import { useApp, type ChatMessage as ChatMessageType, type SourceRecord, type TimelineItem, type ToolCall } from "@/lib/store";
 import { isPreviewableImageAttachment, isQrImageAttachment } from "@/lib/imageAttachments";
@@ -188,15 +203,6 @@ export default function ChatMessage({ message, sessionSources = [], isStreaming 
   const pendingPermissionRequests = (message.permissionRequests || []).filter(
     (request) => request.status !== "resolved"
   );
-  const pendingDimensionBuildRuleRequests = (message.dimensionBuildRuleRequests || []).filter(
-    (request) => request.status !== "resolved"
-  );
-  const pendingLogicalDatasetRuleRequests = (message.logicalDatasetRuleRequests || []).filter(
-    (request) => request.status !== "resolved"
-  );
-  const pendingDatabaseSqlRevisionRequests = (message.databaseSqlRevisionRequests || []).filter(
-    (request) => (request.status || "pending") === "pending"
-  );
   const visibleUserInputRequests = (message.userInputRequests || []).filter(
     (request) => (request.status || "pending") === "pending"
   );
@@ -285,15 +291,6 @@ export default function ChatMessage({ message, sessionSources = [], isStreaming 
                       sessionId={sessionId}
                     />
                   ))}
-                  {pendingDimensionBuildRuleRequests.map((request) => (
-                    <DimensionBuildRuleCard key={request.id} request={request} />
-                  ))}
-                  {pendingLogicalDatasetRuleRequests.map((request) => (
-                    <LogicalDatasetRuleCard key={request.id} request={request} />
-                  ))}
-                  {pendingDatabaseSqlRevisionRequests.map((request) => (
-                    <DatabaseSqlRevisionCard key={request.id} request={request} />
-                  ))}
                   {visibleUserInputRequests.map((request) => (
                     <UserInputRequestCard key={request.id} request={request} sessionId={sessionId} />
                   ))}
@@ -307,7 +304,7 @@ export default function ChatMessage({ message, sessionSources = [], isStreaming 
                       interruptions. Keep them once at the bottom of the whole turn
                       so later model segments can never render below the card. */}
                   <SkillPlanCards timeline={skillPlanTimeline} sessionId={sessionId} />
-                  {(message.segments.length > 0 || pendingPermissionRequests.length > 0 || pendingDimensionBuildRuleRequests.length > 0 || pendingLogicalDatasetRuleRequests.length > 0 || pendingDatabaseSqlRevisionRequests.length > 0 || visibleUserInputRequests.length > 0 || visibleSkillSecretRequests.length > 0 || pendingKernelFallbackRequests.length > 0) && (
+                  {(message.segments.length > 0 || pendingPermissionRequests.length > 0 || visibleUserInputRequests.length > 0 || visibleSkillSecretRequests.length > 0 || pendingKernelFallbackRequests.length > 0) && (
                     <div className="text-[10px] text-gray-400 mt-1 pl-1">
                       {formatTime(message.timestamp)}
                     </div>
@@ -379,15 +376,6 @@ export default function ChatMessage({ message, sessionSources = [], isStreaming 
                             sessionId={sessionId}
                           />
                         ))}
-                        {pendingDimensionBuildRuleRequests.map((request) => (
-                          <DimensionBuildRuleCard key={request.id} request={request} />
-                        ))}
-                        {pendingLogicalDatasetRuleRequests.map((request) => (
-                          <LogicalDatasetRuleCard key={request.id} request={request} />
-                        ))}
-                        {pendingDatabaseSqlRevisionRequests.map((request) => (
-                          <DatabaseSqlRevisionCard key={request.id} request={request} />
-                        ))}
                         {visibleUserInputRequests.map((request) => (
                           <UserInputRequestCard key={request.id} request={request} sessionId={sessionId} />
                         ))}
@@ -398,7 +386,7 @@ export default function ChatMessage({ message, sessionSources = [], isStreaming 
                           <KernelFallbackRequestCard key={request.id} request={request} sessionId={sessionId} />
                         ))}
                         <SkillPlanCards timeline={skillPlanTimeline} sessionId={sessionId} />
-                        {((message.content || thoughtChain) || pendingPermissionRequests.length > 0 || pendingDimensionBuildRuleRequests.length > 0 || pendingLogicalDatasetRuleRequests.length > 0 || pendingDatabaseSqlRevisionRequests.length > 0 || visibleUserInputRequests.length > 0 || visibleSkillSecretRequests.length > 0 || pendingKernelFallbackRequests.length > 0) && (
+                        {((message.content || thoughtChain) || pendingPermissionRequests.length > 0 || visibleUserInputRequests.length > 0 || visibleSkillSecretRequests.length > 0 || pendingKernelFallbackRequests.length > 0) && (
                           <div className="text-[10px] text-gray-400 mt-1 pl-1">
                             {formatTime(message.timestamp)}
                           </div>
@@ -1494,291 +1482,6 @@ function UserInputRequestCard({ request, sessionId }: { request: UserInputReques
       </div>
     </form>
   );
-}
-
-function DatabaseSqlRevisionCard({ request }: { request: DatabaseSqlRevisionRequest }) {
-  const [modifiedInstruction, setModifiedInstruction] = useState(request.proposed_revision_instruction);
-  const [status, setStatus] = useState<"idle" | "loading" | "agreed" | "rejected" | "modified" | "error">("idle");
-  const [error, setError] = useState("");
-  const semanticIds = [
-    ...(request.semantic_assets?.references || []),
-    ...(request.semantic_assets?.matched || []),
-  ].map((item) => String(item.id || item.name || "")).filter(Boolean);
-
-  const resolve = async (action: "agree" | "reject" | "modify") => {
-    const instruction = modifiedInstruction.trim();
-    if (action === "modify" && !instruction) {
-      setError("请填写修改后的自然语言口径。");
-      return;
-    }
-    setStatus("loading");
-    setError("");
-    try {
-      await resolveDatabaseSqlRevisionRequest(
-        request.id,
-        action === "modify" ? { action, revision_instruction: instruction } : { action },
-      );
-      setStatus(action === "agree" ? "agreed" : action === "reject" ? "rejected" : "modified");
-    } catch (nextError) {
-      setStatus("error");
-      setError(nextError instanceof Error ? nextError.message : "处理 SQL 口径修改失败");
-    }
-  };
-
-  if (["agreed", "rejected", "modified"].includes(status)) {
-    const text = status === "rejected"
-      ? "已拒绝修改，将继续使用原 database_sql_generate 结果。"
-      : status === "agreed"
-        ? "已同意，正在把 Agent 的自然语言补充重新交给 database_sql_generate。"
-        : "已提交修改后的自然语言补充，正在重新调用 database_sql_generate。";
-    return <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"><CheckCircle2 className="h-4 w-4" />{text}</div>;
-  }
-
-  return <section className="mb-4 max-w-[820px] rounded-2xl border border-amber-200 bg-white p-5 shadow-sm shadow-amber-950/[0.04]">
-    <div className="flex items-start gap-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700"><Database className="h-5 w-5" /></div>
-      <div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">SQL 口径变更确认</p><h3 className="mt-1 text-base font-bold text-slate-950">Agent 想改变生成器采用的业务口径</h3><p className="mt-1 text-sm leading-6 text-slate-500">审批内容仅为自然语言。无论同意还是修改，SQL 都会由 database_sql_generate 重新生成。</p></div>
-    </div>
-    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-      <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-500">原问题</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-800">{request.original_question}</p></div>
-      <div className="rounded-xl bg-amber-50 p-3"><p className="text-xs font-semibold text-amber-700">Agent 建议的口径补充</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-800">{request.proposed_revision_instruction}</p></div>
-    </div>
-    {semanticIds.length ? <p className="mt-3 text-xs text-slate-500">当前生成器语义依据：{semanticIds.join("、")}</p> : null}
-    <details className="mt-3 rounded-xl border border-black/[0.08] bg-slate-950/[0.02]">
-      <summary className="cursor-pointer select-none px-3 py-2.5 text-sm font-semibold text-slate-700">查看原 database_sql_generate SQL</summary>
-      <pre className="max-h-80 overflow-auto border-t border-black/[0.07] bg-slate-950 p-3 text-xs leading-5 text-slate-100"><code>{request.original_sql}</code></pre>
-    </details>
-    <label className="mt-4 block text-sm font-semibold text-slate-700">如需修改，请填写最终的自然语言补充<textarea value={modifiedInstruction} onChange={(event) => setModifiedInstruction(event.target.value)} className="mt-1.5 min-h-20 w-full rounded-xl border border-black/[0.1] px-3 py-2 text-sm font-normal outline-none focus:border-[#002fa7]" /></label>
-    {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
-    <div className="mt-4 flex flex-wrap justify-end gap-2">
-      <button type="button" disabled={status === "loading"} onClick={() => void resolve("reject")} className="h-9 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50">拒绝（使用原 SQL）</button>
-      <button type="button" disabled={status === "loading"} onClick={() => void resolve("agree")} className="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50">{status === "loading" ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <CheckCircle2 className="h-4 w-4" />}同意并重新生成</button>
-      <button type="button" disabled={status === "loading" || !modifiedInstruction.trim()} onClick={() => void resolve("modify")} className="h-9 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50">修改后重新生成</button>
-    </div>
-  </section>;
-}
-
-function DimensionBuildRuleCard({ request }: { request: DimensionBuildRuleRequest }) {
-  const lockedCanonicalId = request.locked_canonical_candidate_id || "";
-  const [canonicalId, setCanonicalId] = useState(() => lockedCanonicalId || request.candidates[0]?.id || "");
-  const defaultSourceProfile = (candidate: DimensionBuildRuleRequest["candidates"][number]) => {
-    const suggested = candidate.suggested_source_id || candidate.id;
-    return request.registered_sources?.some((source) => source.id === suggested) ? `append:${suggested}` : `new:${suggested}`;
-  };
-  const [sourceProfileByCandidate, setSourceProfileByCandidate] = useState<Record<string, string>>(() => Object.fromEntries(
-    request.candidates.map((candidate) => [candidate.id, defaultSourceProfile(candidate)])
-  ));
-  const [keySlots, setKeySlots] = useState<Array<Record<string, string>>>(() => {
-    const slots = Math.max(1, ...request.candidates.map((candidate) => candidate.suggested_key_fields?.length || 1));
-    return Array.from({ length: slots }, (_, index) => Object.fromEntries(request.candidates.map((candidate) => [
-      candidate.id,
-      candidate.suggested_key_fields?.[index] || candidate.fields[index] || "",
-    ])));
-  });
-  const [status, setStatus] = useState<"idle" | "loading" | "confirmed" | "cancelled" | "error">("idle");
-  const [error, setError] = useState("");
-
-  const sourceIcon = (kind: string) => kind === "active_crosswalk"
-    ? <Layers3 className="h-4 w-4" />
-    : kind === "database_table"
-    ? <Database className="h-4 w-4" />
-    : <FileSpreadsheet className="h-4 w-4" />;
-
-  const resolve = async (action: "confirm" | "cancel") => {
-    setStatus("loading");
-    setError("");
-    try {
-      if (action === "cancel") {
-        await resolveDimensionBuildRuleRequest(request.id, { action });
-        setStatus("cancelled");
-        return;
-      }
-      if (!canonicalId || keySlots.length === 0) {
-        throw new Error("请选择基准输入及至少一个键字段。");
-      }
-      const bindings = request.candidates.map((candidate) => {
-        const fields = keySlots.map((slot) => slot[candidate.id] || "").filter(Boolean);
-        const outputFields = candidate.suggested_output_fields?.length === fields.length
-          ? candidate.suggested_output_fields
-          : fields.map((field, index) => candidate.id === canonicalId ? `canonical_${field}` : `source_${index + 1}`);
-        const sourceProfile = sourceProfileByCandidate[candidate.id] || defaultSourceProfile(candidate);
-        const [sourceMode, sourceId] = sourceProfile.split(":", 2) as ["new" | "append", string];
-        const registered = request.registered_sources?.find((source) => source.id === sourceId);
-        return {
-          candidate_id: candidate.id,
-          key_fields: fields,
-          output_fields: outputFields,
-          source_mode: candidate.id === canonicalId ? "new" : sourceMode,
-          source_id: candidate.id === canonicalId ? candidate.id : sourceId,
-          source_name: candidate.id === canonicalId ? candidate.display_name : (registered?.name || candidate.suggested_source_name || candidate.display_name),
-        };
-      });
-      if (bindings.some((binding) => binding.key_fields.length === 0)) {
-        throw new Error("每个输入都需要至少选择一个键字段。");
-      }
-      if (keySlots.some((slot) => request.candidates.some((candidate) => !slot[candidate.id]))) {
-        throw new Error("每一行键位都要为所有输入选择字段。");
-      }
-      await resolveDimensionBuildRuleRequest(request.id, {
-        action,
-        canonical_candidate_id: canonicalId,
-        bindings,
-        conflict_policy: "candidate",
-      });
-      setStatus("confirmed");
-    } catch (err) {
-      setStatus("error");
-      setError(err instanceof Error ? err.message : "确认构建规则失败");
-    }
-  };
-
-  if (status === "confirmed" || status === "cancelled") {
-    return (
-      <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-        <CheckCircle2 className="h-4 w-4" />
-        {status === "confirmed" ? "维度构建规则已确认，Agent 将创建后台任务。" : "已取消本次维度构建。"}
-      </div>
-    );
-  }
-
-  return (
-    <section className="mb-4 max-w-[820px] rounded-2xl border border-[#002fa7]/20 bg-white p-5 shadow-sm shadow-blue-950/[0.05]">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#002fa7]/10 text-[#002fa7]"><Sparkles className="h-5 w-5" /></div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#002fa7]">构建维度</p>
-          <h3 className="mt-1 text-base font-bold text-slate-950">{request.title || `构建 ${request.dimension_id}`}</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-500">{request.reason}</p>
-        </div>
-      </div>
-      <div className="mt-5 rounded-2xl border border-black/[0.07] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div><h4 className="text-sm font-semibold text-slate-900">输入角色</h4><p className="mt-1 text-xs text-slate-500">{lockedCanonicalId ? "当前规范基准已锁定；本次只向它追加来源匹配列。" : "选择定义规范实体的基准输入，其他输入仅追加可匹配的来源键。"}</p></div>
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500">{request.candidates.length} 个输入</span>
-        </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {request.candidates.map((candidate) => (
-            <label key={candidate.id} className={`flex items-center gap-3 rounded-xl border p-3 transition ${canonicalId === candidate.id ? "border-[#002fa7] bg-[#002fa7]/[0.03]" : "border-black/[0.07] hover:border-[#002fa7]/30"} ${lockedCanonicalId && candidate.id !== lockedCanonicalId ? "opacity-70" : ""}`}>
-              <input type="radio" name={`canonical-${request.id}`} checked={canonicalId === candidate.id} disabled={Boolean(lockedCanonicalId) || candidate.input.kind === "active_crosswalk"} onChange={() => setCanonicalId(candidate.id)} className="h-4 w-4 accent-[#002fa7] disabled:cursor-not-allowed" />
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#002fa7]/10 text-[#002fa7]">{sourceIcon(candidate.input.kind)}</span>
-              <span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-800">{candidate.display_name}</span><span className="mt-0.5 block text-xs text-slate-400">{canonicalId === candidate.id ? (lockedCanonicalId ? "当前规范实体基准（固定）" : "规范实体基准") : "待匹配来源"}</span></span>
-            </label>
-          ))}
-        </div>
-      </div>
-      <div className="mt-4 rounded-2xl border border-black/[0.07] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div><h4 className="text-sm font-semibold text-slate-900">字段映射</h4><p className="mt-1 text-xs text-slate-500">同一行字段按位置精确匹配。只选择真实字段，不输入自由文本。</p></div>
-          <button type="button" onClick={() => setKeySlots((current) => [...current, Object.fromEntries(request.candidates.map((candidate) => [candidate.id, ""]))])} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#002fa7]/20 px-2.5 text-xs font-semibold text-[#002fa7] transition hover:bg-[#002fa7]/[0.04]"><Plus className="h-3.5 w-3.5" />添加键位</button>
-        </div>
-        <div className="mt-3 space-y-2">
-          {keySlots.map((slot, slotIndex) => (
-            <div key={slotIndex} className="grid gap-2 rounded-xl bg-slate-50 p-2.5 sm:grid-cols-[68px_minmax(0,1fr)_auto]">
-              <div className="flex items-center text-xs font-semibold text-slate-500">键位 {slotIndex + 1}</div>
-              <div className={`grid gap-2 ${request.candidates.length > 1 ? "sm:grid-cols-2" : ""}`}>
-                {request.candidates.map((candidate) => (
-                  <label key={candidate.id} className="min-w-0">
-                    <span className="mb-1 block truncate text-[11px] font-medium text-slate-500">{candidate.display_name}</span>
-                    <select value={slot[candidate.id] || ""} onChange={(event) => {
-                      const value = event.currentTarget.value;
-                      setKeySlots((current) => current.map((item, index) => index === slotIndex ? { ...item, [candidate.id]: value } : item));
-                    }} className="h-9 w-full rounded-lg border border-black/[0.1] bg-white px-2 text-sm text-slate-800 outline-none focus:border-[#002fa7]">
-                      <option value="">选择字段</option>
-                      {candidate.fields.map((field) => <option key={field} value={field}>{field}</option>)}
-                    </select>
-                  </label>
-                ))}
-              </div>
-              <button type="button" disabled={keySlots.length === 1} onClick={() => setKeySlots((current) => current.filter((_, index) => index !== slotIndex))} className="mt-auto inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-30" title="删除键位" aria-label="删除键位"><Trash2 className="h-4 w-4" /></button>
-            </div>
-          ))}
-        </div>
-      </div>
-      {request.candidates.some((candidate) => candidate.id !== canonicalId && candidate.input.kind !== "active_crosswalk") ? <div className="mt-4 rounded-2xl border border-black/[0.07] p-4">
-        <div><h4 className="text-sm font-semibold text-slate-900">来源接入</h4><p className="mt-1 text-xs text-slate-500">字段契约相同的新表可追加已有来源，并复用已确认的来源键映射；订单等新业务表注册为独立来源。两者都映射到当前维度，不会新增规范字段。</p></div>
-        <div className="mt-3 space-y-2">
-          {request.candidates.filter((candidate) => candidate.id !== canonicalId && candidate.input.kind !== "active_crosswalk").map((candidate) => {
-            const selected = sourceProfileByCandidate[candidate.id] || defaultSourceProfile(candidate);
-            return <label key={candidate.id} className="grid gap-2 rounded-xl bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_260px] sm:items-center"><span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-800">{candidate.display_name}</span><span className="mt-0.5 block text-xs text-slate-500">选择它是追加哪个已登记来源，或注册为新的来源。</span></span><select value={selected} onChange={(event) => setSourceProfileByCandidate((current) => ({ ...current, [candidate.id]: event.target.value }))} className="h-9 rounded-lg border border-black/[0.1] bg-white px-2 text-sm text-slate-800 outline-none focus:border-[#002fa7]"><option value={`new:${candidate.suggested_source_id || candidate.id}`}>新建来源：{candidate.suggested_source_name || candidate.display_name}</option>{request.registered_sources?.map((source) => <option key={source.id} value={`append:${source.id}`}>追加：{source.name}</option>)}</select></label>;
-          })}
-        </div>
-      </div> : null}
-      {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
-        <button type="button" disabled={status === "loading"} onClick={() => void resolve("cancel")} className="h-9 rounded-xl px-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 disabled:opacity-50">取消</button>
-        <button type="button" disabled={status === "loading"} onClick={() => void resolve("confirm")} className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#002fa7] px-4 text-sm font-semibold text-white transition hover:bg-[#001f7a] disabled:opacity-50">
-          {status === "loading" ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <CheckCircle2 className="h-4 w-4" />}
-          确认构建规则
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function LogicalDatasetRuleCard({ request }: { request: LogicalDatasetRuleRequest }) {
-  const [name, setName] = useState(request.suggested_name || "");
-  const [description, setDescription] = useState("");
-  const [tagsText, setTagsText] = useState("");
-  const [preferredIntents, setPreferredIntents] = useState<string[]>(["trend", "period_comparison"]);
-  const [directSourceAllowed, setDirectSourceAllowed] = useState(true);
-  const [selectedIds, setSelectedIds] = useState(() => request.candidates.map((candidate) => candidate.asset_id));
-  const [baselineAssetId, setBaselineAssetId] = useState(() => request.candidates[0]?.asset_id || "");
-  const [schemaMode, setSchemaMode] = useState<"strict" | "baseline_fill_missing" | "union_fill_missing">("strict");
-  const [status, setStatus] = useState<"idle" | "loading" | "confirmed" | "cancelled" | "error">("idle");
-  const [error, setError] = useState("");
-  const isAppend = request.operation === "append";
-  const selected = request.candidates.filter((candidate) => selectedIds.includes(candidate.asset_id));
-  const baseline = selected.find((candidate) => candidate.asset_id === baselineAssetId) || selected[0];
-  const comparisonBaseline = isAppend ? request.target || null : baseline;
-  const effectiveBaselineAssetId = isAppend ? request.target_asset_id || "" : baseline?.asset_id || "";
-  const hasDrift = Boolean(comparisonBaseline && comparisonBaseline.fields.length > 0 && selected.some((candidate) => candidate.fields.length !== comparisonBaseline.fields.length || candidate.fields.some((field) => !comparisonBaseline.fields.includes(field))));
-  const toggle = (assetId: string) => setSelectedIds((current) => {
-    const next = current.includes(assetId) ? current.filter((id) => id !== assetId) : [...current, assetId];
-    if (assetId === effectiveBaselineAssetId && !next.includes(assetId)) setBaselineAssetId(next[0] || "");
-    return next;
-  });
-  const resolve = async (action: "confirm" | "cancel") => {
-    setStatus("loading");
-    setError("");
-    try {
-      await resolveLogicalDatasetRuleRequest(request.id, action === "cancel" ? { action } : {
-        action,
-        name,
-        description,
-        tags: tagsText.split(/[,，]/).map((item) => item.trim()).filter(Boolean),
-        baseline_asset_id: effectiveBaselineAssetId,
-        source_asset_ids: selectedIds,
-        schema_mode: hasDrift ? schemaMode : "strict",
-        preferred_intents: preferredIntents,
-        direct_source_allowed: directSourceAllowed,
-      });
-      setStatus(action === "confirm" ? "confirmed" : "cancelled");
-    } catch (nextError) {
-      setStatus("error");
-      setError(nextError instanceof Error ? nextError.message : "确认逻辑数据集规则失败");
-    }
-  };
-  if (status === "confirmed" || status === "cancelled") return <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"><CheckCircle2 className="h-4 w-4" />{status === "confirmed" ? "逻辑数据集规则已确认，Agent 将执行合并。" : "已取消本次逻辑数据集合并。"}</div>;
-  return <section className="mb-4 max-w-[820px] rounded-2xl border border-[#002fa7]/20 bg-white p-5 shadow-sm shadow-blue-950/[0.05]">
-    <div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#002fa7]/10 text-[#002fa7]"><Layers3 className="h-5 w-5" /></div><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#002fa7]">逻辑数据集</p><h3 className="mt-1 text-base font-bold text-slate-950">{request.title}</h3><p className="mt-1 text-sm leading-6 text-slate-500">{request.reason}</p></div></div>
-    {!isAppend ? <><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="block text-sm font-semibold text-slate-700">数据集名称<input value={name} onChange={(event) => setName(event.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-black/[0.1] px-3 text-sm font-normal outline-none focus:border-[#002fa7]" /></label><label className="block text-sm font-semibold text-slate-700">标签<input value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="销量, 月度" className="mt-1.5 h-10 w-full rounded-xl border border-black/[0.1] px-3 text-sm font-normal outline-none focus:border-[#002fa7]" /></label></div><label className="mt-3 block text-sm font-semibold text-slate-700">业务描述<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="说明业务口径和适用范围" className="mt-1.5 min-h-20 w-full rounded-xl border border-black/[0.1] px-3 py-2 text-sm font-normal outline-none focus:border-[#002fa7]" /></label></> : null}
-    <div className="mt-4 rounded-2xl border border-black/[0.07] p-4">
-      <div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-semibold text-slate-900">{isAppend ? "选择要追加的来源" : "选择参与来源与基准表"}</h4><p className="mt-1 text-xs text-slate-500">{isAppend ? "已有逻辑数据集固定作为字段基准；下方只选择本次新增的原始表，不会把目标数据集重复作为来源。" : "先勾选参与合并的来源，再从中选择一张作为基准表。基准表决定“丢弃多余字段”时保留的字段集合。"}</p></div><span className="shrink-0 text-xs text-slate-500">已选 {selected.length} 张</span></div>
-      {isAppend ? <div className="mt-3 rounded-xl border border-[#002fa7]/15 bg-[#002fa7]/[0.035] px-3 py-2"><span className="text-[11px] font-semibold text-[#002fa7]">追加目标 / 字段基准</span><p className="mt-0.5 truncate text-sm font-semibold text-slate-800">{request.target?.display_name || request.target_asset_id}</p></div> : <div className="mt-3 hidden grid-cols-[minmax(0,1fr)_112px] gap-3 px-3 text-[11px] font-semibold text-slate-400 sm:grid"><span>参与来源</span><span>基准表</span></div>}
-      <div className="mt-2 space-y-2">{request.candidates.map((candidate) => {
-        const isSelected = selectedIds.includes(candidate.asset_id);
-        const isBaseline = effectiveBaselineAssetId === candidate.asset_id;
-        return <div key={candidate.asset_id} className={`grid gap-3 rounded-xl border p-3 ${isAppend ? "" : "sm:grid-cols-[minmax(0,1fr)_112px] sm:items-center"} ${isBaseline ? "border-[#002fa7]/35 bg-[#002fa7]/[0.035]" : "border-transparent bg-slate-50"}`}>
-          <label className="flex min-w-0 cursor-pointer items-start gap-3"><input type="checkbox" checked={isSelected} onChange={() => toggle(candidate.asset_id)} className="mt-0.5 h-4 w-4 shrink-0 accent-[#002fa7]" /><span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-800">{candidate.display_name}</span><span className="mt-0.5 block truncate text-xs text-slate-400">{candidate.fields.join("、")}</span></span></label>
-          {!isAppend ? <label className={`inline-flex h-8 items-center justify-center gap-2 rounded-lg border px-2 text-xs font-semibold ${isSelected ? "cursor-pointer border-[#002fa7]/20 bg-white text-[#00246f]" : "cursor-not-allowed border-black/[0.07] bg-slate-100 text-slate-400"}`} title={isSelected ? "设为基准表" : "请先选择为参与来源"}><input type="radio" name={`concat-baseline-${request.id}`} checked={isBaseline} disabled={!isSelected} onChange={() => setBaselineAssetId(candidate.asset_id)} className="h-3.5 w-3.5 accent-[#002fa7]" />{isBaseline ? "基准表" : "设为基准"}</label> : null}
-        </div>;
-      })}</div>
-    </div>
-    {hasDrift ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-sm font-semibold text-amber-900">字段存在差异</p><p className="mt-1 text-xs leading-5 text-amber-800">缺少的保留字段都会置空。请选择如何处理多余字段。</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => setSchemaMode("union_fill_missing")} className={`rounded-xl border p-3 text-left ${schemaMode === "union_fill_missing" ? "border-[#002fa7] bg-white text-[#00246f]" : "border-amber-200 bg-white/60 text-slate-600"}`}><span className="block text-sm font-semibold">保留多余字段并补空</span><span className="mt-1 block text-xs">所有字段进入结果。</span></button><button type="button" onClick={() => setSchemaMode("baseline_fill_missing")} className={`rounded-xl border p-3 text-left ${schemaMode === "baseline_fill_missing" ? "border-[#002fa7] bg-white text-[#00246f]" : "border-amber-200 bg-white/60 text-slate-600"}`}><span className="block text-sm font-semibold">丢弃多余字段</span><span className="mt-1 block text-xs">只保留基准表字段。</span></button></div></div> : <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">字段一致，可使用严格合并。</div>}
-    <div className="mt-4 rounded-2xl border border-black/[0.08] p-4"><p className="text-sm font-semibold text-slate-800">分析路由</p><label className="mt-2 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={directSourceAllowed} onChange={(event) => setDirectSourceAllowed(event.target.checked)} />允许指定原始文件或单期明细时直接使用来源表</label></div>
-    {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
-    <div className="mt-4 flex justify-end gap-2"><button type="button" disabled={status === "loading"} onClick={() => void resolve("cancel")} className="h-9 rounded-xl px-3 text-sm font-semibold text-slate-500 hover:bg-slate-100">取消</button><button type="button" disabled={status === "loading" || !name.trim() || selected.length < (isAppend ? 1 : 2) || !effectiveBaselineAssetId} onClick={() => void resolve("confirm")} className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#002fa7] px-4 text-sm font-semibold text-white disabled:opacity-50">{status === "loading" ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <CheckCircle2 className="h-4 w-4" />}{isAppend ? "确认追加来源" : "确认合并规则"}</button></div>
-  </section>;
 }
 
 function SegmentBlock({

@@ -201,16 +201,6 @@ class GoalCoordinator:
             ]
             if evaluation.passed is True and not evidence_refs:
                 allowed_types = {
-                    "analytics_evidence_traceability": {
-                        "analytics_result",
-                        "sql_generation",
-                        "sql_validation",
-                    },
-                    "metric_consistency": {
-                        "analytics_result",
-                        "sql_generation",
-                        "sql_validation",
-                    },
                     "artifact_delivery": {"artifact", "external_mutation"},
                     "code_validation": {"validation_receipt", "artifact"},
                     "web_evidence_traceability": {"web_source"},
@@ -519,9 +509,6 @@ class GoalCoordinator:
             goal.current_run_id or (goal.run_ids[-1] if goal.run_ids else None),
         )
         project_id = latest_run.get("project_id") if isinstance(latest_run, dict) else None
-        analytics_model_id = (
-            latest_run.get("analytics_model_id") if isinstance(latest_run, dict) else None
-        )
         snapshot = latest_run.get("config_snapshot") if isinstance(latest_run, dict) else {}
         completion = snapshot.get("completion") if isinstance(snapshot, dict) else {}
         rubric = completion.get("rubric") if isinstance(completion, dict) else {}
@@ -535,12 +522,10 @@ class GoalCoordinator:
             if task_profile is not None
             else TaskProfileClassifier.classify(
                 message=normalized,
-                analytics_model_id=(str(analytics_model_id) if analytics_model_id else None),
             )
         )
         contract = CompletionVerificationCoordinator.compile_contract(
             user_message=normalized,
-            analytics_model_id=(str(analytics_model_id) if analytics_model_id else None),
             project_id=(str(project_id) if project_id else None),
             custom_rules=custom_rules,
             force_required=True,
@@ -664,7 +649,6 @@ class CompletionVerificationCoordinator:
     def compile_contract(
         *,
         user_message: str,
-        analytics_model_id: str | None,
         project_id: str | None,
         custom_rules: list[dict[str, Any]] | None = None,
         force_required: bool = False,
@@ -673,7 +657,6 @@ class CompletionVerificationCoordinator:
         return RunRubricCompiler.compile(
             RubricBuildContext(
                 user_message=user_message,
-                analytics_model_id=analytics_model_id,
                 project_id=project_id,
                 custom_rules=tuple(custom_rules or ()),
                 force_required=force_required,
@@ -725,7 +708,6 @@ class CompletionVerificationCoordinator:
             "tool_protocol_integrity",
             "web_evidence_traceability",
             "metric_consistency",
-            "analytics_evidence_traceability",
             "artifact_delivery",
             "code_validation",
             "time_scope",
@@ -747,26 +729,19 @@ class CompletionVerificationCoordinator:
             state,
         )
         deterministic_by_id = {item.criterion_id: item for item in deterministic_evaluations}
-        context = state.get("_harness_context")
-        harness_context = context if isinstance(context, dict) else {}
-        raw_activations = harness_context.get(
-            "verification_activations",
-            state.get("verification_activations", []),
-        )
-        activations = raw_activations if isinstance(raw_activations, list) else []
-        analytics_evidence = [
-            evidence
-            for activation in activations
-            if isinstance(activation, dict)
-            and activation.get("status") == "succeeded"
-            and activation.get("pack") == "analytics"
-            for evidence in activation.get("evidence_refs") or []
-            if isinstance(evidence, dict) and evidence.get("material", True) is not False
-        ]
-
         evaluations: list[CriterionEvaluation] = []
         gaps: list[str] = []
         for configured in contract.criteria:
+            # Historical contracts can be read, but retired business verifiers
+            # cannot execute or inherit a model verdict in this runtime.
+            if configured.verifier == VerifierKind.ANALYTICS:
+                gap = f"Retired verifier for criterion {configured.id}; migrate the contract before execution."
+                evaluations.append(CriterionEvaluation(
+                    criterion_id=configured.id, name=configured.id, passed=False,
+                    verifier=configured.verifier, evidence=[], gap=gap,
+                ))
+                gaps.append(gap)
+                continue
             deterministic = deterministic_by_id.get(configured.id)
             if deterministic is not None:
                 evaluations.append(deterministic)
@@ -846,12 +821,7 @@ class CompletionVerificationCoordinator:
             evidence = (
                 [item for item in raw_evidence if isinstance(item, dict)] if isinstance(raw_evidence, list) else []
             )
-            if configured.id == "metric_consistency":
-                evidence = [*evidence, *analytics_evidence]
             passed = bool(raw.get("passed"))
-            if configured.verifier == VerifierKind.ANALYTICS and not evidence:
-                passed = False
-                gap = gap or (f"标准 {configured.id} 没有当前 Run 的结构化分析证据，不能仅凭模型判定通过。")
             if configured.required and gap:
                 passed = False
             evaluations.append(
@@ -983,7 +953,6 @@ class HarnessRunCoordinator:
         goal_mode: bool,
         goal_id: str | None = None,
         project_id: str | None = None,
-        analytics_model_id: str | None = None,
         config_snapshot: dict[str, Any] | None = None,
         verification_enabled: bool = True,
         run_review_policy: RunReviewPolicy | str = RunReviewPolicy.OFF,
@@ -1016,7 +985,6 @@ class HarnessRunCoordinator:
             if task_profile is not None
             else TaskProfileClassifier.classify(
                 message=objective,
-                analytics_model_id=analytics_model_id,
             )
         )
         resolved_completion_policy = GoalCompletionPolicy(completion_policy)
@@ -1030,7 +998,6 @@ class HarnessRunCoordinator:
         contract = (
             self.verification.compile_contract(
                 user_message=objective,
-                analytics_model_id=analytics_model_id,
                 project_id=project_id,
                 custom_rules=custom_rubric_rules,
                 force_required=(
@@ -1068,7 +1035,6 @@ class HarnessRunCoordinator:
         if effective_objective != objective and not supplied_task_profile:
             task_profile = TaskProfileClassifier.classify(
                 message=effective_objective,
-                analytics_model_id=analytics_model_id,
             )
         # An explicit Goal freezes its acceptance contract. Follow-up prompts
         # such as “继续” or “确认后完成” must not weaken or bypass the original
@@ -1153,7 +1119,6 @@ class HarnessRunCoordinator:
             delta_repair_kind=delta_repair_kind,
             delta_repair_tool_budget=delta_repair_tool_budget,
             project_id=project_id,
-            analytics_model_id=analytics_model_id,
             verification_enabled=verification_enabled,
             run_review_policy=resolved_review_policy,
             verification_mode=(

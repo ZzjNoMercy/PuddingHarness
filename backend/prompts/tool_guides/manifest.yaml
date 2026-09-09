@@ -1,0 +1,8 @@
+version: 1
+guides:
+  - id: managed-lark-autonomy
+    file: managed-lark-autonomy.md
+    skill_prefixes: [lark-]
+  - id: webbridge-browser
+    file: webbridge-browser.md
+    tools: [browser]
