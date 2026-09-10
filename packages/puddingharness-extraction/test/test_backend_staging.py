@@ -19,6 +19,9 @@ def test_stage_is_flat_independent_and_records_blocked_audit(tmp_path: Path) -> 
 
     assert manifest["format"] == "puddingharness-independent-backend-stage/v1"
     assert manifest["releaseable"] is False
+    assert manifest["applied_overlays"] == []
+    assert manifest["runtime_authority"] == "independent_repository_source"
+    assert all(row["kind"] == "source" for row in manifest["python"]["files"])
     assert manifest["audit_finding_count"] > 0
     assert manifest["python"]["selected_count"] == manifest["python"]["staged_count"]
     assert manifest["python"]["skipped_skill_count"] == 0
@@ -65,7 +68,7 @@ def test_clean_audit_is_an_explicit_release_gate(tmp_path: Path) -> None:
 def test_static_clean_does_not_make_stage_releaseable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     class CleanAudit:
         @staticmethod
-        def audit(repo: Path, overlays: Path) -> dict:
+        def audit(repo: Path) -> dict:
             return {
                 "status": "python_static_clean",
                 "findings": [],
@@ -179,23 +182,21 @@ def test_required_resource_missing_is_a_hard_failure(tmp_path: Path, monkeypatch
         stage_module.stage_backend(Path(__file__).parents[3], tmp_path / "missing-resource")
 
 
-@pytest.mark.parametrize("change", ["source", "overlay", "missing_source"])
-def test_stage_rejects_source_overlay_divergence_before_output(tmp_path, monkeypatch, change):
+def test_historical_overlay_cannot_override_or_supply_runtime(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
-    overlay = tmp_path / "overlays"
-    for root in (repo, overlay):
-        (root / "backend").mkdir(parents=True)
-        (root / "backend/runtime.py").write_text("VALUE = 1\n")
-    if change == "missing_source":
-        (repo / "backend/runtime.py").unlink()
-    else:
-        root = repo if change == "source" else overlay
-        (root / "backend/runtime.py").write_text("VALUE = 2\n")
-    monkeypatch.setattr(stage_module, "OVERLAY_ROOT", overlay)
-    output = tmp_path / "stage"
-    with pytest.raises(ValueError, match="source differs from effective target"):
-        stage_module.stage_backend(repo, output)
-    assert not output.exists()
+    (repo / "backend").mkdir(parents=True)
+    (repo / "backend/runtime.py").write_text("VALUE = 'source'\n")
+    # Poison the historical overlay tree next to the packaging implementation.
+    historical = tmp_path / "package" / "overlays" / "backend"
+    historical.mkdir(parents=True)
+    (historical / "runtime.py").write_text("from knowledge import forbidden\n")
+    (historical / "ghost.py").write_text("VALUE = 'overlay only'\n")
+    monkeypatch.setattr(stage_module, "PACKAGE_ROOT", historical.parents[1])
+    source, kind = stage_module._select_file(repo, "backend/runtime.py")
+    assert source == repo / "backend/runtime.py" and kind == "source"
+    assert stage_module._select_file(repo, "backend/ghost.py") == (None, "missing")
+    (repo / "backend/runtime.py").unlink()
+    assert stage_module._select_file(repo, "backend/runtime.py") == (None, "missing")
 
 
 def test_source_drift_during_copy_cannot_produce_manifest(tmp_path, monkeypatch):
@@ -217,13 +218,13 @@ def test_source_drift_during_copy_cannot_produce_manifest(tmp_path, monkeypatch)
 
     monkeypatch.setattr(stage_module, "_safe_copy", copy_then_change)
     output = tmp_path / "stage"
-    with pytest.raises(ValueError, match="source differs from effective target"):
+    with pytest.raises(ValueError, match="source differs from effective target|changed after audit"):
         stage_module.stage_backend(repo, output)
     assert changed
     assert not (output / stage_module.MANIFEST_NAME).exists()
 
 
-@pytest.mark.parametrize("target_kind", ["source", "staged"])
+@pytest.mark.parametrize("target_kind", ["source", "staged", "resource"])
 def test_late_render_mutation_cannot_publish_manifest(tmp_path, monkeypatch, target_kind):
     import shutil
     repo = tmp_path / "repo"
@@ -233,11 +234,38 @@ def test_late_render_mutation_cannot_publish_manifest(tmp_path, monkeypatch, tar
     def mutate(output):
         target = (repo / "backend/provider_registry.py" if target_kind == "source"
                   else output / "provider_registry.py")
+        if target_kind == "resource":
+            target = repo / "backend/evaluation/schemas/protocol-2.0.json"
         with target.open("a") as stream:
             stream.write("\n# late mutation\n")
         return original(output)
     monkeypatch.setattr(stage_module, "_render_pyproject", mutate)
     output = tmp_path / "stage"
-    with pytest.raises(ValueError, match="differs from effective target|staged file changed"):
+    with pytest.raises(ValueError, match="differs from effective target|staged file changed|changed after audit|resource source changed"):
         stage_module.stage_backend(repo, output)
     assert not (output / stage_module.MANIFEST_NAME).exists()
+
+
+@pytest.mark.parametrize("historical_state", ["absent", "poisoned"])
+def test_full_stage_independent_of_historical_overlays(tmp_path, monkeypatch, historical_state):
+    import shutil
+    package = tmp_path / "packaging"
+    package.mkdir()
+    for name in ("pyproject.toml", "uv.lock"):
+        shutil.copyfile(stage_module.PACKAGE_ROOT / name, package / name)
+    if historical_state == "poisoned":
+        overlay = package / "overlays/backend"
+        overlay.mkdir(parents=True)
+        (overlay / "provider_registry.py").write_text("from knowledge import forbidden\n")
+        (overlay / "evaluation/schemas").mkdir(parents=True)
+        (overlay / "evaluation/schemas/protocol-2.0.json").write_text('{"poison": true}')
+    monkeypatch.setattr(stage_module, "PACKAGE_ROOT", package)
+    output = tmp_path / "stage"
+    repo = Path(__file__).parents[3]
+    manifest = stage_module.stage_backend(repo, output)
+    assert manifest["applied_overlays"] == []
+    for row in [*manifest["python"]["files"], *manifest["resources"]]:
+        if row.get("kind") == "source":
+            assert (output / row["path"]).read_bytes() == (repo / row["source_path"]).read_bytes()
+    assert (output / "evaluation/schemas/protocol-2.0.json").read_bytes() == (
+        repo / "backend/evaluation/schemas/protocol-2.0.json").read_bytes()

@@ -1,4 +1,23 @@
-# PuddingHarness extraction preparation
+# PuddingHarness backend packaging and historical extraction
+
+The independent repository's `backend/` is the runtime authority. Backend
+staging and the default Python audit read that source directly, including owned
+non-Python resources. Historical overlays cannot replace a source file or supply
+a missing one. The stage manifest records `runtime_authority` and no applied
+backend overlays. Source and staged digests are checked before manifest writing;
+these checks do not fence concurrent writers or provide an atomic snapshot.
+
+The historical extraction material below is retained for provenance research.
+Use `audit.py --legacy-extraction` only to inspect that historical transformation;
+it enforces the original immutable overlay receipt and may reject its stale
+inputs. That receipt is not current product build authority. Frontend extraction
+still uses its separately documented workflow.
+
+The source audit still reports unresolved findings and `releaseable=false`.
+Independent repository packaging does not prove installation migration, production
+activation, or full product parity.
+
+## Historical extraction notes
 
 These are target-only cleanup overlays and an executable Python dependency audit.
 They are not an independent repository or a complete Harness distribution.
@@ -108,12 +127,12 @@ CLI/desktop/deployment release remains an explicit next step.
 
 ### Independent source parity
 
-The independent Harness repository stages the same Python bytes as `backend/`.
-Historical extraction overlays are retained, but any selected runtime file whose
-source is missing or differs from the effective audit digest blocks staging
-before output creation. Source parity is checked again after copying, before a
-stage manifest can be published. This is a packaging consistency gate, not a
-replacement for static domain audit or installation acceptance.
+The independent Harness repository stages Python and owned runtime resources
+from `backend/`. Historical extraction overlays are retained for review but are
+not consulted by the backend packager or the default source audit. Missing
+required sources fail packaging; the installed source and staged byte digests
+are checked before publishing a manifest. This is a packaging consistency gate,
+not a replacement for static domain audit or installation acceptance.
 
 Installed behavior can be checked from outside the checkout, using the staged
 noneditable environment and `scripts/acceptance/installed_source_parity.py`.

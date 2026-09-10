@@ -309,9 +309,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--legacy-extraction", action="store_true",
+                        help="audit historical overlays with their immutable extraction provenance")
     args = parser.parse_args()
-    overlay_root = Path(__file__).parent / "overlays"
-    verify_overlay_provenance(args.repo, overlay_root, Path(__file__).parent / "overlay-provenance.json")
+    overlay_root = None
+    if args.legacy_extraction:
+        overlay_root = Path(__file__).parent / "overlays"
+        verify_overlay_provenance(args.repo, overlay_root, Path(__file__).parent / "overlay-provenance.json")
     result = audit(args.repo, overlay_root)
     with args.output.open("x", encoding="utf-8") as stream:
         json.dump(result, stream, indent=2)

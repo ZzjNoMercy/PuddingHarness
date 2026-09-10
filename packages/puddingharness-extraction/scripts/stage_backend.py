@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage an independent PuddingHarness backend from the effective target tree.
+"""Stage an independent PuddingHarness backend from its repository source.
 
 The source checkout is an input only.  The output is a flat Python application
 root (``app.py``, ``api/``, ``graph/`` ...) and never imports files from the
@@ -27,7 +27,6 @@ from typing import Any
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 AUDIT_PATH = PACKAGE_ROOT / "audit.py"
-OVERLAY_ROOT = PACKAGE_ROOT / "overlays"
 MANIFEST_NAME = ".stage-manifest.json"
 SKILL_PREFIX = "backend/skills/"
 _CACHE_PARTS = frozenset({"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".cache", "cache", "node_modules", "dist", "build", "coverage"})
@@ -145,11 +144,8 @@ def _safe_copy(source: Path, destination: Path, *, label: str) -> dict[str, Any]
 
 
 def _select_file(source_root: Path, relative: str) -> tuple[Path | None, str]:
-    """Choose a target overlay first, then the source file."""
-    overlay = OVERLAY_ROOT / relative
+    """Read the independent repository source; historical overlays have no authority."""
     source = source_root / relative
-    if overlay.exists():
-        return overlay, "overlay"
     if source.exists():
         return source, "source"
     return None, "missing"
@@ -287,7 +283,7 @@ def _excluded_skill_inventory(repo: Path) -> list[str]:
 
 
 def _verify_selected_hashes(repo: Path, report: dict[str, Any]) -> None:
-    """Detect source/overlay drift after the audit snapshot was produced."""
+    """Detect source drift after the audit snapshot was produced."""
     for row in report["selected"]:
         relative = str(row["path"])
         source, _kind = _select_file(repo, relative)
@@ -301,8 +297,7 @@ def _verify_selected_hashes(repo: Path, report: dict[str, Any]) -> None:
 def _verify_source_parity(repo: Path, report: dict[str, Any]) -> None:
     """Require the independent product to stage its tested source implementation.
 
-    Historical overlays cannot replace different Python source. Compare with
-    the audit digest as well, so changes during staging fail closed.
+    Compare source with the audit digest so changes during staging fail closed.
     """
     for row in report["selected"]:
         relative = row["path"]
@@ -327,7 +322,7 @@ def stage_backend(
     if output_resolved == repo or repo in output_resolved.parents:
         raise ValueError("output must not be the source checkout or a child of it")
     audit_module = _load_audit()
-    report = audit_module.audit(repo, OVERLAY_ROOT)
+    report = audit_module.audit(repo)
     _verify_source_parity(repo, report)
     _ensure_empty_output(output)
     if require_clean_audit and report["findings"]:
@@ -338,7 +333,6 @@ def stage_backend(
 
     staged_python: list[dict[str, Any]] = []
     skipped_skills: list[str] = []
-    applied_overlays: list[str] = []
     for row in report["selected"]:
         relative = str(row["path"])
         if not relative.startswith("backend/") or not relative.endswith(".py"):
@@ -347,15 +341,13 @@ def stage_backend(
             raise ValueError(f"audit selected an excluded Skill file: {relative}")
         source, kind = _select_file(repo, relative)
         if source is None:
-            raise ValueError(f"selected target file is missing from source and overlays: {relative}")
+            raise ValueError(f"selected target file is missing from source: {relative}")
         target_relative = relative.removeprefix("backend/")
         record = _safe_copy(source, output / target_relative, label=relative)
         if record["sha256"] != row["sha256"]:
             raise ValueError(f"selected target changed during copy: {relative}")
         record.update({"path": target_relative, "source_path": relative, "kind": kind})
         staged_python.append(record)
-        if kind == "overlay":
-            applied_overlays.append(relative)
 
     resources: list[dict[str, Any]] = []
     for relative in RESOURCE_FILES:
@@ -366,8 +358,6 @@ def stage_backend(
         record = _safe_copy(source, output / target_relative, label=relative)
         record.update({"path": target_relative, "source_path": relative, "kind": kind})
         resources.append(record)
-        if kind == "overlay":
-            applied_overlays.append(relative)
     resources.extend(_copy_prompts(repo, output))
     resources.extend(_copy_generic_skill_resources(repo, output))
     resources.append(_copy_generic_tool_guide_manifest(output))
@@ -411,7 +401,8 @@ def stage_backend(
         },
         "resources": resources,
         "packaging": {"pyproject": pyproject_record, "uv_lock": lock_record},
-        "applied_overlays": sorted(set(applied_overlays)),
+        "applied_overlays": [],
+        "runtime_authority": "independent_repository_source",
         "excluded_domains": [
             "backend/knowledge/",
             "backend/knowledge_platform/",
@@ -429,6 +420,12 @@ def stage_backend(
     }
     _verify_selected_hashes(repo, report)
     _verify_source_parity(repo, report)
+    for record in resources:
+        if record.get("kind") == "source":
+            source = repo / record["source_path"]
+            _assert_no_symlink_components(source, label="resource source")
+            if not source.is_file() or _sha256(source) != record["sha256"]:
+                raise ValueError(f"resource source changed before manifest: {record['source_path']}")
     for record in [*staged_python, *resources, pyproject_record, *([lock_record] if lock_record else [])]:
         target = output / record["path"]
         _assert_no_symlink_components(target, label="staged file")
@@ -448,7 +445,7 @@ def main(argv: list[str] | None = None) -> int:
         dest="repo",
         type=Path,
         default=PACKAGE_ROOT.parents[1],
-        help="PuddingClaw source checkout",
+        help="independent PuddingHarness source checkout",
     )
     parser.add_argument("--output", type=Path, required=True, help="absent or empty independent stage directory")
     parser.add_argument(
