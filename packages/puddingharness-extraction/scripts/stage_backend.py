@@ -427,6 +427,13 @@ def stage_backend(
             "http_agent_smoke": "not_run by staging step",
         },
     }
+    _verify_selected_hashes(repo, report)
+    _verify_source_parity(repo, report)
+    for record in [*staged_python, *resources, pyproject_record, *([lock_record] if lock_record else [])]:
+        target = output / record["path"]
+        _assert_no_symlink_components(target, label="staged file")
+        if not target.is_file() or _sha256(target) != record["sha256"]:
+            raise ValueError(f"staged file changed before manifest: {record['path']}")
     (output / MANIFEST_NAME).write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )

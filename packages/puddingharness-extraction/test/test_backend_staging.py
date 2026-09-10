@@ -221,3 +221,23 @@ def test_source_drift_during_copy_cannot_produce_manifest(tmp_path, monkeypatch)
         stage_module.stage_backend(repo, output)
     assert changed
     assert not (output / stage_module.MANIFEST_NAME).exists()
+
+
+@pytest.mark.parametrize("target_kind", ["source", "staged"])
+def test_late_render_mutation_cannot_publish_manifest(tmp_path, monkeypatch, target_kind):
+    import shutil
+    repo = tmp_path / "repo"
+    shutil.copytree(Path(__file__).parents[3] / "backend", repo / "backend",
+                    ignore=shutil.ignore_patterns(".venv", "__pycache__"))
+    original = stage_module._render_pyproject
+    def mutate(output):
+        target = (repo / "backend/provider_registry.py" if target_kind == "source"
+                  else output / "provider_registry.py")
+        with target.open("a") as stream:
+            stream.write("\n# late mutation\n")
+        return original(output)
+    monkeypatch.setattr(stage_module, "_render_pyproject", mutate)
+    output = tmp_path / "stage"
+    with pytest.raises(ValueError, match="differs from effective target|staged file changed"):
+        stage_module.stage_backend(repo, output)
+    assert not (output / stage_module.MANIFEST_NAME).exists()
