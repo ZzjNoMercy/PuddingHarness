@@ -298,6 +298,20 @@ def _verify_selected_hashes(repo: Path, report: dict[str, Any]) -> None:
             raise ValueError(f"selected target changed after audit: {relative}")
 
 
+def _verify_source_parity(repo: Path, report: dict[str, Any]) -> None:
+    """Require the independent product to stage its tested source implementation.
+
+    Historical overlays cannot replace different Python source. Compare with
+    the audit digest as well, so changes during staging fail closed.
+    """
+    for row in report["selected"]:
+        relative = row["path"]
+        source = repo / relative
+        _assert_no_symlink_components(source, label="runtime source")
+        if not source.is_file() or _sha256(source) != row["sha256"]:
+            raise ValueError(f"runtime source differs from effective target: {relative}")
+
+
 def stage_backend(
     repo: Path,
     output: Path,
@@ -312,10 +326,10 @@ def stage_backend(
     output_resolved = output.resolve(strict=False)
     if output_resolved == repo or repo in output_resolved.parents:
         raise ValueError("output must not be the source checkout or a child of it")
-    _ensure_empty_output(output)
-
     audit_module = _load_audit()
     report = audit_module.audit(repo, OVERLAY_ROOT)
+    _verify_source_parity(repo, report)
+    _ensure_empty_output(output)
     if require_clean_audit and report["findings"]:
         raise ValueError(
             f"effective target audit is {report['status']} with {len(report['findings'])} finding(s); "
@@ -359,6 +373,7 @@ def stage_backend(
     resources.append(_copy_generic_tool_guide_manifest(output))
     resources.append(_copy_launcher(output))
     _verify_selected_hashes(repo, report)
+    _verify_source_parity(repo, report)
 
     pyproject = _render_pyproject(output)
     pyproject_path = output / "pyproject.toml"

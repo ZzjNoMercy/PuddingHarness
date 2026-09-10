@@ -6,6 +6,8 @@ import base64
 import os
 from pathlib import Path
 import subprocess
+import sys
+import tempfile
 import textwrap
 
 
@@ -14,12 +16,17 @@ TARGET_PYTHON = REPOSITORY_ROOT / "backend/.venv/bin/python"
 
 
 def run_target(script: str) -> str:
-    assert TARGET_PYTHON.is_file(), f"target runtime missing: {TARGET_PYTHON}"
+    installed = os.environ.get("HARNESS_TEST_INSTALLED") == "1"
+    target_python = Path(sys.executable) if installed else TARGET_PYTHON
+    assert target_python.is_file(), f"target runtime missing: {TARGET_PYTHON}"
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(REPOSITORY_ROOT / "backend")
+    if installed:
+        environment.pop("PYTHONPATH", None)
+    else:
+        environment["PYTHONPATH"] = str(REPOSITORY_ROOT / "backend")
     completed = subprocess.run(
-        [str(TARGET_PYTHON), "-c", textwrap.dedent(script)],
-        cwd=REPOSITORY_ROOT,
+        [str(target_python), "-c", textwrap.dedent(script)],
+        cwd=tempfile.gettempdir() if installed else REPOSITORY_ROOT,
         env=environment,
         capture_output=True,
         text=True,

@@ -105,3 +105,17 @@ target literals now use the Harness name. No string concatenation hides findings
 CLI API startup is validated with `PUDDINGHARNESS_CLI_INSTALL_POLICY=never`.
 The optional `cli_runtime` still detects the old Worker CLI; a complete independent
 CLI/desktop/deployment release remains an explicit next step.
+
+### Independent source parity
+
+The independent Harness repository stages the same Python bytes as `backend/`.
+Historical extraction overlays are retained, but any selected runtime file whose
+source is missing or differs from the effective audit digest blocks staging
+before output creation. Source parity is checked again after copying, before a
+stage manifest can be published. This is a packaging consistency gate, not a
+replacement for static domain audit or installation acceptance.
+
+Installed behavior can be checked from outside the checkout, using the staged
+noneditable environment and `scripts/acceptance/installed_source_parity.py`.
+The check verifies `site-packages` imports, retired binding rejection without
+rewriting historical configuration, and bounded MCP text blob decoding.

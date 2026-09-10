@@ -177,3 +177,47 @@ def test_required_resource_missing_is_a_hard_failure(tmp_path: Path, monkeypatch
     monkeypatch.setattr(stage_module, "_select_file", missing_resource)
     with pytest.raises(ValueError, match="required target resource is missing"):
         stage_module.stage_backend(Path(__file__).parents[3], tmp_path / "missing-resource")
+
+
+@pytest.mark.parametrize("change", ["source", "overlay", "missing_source"])
+def test_stage_rejects_source_overlay_divergence_before_output(tmp_path, monkeypatch, change):
+    repo = tmp_path / "repo"
+    overlay = tmp_path / "overlays"
+    for root in (repo, overlay):
+        (root / "backend").mkdir(parents=True)
+        (root / "backend/runtime.py").write_text("VALUE = 1\n")
+    if change == "missing_source":
+        (repo / "backend/runtime.py").unlink()
+    else:
+        root = repo if change == "source" else overlay
+        (root / "backend/runtime.py").write_text("VALUE = 2\n")
+    monkeypatch.setattr(stage_module, "OVERLAY_ROOT", overlay)
+    output = tmp_path / "stage"
+    with pytest.raises(ValueError, match="source differs from effective target"):
+        stage_module.stage_backend(repo, output)
+    assert not output.exists()
+
+
+def test_source_drift_during_copy_cannot_produce_manifest(tmp_path, monkeypatch):
+    import shutil
+    repo = tmp_path / "repo"
+    shutil.copytree(Path(__file__).parents[3] / "backend", repo / "backend",
+                    ignore=shutil.ignore_patterns(".venv", "__pycache__"))
+    original = stage_module._safe_copy
+    changed = False
+
+    def copy_then_change(source, destination, *, label):
+        nonlocal changed
+        result = original(source, destination, label=label)
+        if label == "backend/provider_registry.py" and not changed:
+            with (repo / label).open("a") as stream:
+                stream.write("\n# source changed during packaging\n")
+            changed = True
+        return result
+
+    monkeypatch.setattr(stage_module, "_safe_copy", copy_then_change)
+    output = tmp_path / "stage"
+    with pytest.raises(ValueError, match="source differs from effective target"):
+        stage_module.stage_backend(repo, output)
+    assert changed
+    assert not (output / stage_module.MANIFEST_NAME).exists()
