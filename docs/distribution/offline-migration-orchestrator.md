@@ -37,3 +37,34 @@ Snapshot creation and cross-domain consistency, compatibility versions, remainin
 Knowledge domains, credential rebind, active-writer CUTOVER and complete rollback
 are still required by specification section 11.20. The caller must keep the
 supplied offline snapshot immutable. No old source files are removed or activated.
+
+## Admit a versioned raw Home snapshot
+
+Use `--source-home-snapshot /absolute/snapshot-envelope` instead of
+`--source-snapshot` for `puddingclaw-source-home-snapshot/v1` output. The options
+are mutually exclusive. Knowledge request paths must refer beneath the
+envelope's `payload/`; neither product may modify the committed payload.
+
+Harness independently verifies the private canonical plan/manifest, state and
+non-activation flags, output binding, complete directory/file inventory and
+streamed content hashes. It does not import Claw code or interpret Catalog
+schema. The raw snapshot plan and manifest hashes are bound into the combined
+migration plan and returned as `source_snapshot_commitment`. A completed plan
+cannot be retried by dropping envelope verification or substituting another
+commitment. The complete envelope is revalidated before the final checkpoint,
+including domains ignored by Harness's session/settings projection.
+
+A shared descriptor on the envelope's permanent admission lock remains held
+through the delegation and is inherited by the Knowledge child. A parent
+SIGKILL cannot let a source snapshot publisher take exclusive admission while
+the child still uses the payload. Publication parts, additional files, symlinks,
+hardlinks, public objects, relocated envelopes, unsupported formats, duplicate
+JSON keys and over-limit inputs reject before migration staging is created.
+
+The earlier `--source-snapshot` option still accepts an explicitly approved
+immutable offline payload without claiming a versioned-envelope check. Envelope
+verification proves the artifact commitment, not installation compatibility,
+source-process identity, absence of old/external writers or authority to cut
+traffic over. All installation/fence/activation flags remain false. SQLite raw
+sidecars require Knowledge-owned normalization; they are never imported into
+Harness's database.

@@ -182,10 +182,10 @@ def _labels(value):
     ) and len(set(value)) == len(value)
 
 
-def _delegate(command, stage, lock_fd, timeout_seconds):
+def _delegate(command, stage, lock_fd, timeout_seconds, additional_fds=()):
     """Bound child output while retaining the shared lock across parent death."""
     child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL, pass_fds=(lock_fd,), cwd=str(stage),
+        stdin=subprocess.DEVNULL, pass_fds=(lock_fd, *additional_fds), cwd=str(stage),
         env={"PATH": os.defpath, "HOME": str(stage)})
     deadline = time.monotonic()+timeout_seconds
     data = bytearray()
@@ -211,7 +211,25 @@ def _delegate(command, stage, lock_fd, timeout_seconds):
 
 
 def prepare_migration(source_snapshot: Path | str, knowledge_request: bytes, knowledge_python: Path | str,
-                      staging: Path | str, *, timeout_seconds: int = 120, _after_checkpoint=None) -> dict:
+                      staging: Path | str, *, timeout_seconds: int = 120, _after_checkpoint=None,
+                      source_home_snapshot: Path | str | None = None) -> dict:
+    if source_home_snapshot is None:
+        return _prepare_migration(source_snapshot, knowledge_request, knowledge_python, staging,
+            timeout_seconds=timeout_seconds, _after_checkpoint=_after_checkpoint)
+    from harness.source_snapshot import VerifiedSourceSnapshot
+    with VerifiedSourceSnapshot(source_home_snapshot) as snapshot:
+        if _path(source_snapshot) != snapshot.payload:
+            raise ValueError('Source payload does not belong to the admitted snapshot')
+        stage = _path(staging)
+        if stage == snapshot.root or stage.is_relative_to(snapshot.root) or snapshot.root.is_relative_to(stage):
+            raise ValueError('Migration staging must be disjoint from the snapshot envelope')
+        return _prepare_migration(snapshot.payload, knowledge_request, knowledge_python, staging,
+            timeout_seconds=timeout_seconds, _after_checkpoint=_after_checkpoint, snapshot_guard=snapshot)
+
+
+def _prepare_migration(source_snapshot: Path | str, knowledge_request: bytes, knowledge_python: Path | str,
+                      staging: Path | str, *, timeout_seconds: int = 120, _after_checkpoint=None,
+                      snapshot_guard=None) -> dict:
     if not isinstance(knowledge_request, bytes) or not knowledge_request or len(knowledge_request) > _MAX_JSON:
         raise ValueError("Knowledge request must be non-empty bounded bytes")
     if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, int) or not 1 <= timeout_seconds <= 3600:
@@ -243,6 +261,8 @@ def prepare_migration(source_snapshot: Path | str, knowledge_request: bytes, kno
             _replace_private(request_path, knowledge_request)
         plan = {"format": "puddingharness-migration-orchestrator/v1", "request_digest": request_digest,
                 "source_identity": _digest(str(source).encode()), "knowledge_python_identity": _digest(str(python).encode())}
+        if snapshot_guard is not None:
+            plan['source_snapshot_commitment'] = snapshot_guard.commitment
         plan_digest = _digest(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode())
         plan_path = stage / "plan.json"
         if plan_path.exists() and _json(_read_private(plan_path)) != {**plan, "plan_digest": plan_digest}:
@@ -281,7 +301,10 @@ def prepare_migration(source_snapshot: Path | str, knowledge_request: bytes, kno
         else:
             knowledge.mkdir(mode=0o700)
         command = [str(python), "-m", "knowledge_platform.distribution.migrate_from_claw", "--source-snapshot", str(source), "--request", str(request_path), "--output", str(knowledge)]
-        raw_receipt = _delegate(command, stage, fd, timeout_seconds)
+        if snapshot_guard is None:
+            raw_receipt = _delegate(command, stage, fd, timeout_seconds)
+        else:
+            raw_receipt = _delegate(command, stage, fd, timeout_seconds, additional_fds=(snapshot_guard.fd,))
         result = _receipt(raw_receipt, knowledge, request_digest, plan["source_identity"])
         if _read_private(request_path) != knowledge_request:
             raise ValueError("Staged request changed during delegation")
@@ -294,11 +317,14 @@ def prepare_migration(source_snapshot: Path | str, knowledge_request: bytes, kno
             raise ValueError("Harness checkpoint changed during resume")
         if prior_receipt is not None and prior_receipt != receipt_digest:
             raise ValueError("Knowledge receipt changed during resume")
+        if snapshot_guard is not None:
+            snapshot_guard.verify()
         _replace_private(checkpoint_path, json.dumps({"state": "verified_inactive_partial", "plan_digest": plan_digest, "receipt_digest": receipt_digest, "harness_plan_digest": home_result["plan_digest"]}, sort_keys=True).encode())
         if _after_checkpoint:
             _after_checkpoint("verified_inactive_partial")
         return {"format": "puddingharness-migration-orchestrator/v1", "state": "verified_inactive_partial",
                 "plan_digest": plan_digest, "harness_plan_digest": home_result["plan_digest"], "knowledge_receipt": result,
+                **({'source_snapshot_commitment': snapshot_guard.commitment} if snapshot_guard is not None else {}),
                 "activation_allowed": False, "installation_prepared": False,
                 "writer_fence_verified": False, "credential_rebind_required": True}
     finally:
@@ -307,7 +333,9 @@ def prepare_migration(source_snapshot: Path | str, knowledge_request: bytes, kno
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source-snapshot", type=Path, required=True)
+    sources = parser.add_mutually_exclusive_group(required=True)
+    sources.add_argument("--source-snapshot", type=Path, help="Explicit offline payload without raw-snapshot envelope admission")
+    sources.add_argument("--source-home-snapshot", type=Path, help="Verify and bind a raw Claw Home snapshot envelope")
     parser.add_argument("--knowledge-request", type=Path, required=True)
     parser.add_argument("--knowledge-python", type=Path, required=True)
     parser.add_argument("--staging", type=Path, required=True)
@@ -315,7 +343,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         request = _read_private(args.knowledge_request)
-        result = prepare_migration(args.source_snapshot, request, args.knowledge_python, args.staging, timeout_seconds=args.timeout_seconds)
+        result = prepare_migration(args.source_home_snapshot / 'payload' if args.source_home_snapshot else args.source_snapshot,
+            request, args.knowledge_python, args.staging, timeout_seconds=args.timeout_seconds,
+            source_home_snapshot=args.source_home_snapshot)
     except Exception:
         print(json.dumps({"format": "puddingharness-migration-orchestrator/v1", "status": "error", "error_code": "migration_rejected", "activation_allowed": False}, separators=(",", ":")))
         return 1
