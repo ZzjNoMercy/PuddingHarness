@@ -188,7 +188,7 @@ async function configureDatabase(installer, { username, password, database }, ru
       input: `${sql}\n`,
       timeoutMs: 30_000,
     }),
-    "无法创建 PuddingClaw PostgreSQL 用户或数据库",
+    "无法创建 PuddingHarness PostgreSQL 用户或数据库",
     "postgres_configure_failed",
   );
 }

@@ -5,18 +5,23 @@ Agent Harness. It owns an isolated `~/.puddingharness` Home (or the absolute
 `PUDDINGHARNESS_HOME` supplied by the caller) and communicates with the local
 Harness Backend over its documented agent protocol.
 
-The existing `puddingclaw` npm/bin name remains an installation compatibility
-entry point for this package. It does not select a legacy Home or enable
-product services.
+The package identity is `@puddingai/puddingharness` and its only executable is
+`puddingharness`. It can be installed beside the legacy PuddingClaw package
+without taking ownership of the `puddingclaw` command. The historical source
+folder name is retained for existing repository build scripts.
+
+The package remains private while repository separation and release gates are
+incomplete. Local tarball packing and installation are supported; registry
+publication and an authoritative remote repository URL are not configured.
 
 ```bash
-puddingclaw init --profile harness --non-interactive --yes
-puddingclaw status --json
-puddingclaw agent run "inspect the workspace" --json
-puddingclaw agent respond <run_id> --input-json - --json
-puddingclaw agent cancel <run_id> --json
-puddingclaw start --port auto --json
-puddingclaw stop --json
+puddingharness init --profile harness --non-interactive --yes
+puddingharness status --json
+puddingharness agent run "inspect the workspace" --json
+puddingharness agent respond <run_id> --input-json - --json
+puddingharness agent cancel <run_id> --json
+puddingharness start --port auto --json
+puddingharness stop --json
 ```
 
 Supported lifecycle commands are `init`, `config`, `profile inspect|apply

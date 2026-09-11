@@ -474,7 +474,7 @@ export async function discoverCoreDatabase({
 
   // `puddingharness init` has a zero-config SQLite path. It must not prompt for,
   // probe, install or validate PostgreSQL unless the user explicitly passed a
-  // database option. `puddingclaw database configure` keeps the interactive
+  // database option. `puddingharness database configure` keeps the interactive
   // selector by leaving promptWhenUnspecified enabled.
   if (!promptWhenUnspecified && !explicitMode && !explicitlyConfiguredUrl) {
     if (existingCatalog) {
@@ -652,7 +652,7 @@ export async function discoverCoreDatabase({
       reason,
     });
     output.write(`! PostgreSQL 配置未完成：${reason}\n`);
-    output.write("- 已回退 SQLite，PuddingClaw 仍可继续初始化\n");
+    output.write("- 已回退 SQLite，PuddingHarness 仍可继续初始化\n");
     return { ...sqliteFallback(reason), probes };
   }
 }

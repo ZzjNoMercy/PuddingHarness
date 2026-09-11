@@ -36,7 +36,7 @@ export async function agentClientConfig(paths) {
     throw new WorkerClientError("PUDDINGHARNESS_URL is invalid", { code: "configuration_error" });
   }
   if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname)) {
-    throw new WorkerClientError("PuddingClaw CLI only connects to a local loopback Backend", {
+    throw new WorkerClientError("PuddingHarness CLI only connects to a local loopback Backend", {
       code: "configuration_error",
     });
   }

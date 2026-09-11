@@ -51,7 +51,7 @@ export async function prepareRuntimePython(paths, {
 } = {}) {
   const config = await loadConfig(paths.config);
   if (!config) {
-    throw new CliError("PuddingClaw is not initialized; run `puddingharness init` first", {
+    throw new CliError("PuddingHarness is not initialized; run `puddingharness init` first", {
       code: "not_initialized",
       exitCode: 1,
     });

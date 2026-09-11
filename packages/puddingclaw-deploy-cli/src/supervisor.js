@@ -208,7 +208,7 @@ export async function startRuntime(paths, { automaticPorts = false, timeoutMs = 
   }
   const active = await loadActiveRuntime(paths);
   if (!active) {
-    throw new CliError("no PuddingClaw runtime is installed; install a verified runtime bundle first", {
+    throw new CliError("no PuddingHarness runtime is installed; install a verified runtime bundle first", {
       code: "runtime_not_installed",
       exitCode: 1,
     });
@@ -419,7 +419,7 @@ export async function openRuntime(paths, { opener = spawn } = {}) {
   const state = await readJson(paths.runtimeState, null);
   const status = await probeManagedRuntimeState(paths, state);
   if (status.status !== "running" || !state.frontend_url) {
-    throw new CliError("managed PuddingClaw runtime is not running", { code: "runtime_not_running", exitCode: 1 });
+    throw new CliError("managed PuddingHarness runtime is not running", { code: "runtime_not_running", exitCode: 1 });
   }
   const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
   const args = process.platform === "win32" ? ["/c", "start", "", state.frontend_url] : [state.frontend_url];

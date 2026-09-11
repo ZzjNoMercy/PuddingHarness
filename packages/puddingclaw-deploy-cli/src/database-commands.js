@@ -78,7 +78,7 @@ async function confirmProviderSwitch() {
 async function requireConfig(paths) {
   const config = await loadConfig(paths.config);
   if (!config?.initialized) {
-    throw new CliError("PuddingClaw is not initialized; run puddingharness init", {
+    throw new CliError("PuddingHarness is not initialized; run puddingharness init", {
       code: "not_initialized",
       exitCode: 1,
     });
@@ -101,7 +101,7 @@ async function resolveBackendMigrationRuntime(paths, config) {
   }
   const active = await loadActiveRuntime(paths);
   if (!active) {
-    throw new CliError("no PuddingClaw runtime is installed; install a verified runtime bundle first", {
+    throw new CliError("no PuddingHarness runtime is installed; install a verified runtime bundle first", {
       code: "runtime_not_installed",
       exitCode: 1,
     });

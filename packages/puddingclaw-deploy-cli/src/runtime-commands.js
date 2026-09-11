@@ -140,7 +140,7 @@ export async function logsCommand(paths) {
 export async function requireRuntimeForStart(paths) {
   const active = await loadActiveRuntime(paths);
   if (!active) {
-    throw new CliError("no PuddingClaw runtime is installed; install a verified runtime bundle first", {
+    throw new CliError("no PuddingHarness runtime is installed; install a verified runtime bundle first", {
       code: "runtime_not_installed",
       exitCode: 1,
     });

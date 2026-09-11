@@ -13,13 +13,17 @@ const execFileAsync = promisify(execFile);
 async function main() {
   const packageDocument = JSON.parse(await fs.readFile(path.join(packageRoot, "package.json"), "utf8"));
   const failures = [];
+  if (packageDocument.name !== "@puddingai/puddingharness") failures.push("unexpected Harness package identity");
+  if (JSON.stringify(Object.keys(packageDocument.bin || {})) !== JSON.stringify(["puddingharness"])) {
+    failures.push("Harness must own only the puddingharness command");
+  }
   if (packageDocument.private) failures.push("package.json is still private");
   if (packageDocument.name.includes("-dev")) failures.push("development package name is not publishable");
   if (Object.keys(packageDocument.bin || {}).some((name) => name.endsWith("-dev"))) {
     failures.push("development CLI bin name is not publishable");
   }
   try {
-    const cliEntry = path.join(packageRoot, packageDocument.bin.puddingclaw);
+    const cliEntry = path.join(packageRoot, packageDocument.bin.puddingharness);
     const cliSource = await fs.readFile(cliEntry, "utf8");
     if (/\bVERSION\s*=\s*["']\d+\.\d+\.\d+/.test(cliSource)) {
       failures.push("CLI version must not be hard-coded outside package.json");
