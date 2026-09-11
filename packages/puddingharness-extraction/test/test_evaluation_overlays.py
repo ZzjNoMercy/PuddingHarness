@@ -1,7 +1,6 @@
 """Target Evaluation protocol boundary tests.
 
-These tests load the effective target through the same finder used by the package
-suite.  They exercise generic Candidate construction, legacy read projection,
+These tests load the independent source or HARNESS_TEST_PYTHON installation.  They exercise generic Candidate construction, legacy read projection,
 and the runner/worker/API call boundary without mutating source artifacts.
 """
 from __future__ import annotations
@@ -16,7 +15,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 PACKAGE = Path(__file__).parents[1]
-ROOT = PACKAGE / "overlays/backend"
+ROOT = PACKAGE.parents[1] / "backend"
 LOADER = Path(__file__).with_name("target_runtime_loader.py")
 
 
@@ -27,8 +26,14 @@ def run_target(code: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
         PUDDINGCLAW_HOME=str(tmp_path / "legacy"),
         PYTHONDONTWRITEBYTECODE="1",
     )
+    installed_python = env.get("HARNESS_TEST_PYTHON")
+    if installed_python:
+        env.pop("PYTHONPATH", None)
+    else:
+        env["PYTHONPATH"] = str(ROOT)
     return subprocess.run(
-        [sys.executable, "-c", f"import runpy; runpy.run_path({str(LOADER)!r})\n{code}"],
+        [installed_python or sys.executable, "-c", code],
+        cwd=tmp_path,
         env=env,
         text=True,
         capture_output=True,
