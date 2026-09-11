@@ -120,7 +120,8 @@ async function patchStandaloneServer(serverFile) {
   if (!source.includes(marker)) throw new Error("Next standalone server marker was not found");
   const runtimeRewrite = [
     "const fs = require('fs')",
-    "const runtimeBackendUrl = (process.env.BACKEND_INTERNAL_URL || 'http://127.0.0.1:8888').replace(/\\/$/, '')",
+    "if (!process.env.BACKEND_INTERNAL_URL?.trim()) throw new Error('BACKEND_INTERNAL_URL is required for the Harness standalone server')",
+    "const runtimeBackendUrl = process.env.BACKEND_INTERNAL_URL.trim().replace(/\\/$/, '')",
     "const rewriteApiDestination = (destination) => destination.replace(/^https?:\\/\\/[^/]+/, runtimeBackendUrl)",
     "for (const rule of nextConfig?._originalRewrites?.afterFiles || []) {",
     "  if (typeof rule.destination === 'string' && rule.source.startsWith('/api/')) {",

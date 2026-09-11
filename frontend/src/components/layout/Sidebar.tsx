@@ -30,8 +30,6 @@ import {
   FolderKanban,
   Workflow,
   Settings,
-  Github,
-  ExternalLink,
   Archive,
   Pin,
   Loader2,
@@ -449,16 +447,6 @@ export default function Sidebar() {
 
       {/* Footer navigation */}
       <div className="shrink-0 px-2 py-2 space-y-0.5">
-        <a
-          href="https://github.com/ZzjNoMercy/PuddingClaw"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-gray-500 transition-all hover:bg-white/50 hover:text-gray-800"
-        >
-          <Github className="h-4 w-4" />
-          GitHub
-          <ExternalLink className="ml-auto h-3 w-3" />
-        </a>
         <Link
           href="/settings"
           className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-gray-600 transition-all hover:bg-white/50 hover:text-gray-900"

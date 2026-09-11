@@ -1285,7 +1285,7 @@ export default function ChatInput() {
       </div>
 
       <p className="viewport-center-axis mt-1 text-center text-[10px] text-gray-400/45">
-        Powered by DeepSeek · PuddingClaw v0.1
+        PuddingHarness
       </p>
     </div>
     <ConfirmDialog

@@ -95,7 +95,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
 const SETTINGS_CATEGORY_KEY = "settings:activeCategory";
 const SETTINGS_CATEGORY_DESCRIPTIONS: Partial<Record<SettingsCategory, string>> = {
   ai: "统一管理模型供应商、接口、模型分类与默认工作负载。",
-  database: "PuddingClaw Core 的持久化连接，与知识库和智能问数扩展开关解耦。",
+  database: "PuddingHarness 的持久化连接，用于运行时数据。",
   memory: "维护全局与项目级 Agent 记忆。",
   harness: "管理 Agent 编排、上下文、执行预算与运行保护。",
   worker: "查看本机 CLI 状态与 Headless 调用记录。",
@@ -449,7 +449,7 @@ export default function SettingsPage() {
   const [databasePasswordError, setDatabasePasswordError] = useState("");
   const [databaseConfiguredBy, setDatabaseConfiguredBy] = useState("default");
   const [databaseSource, setDatabaseSource] = useState("config");
-  const [databaseCatalogPath, setDatabaseCatalogPath] = useState("$PUDDINGCLAW_HOME/db/catalog.sqlite3");
+  const [databaseCatalogPath, setDatabaseCatalogPath] = useState("$PUDDINGHARNESS_HOME/db/catalog.sqlite3");
   const [databaseEnvOverride, setDatabaseEnvOverride] = useState(false);
   // 当前生效的存储提供方（sqlite / postgresql），用于切换前的二次确认；
   // 与表单中的 databaseMode 区分：后者是用户尚未保存的选择。
@@ -576,7 +576,7 @@ export default function SettingsPage() {
         );
         setDatabaseConfiguredBy(s.database?.configured_by || "default");
         setDatabaseSource(s.database?.source || "config");
-        setDatabaseCatalogPath(s.database?.catalog_path || "$PUDDINGCLAW_HOME/db/catalog.sqlite3");
+        setDatabaseCatalogPath(s.database?.catalog_path || "$PUDDINGHARNESS_HOME/db/catalog.sqlite3");
         setDatabaseEnvOverride(databaseEnvironmentOverride);
         setContextSummaryModelId(s.compression.deepagents?.summarization?.model_id || "");
         setContextSummaryTriggerTokens(
@@ -1050,7 +1050,7 @@ export default function SettingsPage() {
       const fresh = await getSettings();
       setDatabaseConfiguredBy(fresh.database?.configured_by || "default");
       setDatabaseSource(fresh.database?.source || "config");
-      setDatabaseCatalogPath(fresh.database?.catalog_path || "$PUDDINGCLAW_HOME/db/catalog.sqlite3");
+      setDatabaseCatalogPath(fresh.database?.catalog_path || "$PUDDINGHARNESS_HOME/db/catalog.sqlite3");
       setDatabaseEnvOverride(Boolean(fresh.database?.environment_override));
       const freshProvider = fresh.database?.provider;
       setDatabaseAppliedProvider(
@@ -1585,13 +1585,13 @@ export default function SettingsPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          void navigator.clipboard.writeText("puddingclaw database configure");
+                          void navigator.clipboard.writeText("puddingharness database configure");
                           showToast("success", "已复制数据库重配命令");
                         }}
                         className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white/70 px-2.5 py-1.5 font-medium text-amber-800 hover:bg-white"
                       >
                         <Copy className="h-3.5 w-3.5" />
-                        puddingclaw database configure
+                        puddingharness database configure
                       </button>
                     </div>
                   ) : null}
@@ -1976,7 +1976,7 @@ export default function SettingsPage() {
                           )}
 
                           <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2 text-[10px] leading-relaxed text-blue-700">
-                            PuddingClaw 统一接管单条文本 Tool Result 超过 20,000 tokens 的无损落盘：
+                            PuddingHarness 统一接管单条文本 Tool Result 超过 20,000 tokens 的无损落盘：
                             完整内容写入 <code>/large_tool_results/</code>，Agent 只接收预览和精确读取路径。
                             该机制不受工具类型影响，并且始终生效，不依赖下面的可选即时压缩。
                           </div>

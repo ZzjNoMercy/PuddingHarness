@@ -39,13 +39,13 @@ export default function DatasetsPage() {
   const downloadCsvTemplate = () => {
     const csv = [
       "question,answer,case_type,expected_tool,name,criticality",
-      '"请只回答项目名称","PuddingClaw","smoke","","项目名称回答","normal"',
+      '"请只回答项目名称","PuddingHarness","smoke","","项目名称回答","normal"',
       '"读取 report.md 并总结","第一点|第二点|第三点","tool-use","read_file","文件总结","high"',
     ].join("\n");
     const url = URL.createObjectURL(new Blob([`\uFEFF${csv}\n`], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "puddingclaw-evaluation-template.csv";
+    anchor.download = "puddingharness-evaluation-template.csv";
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -131,7 +131,7 @@ export default function DatasetsPage() {
           {allowed.syncable && <Link href={`/evaluation/experiments/new?dataset=${encodeURIComponent(`${key}@${dataset.current_version}`)}`} className="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-[#002fa7] px-3.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#00257f]"><Play className="h-3.5 w-3.5 fill-current"/>开始评测</Link>}
           {allowed.reopenable && <button disabled={rowBusy} onClick={() => act(key, () => reopenEvaluationDataset(key, dataset.revision))} className={secondaryActionClass}><FilePlus2 className="h-3.5 w-3.5"/>新建草稿</button>}
           {allowed.syncable && <button disabled={rowBusy} onClick={() => act(key, () => syncEvaluationDataset(key, dataset.current_version))} className={secondaryActionClass}><CloudUpload className="h-3.5 w-3.5"/>同步 LangSmith</button>}
-          <a href={evaluationDatasetExportUrl(key)} className={secondaryActionClass} title="导出完整 PuddingClaw 评测集"><Download className="h-3.5 w-3.5"/>导出</a>
+          <a href={evaluationDatasetExportUrl(key)} className={secondaryActionClass} title="导出完整 PuddingHarness 评测集"><Download className="h-3.5 w-3.5"/>导出</a>
           {dataset.tags.includes("swebench") && dataset.current_version > 0 && <a href={frozenSWEbenchDatasetExportUrl(key, dataset.current_version)} className={secondaryActionClass} title="导出官方判卷器使用的冻结数据快照"><FileCode2 className="h-3.5 w-3.5"/>判卷快照</a>}
           {allowed.archivable && <button aria-label="归档评测集" disabled={rowBusy} onClick={() => confirm("归档后评测集将不可编辑，确认归档？") && act(key, () => archiveEvaluationDataset(key, dataset.revision))} className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-rose-200 bg-white px-2.5 text-xs font-medium text-rose-600 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"><Archive className="h-3.5 w-3.5"/>归档</button>}
         </div>

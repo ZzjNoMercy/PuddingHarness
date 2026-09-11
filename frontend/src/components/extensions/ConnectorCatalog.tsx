@@ -311,7 +311,7 @@ function ConnectorStatusModal({
             <>
             <StatusGroup icon={<Server className="h-4 w-4" />} title="连接状态">
               <StatusRow label="本地组件" value={connector.environment.health === "available" ? "已安装" : "未安装"} ok={connector.environment.health === "available"} />
-              <StatusRow label="PuddingClaw" value={connector.environment.enabled ? "已启用" : "未启用"} ok={connector.environment.enabled} />
+              <StatusRow label="PuddingHarness" value={connector.environment.enabled ? "已启用" : "未启用"} ok={connector.environment.enabled} />
               <StatusRow label="本地 daemon" value={connector.environment.daemon_running ? "运行中" : "未运行"} ok={connector.environment.daemon_running} />
               <StatusRow label="浏览器扩展" value={connector.environment.extension_connected ? "已连接" : "未连接"} ok={connector.environment.extension_connected} />
               <StatusRow label="版本匹配" value={connector.environment.version_compatible === false ? "不匹配，请升级扩展" : "已匹配"} ok={connector.environment.version_compatible !== false} />
@@ -433,7 +433,7 @@ function ConnectorStatusModal({
             ) : (
               <>
                 <dt>Profile</dt><dd>{connector.profile?.label || "尚未创建"}</dd>
-                <dt>凭证</dt><dd>由 PuddingClaw 加密管理</dd>
+                <dt>凭证</dt><dd>由 PuddingHarness 加密管理</dd>
               </>
             )}
           </dl>

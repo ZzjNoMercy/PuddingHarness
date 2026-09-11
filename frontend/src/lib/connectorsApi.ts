@@ -78,7 +78,7 @@ export interface ConnectorInfo {
 async function errorMessage(response: Response, fallback: string): Promise<string> {
   const payload = await response.json().catch(() => null) as { detail?: unknown } | null;
   if (response.status === 404 && payload?.detail === "Not Found") {
-    return "连接器服务尚未加载，请重启 PuddingClaw Backend 后重试";
+    return "连接器服务尚未加载，请重启 PuddingHarness Backend 后重试";
   }
   if (typeof payload?.detail === "string") return payload.detail;
   if (payload?.detail && typeof payload.detail === "object") {

@@ -121,7 +121,7 @@ export function useProjectFolderPicker({ onPathSelected }: UseProjectFolderPicke
             <div className="min-w-0">
               <h2 className="text-[15px] font-semibold text-gray-950">添加本地项目</h2>
               <p className="mt-1 text-[12px] leading-relaxed text-gray-500">
-                粘贴项目文件夹路径，PuddingClaw 会把它登记为 Agent 工作区。
+                粘贴项目文件夹路径，PuddingHarness 会把它登记为 Agent 工作区。
               </p>
             </div>
           </div>
@@ -147,7 +147,7 @@ export function useProjectFolderPicker({ onPathSelected }: UseProjectFolderPicke
               setPathValue(event.target.value);
               if (error) setError(null);
             }}
-            placeholder="/Users/you/Projects/PuddingClaw"
+            placeholder="/Users/you/Projects/PuddingHarness"
             className="h-11 w-full rounded-2xl border border-black/[0.08] bg-white/70 px-3.5 text-[13px] text-gray-900 outline-none transition-all placeholder:text-gray-300 focus:border-[#002fa7]/35 focus:bg-white focus:ring-4 focus:ring-[#002fa7]/[0.08]"
           />
         </label>

@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const backendUrl = process.env.BACKEND_INTERNAL_URL || 'http://localhost:8888';
+const backendUrl = process.env.BACKEND_INTERNAL_URL?.trim();
 
 const nextConfig = {
   output: 'standalone',
@@ -14,6 +14,8 @@ const nextConfig = {
   // assets are already pre-compressed/cacheable and SSE must remain unbuffered.
   compress: false,
   async rewrites() {
+    // An unbound frontend must never discover another local installation.
+    if (!backendUrl) return [];
     return [
       {
         source: '/api/:path*',

@@ -71,7 +71,7 @@ export default function HeadlessActivityPanel({ extensions }: { extensions: Runt
     <SettingsAnchorLayout prefix="worker" sections={SECTIONS}>
       <section id="worker-section-cli" className="scroll-mt-6">
         <Card title="本机 CLI" icon={Terminal}>
-          <p className="mb-4 text-xs leading-5 text-gray-500">PuddingClaw CLI 仅连接本机回环 Backend，不需要 Worker Token。模型、数据源和工具审批由 PuddingClaw 管理。</p>
+          <p className="mb-4 text-xs leading-5 text-gray-500">PuddingHarness CLI 仅连接本机回环 Backend，不需要 Worker Token。模型、数据源和工具审批由 PuddingHarness 管理。</p>
           <CapabilitiesStatus refreshIntervalMs={30000} extensions={extensions} includeKeys={["cli"]} showSummary={false} />
         </Card>
       </section>

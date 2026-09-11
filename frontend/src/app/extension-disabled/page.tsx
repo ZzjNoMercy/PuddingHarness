@@ -30,13 +30,13 @@ export default function ExtensionDisabledPage({
             <Terminal className="h-4 w-4" aria-hidden="true" />
             <span>在终端运行</span>
           </div>
-          <code>puddingclaw init</code>
+          <code>puddingharness init</code>
         </div>
         <div className="mt-7 flex items-center gap-4">
           <Link href="/" className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700">
             返回工作台
           </Link>
-          <span className="text-sm text-slate-500">完成配置后需要重启 PuddingClaw</span>
+          <span className="text-sm text-slate-500">完成配置后需要重启 PuddingHarness</span>
         </div>
       </section>
     </main>

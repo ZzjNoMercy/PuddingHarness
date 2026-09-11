@@ -866,7 +866,7 @@ function RuntimeMountPanel({ inventory }: { inventory: TraceRuntimeInventory }) 
           <MountedListCard
             icon={<Cpu className="h-4 w-4 text-slate-500" />}
             title="Tools"
-            subtitle="包含 DeepAgents 内置工具与 PuddingClaw 工具"
+            subtitle="包含 DeepAgents 内置工具与 PuddingHarness 工具"
             empty="没有工具挂载"
             items={tools.map((tool) => ({
               key: tool.name,
@@ -1244,7 +1244,7 @@ function MiddlewareTracePanel({
           <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-3">
             <p className="text-[12px] font-bold text-amber-900">实现边界</p>
             <p className="mt-1 text-[10px] leading-relaxed text-amber-700">
-              PuddingClaw 传入的 middleware 已通过 proxy 记录直接 before/after；DeepAgents 自动注入的 base middleware 暂时仍以 observed / inferred 证据呈现。
+              PuddingHarness 传入的 middleware 已通过 proxy 记录直接 before/after；DeepAgents 自动注入的 base middleware 暂时仍以 observed / inferred 证据呈现。
             </p>
           </div>
         </div>
@@ -4722,7 +4722,7 @@ function emitTraceFlowDebug(trace: AgentTrace | null, spans: TraceSpan[], actual
     hook: normalizeHookName(item.span?.metadata?.hook),
     middleware: Array.isArray(item.span?.metadata?.middleware) ? item.span?.metadata?.middleware.join(", ") : undefined,
   }));
-  console.groupCollapsed(`[PuddingClaw trace flow debug] ${trace.trace_id}`);
+  console.groupCollapsed(`[PuddingHarness trace flow debug] ${trace.trace_id}`);
   console.table(hookOrder.map((entry) => ({
     hook: "before_agent",
     name: entry.name,
