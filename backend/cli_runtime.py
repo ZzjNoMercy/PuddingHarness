@@ -1,4 +1,4 @@
-"""Detect and optionally install the PuddingClaw Worker CLI.
+"""Detect and optionally install the PuddingHarness Worker CLI.
 
 The backend is the server and must remain usable when the client CLI is not
 installed.  This module therefore treats the CLI as an optional local tool:
@@ -19,7 +19,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-CLI_COMMAND = "puddingclaw"
+CLI_COMMAND = "puddingharness"
 CLI_VERSION = "0.1.19"
 MIN_NODE_MAJOR = 20
 INSTALL_POLICIES = frozenset({"auto", "prompt", "never"})
@@ -92,18 +92,28 @@ def _cli_status(command: str | None, *, runner: CommandRunner) -> dict[str, Any]
     if not command:
         return {"available": False, "path": None, "version": None}
     result = _run([command, "version", "--json"], timeout=5.0, runner=runner)
-    output = str(result.stdout or result.stderr or "").strip() if result is not None else ""
+    # A successful executable is not proof of the installed product. The
+    # version command is a structured identity/protocol handshake.
+    output = str(result.stdout or "").strip() if result is not None else ""
     version: str | None = None
+    identity_verified = False
     try:
         payload = json.loads(output)
         if isinstance(payload, dict):
             version = _version_from_output(str(payload.get("cli_version") or ""))
+            identity_verified = (
+                payload.get("cli") == CLI_COMMAND
+                and payload.get("agent_id") == CLI_COMMAND
+                and payload.get("schema_version") == "1"
+                and payload.get("protocol_version") == "1"
+            )
     except (TypeError, ValueError):
-        version = _version_from_output(output)
+        pass
     return {
-        "available": result is not None and result.returncode == 0,
+        "available": result is not None and result.returncode == 0 and identity_verified and version is not None,
         "path": command,
         "version": version,
+        "identity_verified": identity_verified,
     }
 
 
@@ -168,7 +178,8 @@ def _status(
     node["supported"] = bool(node_version and node_version[0] >= MIN_NODE_MAJOR)
     return {
         "command": CLI_COMMAND,
-        "installed": bool(cli["available"] and not cli.get("version_mismatch")),
+        "installed": bool(cli["available"] and cli.get("version") == CLI_VERSION),
+        "identity_verified": bool(cli.get("identity_verified")),
         "path": cli.get("path"),
         "version": cli.get("version"),
         "required_version": CLI_VERSION,
@@ -188,7 +199,7 @@ def _prompt_for_install() -> bool:
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return False
     try:
-        answer = input("PuddingClaw CLI 未安装，是否现在安装？[y/N] ").strip().lower()
+        answer = input("PuddingHarness CLI 未安装，是否现在安装？[y/N] ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         return False
     return answer in {"y", "yes", "是", "好"}
@@ -196,20 +207,22 @@ def _prompt_for_install() -> bool:
 
 def _validate_package_dir(package_dir: Path) -> str | None:
     manifest_path = package_dir / "package.json"
+    if manifest_path.is_symlink() or (package_dir / "src").is_symlink():
+        return "CLI package metadata or source directory is symlinked"
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return f"CLI package manifest is unavailable: {manifest_path}"
     if not isinstance(payload, dict):
         return "CLI package manifest is invalid"
-    if payload.get("name") != "@puddingai/puddingclaw":
-        return "CLI package name does not match @puddingai/puddingclaw"
+    if payload.get("name") != "@puddingai/puddingharness":
+        return "CLI package name does not match @puddingai/puddingharness"
     if payload.get("version") != CLI_VERSION:
         return f"CLI package version does not match {CLI_VERSION}"
     package_bin = payload.get("bin")
-    if not isinstance(package_bin, dict) or package_bin.get(CLI_COMMAND) != "src/cli.js":
-        return "CLI package manifest does not expose the expected puddingclaw binary"
-    if not (package_dir / "src" / "cli.js").is_file():
+    if package_bin != {CLI_COMMAND: "src/cli.js"}:
+        return "CLI package manifest does not expose the expected puddingharness binary"
+    if (package_dir / "src" / "cli.js").is_symlink() or not (package_dir / "src" / "cli.js").is_file():
         return "CLI package entrypoint src/cli.js is missing"
     return None
 
@@ -217,12 +230,11 @@ def _validate_package_dir(package_dir: Path) -> str | None:
 def _acquire_file_lock(base_dir: Path):
     if fcntl is None:
         return None
-    if base_dir.name == "backend":
-        from runtime_identity.paths import PuddingClawPaths
+    from runtime_identity.paths import PuddingClawPaths
 
-        lock_path = PuddingClawPaths.from_environment().data() / ".puddingclaw-cli-install.lock"
-    else:
-        lock_path = base_dir / "data" / ".puddingclaw-cli-install.lock"
+    # An installed module lives under site-packages, never under a writable
+    # checkout. Operational state belongs to the explicit Harness Home.
+    lock_path = PuddingClawPaths.from_environment().data() / ".puddingharness-cli-install.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     handle = lock_path.open("a+", encoding="utf-8")
     try:
@@ -287,7 +299,13 @@ def ensure_cli_runtime(
         initial["install_message"] = "Another backend worker is already installing the CLI"
         _last_status = initial
         return initial
-    file_lock = _acquire_file_lock(base_dir)
+    try:
+        file_lock = _acquire_file_lock(base_dir)
+    except OSError:
+        _install_thread_lock.release()
+        initial["install_message"] = "CLI installation lock is unavailable"
+        _last_status = initial
+        return initial
     if fcntl is not None and file_lock is None:
         _install_thread_lock.release()
         initial["install_message"] = "Another backend process is already installing the CLI"
@@ -325,6 +343,7 @@ def ensure_cli_runtime(
         install_succeeded=succeeded,
         install_message=message,
     )
+    final["install_succeeded"] = bool(succeeded and final["installed"])
     if not final["installed"] and succeeded:
         final["install_message"] = (
             "CLI installation completed, but the command is not discoverable or has an incompatible version"

@@ -93,6 +93,9 @@ test("runtime manifest requires the Harness contract", () => {
 
 test("worker manifest exposes generic Harness operations only", async () => {
   const manifest = JSON.parse(await readFile(path.join(root, "worker.manifest.json"), "utf8"));
+  const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+  assert.equal(manifest.id, "puddingharness");
+  assert.deepEqual(Object.keys(pkg.bin), [manifest.transport.command]);
   assert.deepEqual(manifest.capabilities, ["agent.run", "agent.continue", "agent.respond", "agent.cancel", "hitl.permission"]);
   assert.equal(Object.hasOwn(manifest, "modelRouting"), false);
   assert.equal(JSON.stringify(manifest).includes("knowledge"), false);

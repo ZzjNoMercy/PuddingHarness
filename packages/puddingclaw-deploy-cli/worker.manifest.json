@@ -7,7 +7,7 @@
   "protocolVersion": "1",
   "transport": {
     "type": "cli",
-    "command": "puddingclaw",
+    "command": "puddingharness",
     "input": "stdin-json",
     "output": "stdout-json"
   },

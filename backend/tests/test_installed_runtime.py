@@ -519,3 +519,25 @@ async def run():
     assert 'Approved evidence read' in final['content'], final
 asyncio.run(run())
 ''', tmp_path)
+
+
+def test_worker_health_uses_harness_identity_and_workspace(tmp_path):
+    run_target('''
+import asyncio, os
+from pathlib import Path
+from starlette.requests import Request
+from api import headless
+from projects.registry import project_registry
+root = Path(os.environ['PUDDINGHARNESS_HOME'])
+root.mkdir(parents=True, exist_ok=True)
+project_registry.initialize(root / 'projects')
+os.environ['PUDDINGHARNESS_PROJECTS_ROOT'] = str(root / 'workspaces')
+request = Request({'type': 'http', 'method': 'GET', 'path': '/health',
+    'headers': [], 'client': ('127.0.0.1', 12345)})
+response = asyncio.run(headless.worker_health(request))
+assert response['agent_id'] == 'puddingharness', response
+assert response['cli']['command'] == 'puddingharness'
+assert response['workspace_ready'] is True
+assert (root / 'workspaces' / 'puddingharness').is_dir()
+assert not (root / 'workspaces' / 'puddingclaw').exists()
+''', tmp_path)

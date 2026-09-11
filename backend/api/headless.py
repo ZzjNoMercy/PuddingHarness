@@ -22,7 +22,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from cli_runtime import current_cli_runtime_status
+from cli_runtime import CLI_COMMAND, CLI_VERSION, current_cli_runtime_status
 from graph.deepagents_manager import deepagents_agent_manager
 from graph.headless_resolver import headless_authority_from_environment
 from graph.permission_resume import permission_resume_registry
@@ -44,7 +44,7 @@ router = APIRouter(prefix="/headless", tags=["headless-worker"])
 headless_activity_router = APIRouter(tags=["headless-activity"])
 BASE_DIR = Path(__file__).resolve().parent.parent
 _idempotency_lock = threading.RLock()
-_WORKER_PROJECT_NAME = "puddingclaw"
+_WORKER_PROJECT_NAME = CLI_COMMAND
 _active_headless_sessions: set[str] = set()
 _active_headless_sessions_lock = threading.RLock()
 _headless_cleanup_lock = threading.Lock()
@@ -1056,12 +1056,12 @@ async def worker_health(request: Request):
     cli_status.pop("package_dir", None)
     return {
         "schema_version": "1",
-        "agent_id": "puddingclaw",
-        "cli_version": "0.1.19",
+        "agent_id": CLI_COMMAND,
+        "cli_version": CLI_VERSION,
         "protocol_version": "1",
         "configured": True,
         "reachable": True,
-        "server_version": "0.1.19",
+        "server_version": CLI_VERSION,
         "project_id": project_id,
         "workspace_ready": path.is_dir(),
         "capabilities": ["agent.run", "workspace.files", "mcp"],
@@ -1173,7 +1173,7 @@ async def create_headless_run(
                 metadata={
                     "runtime_mode": "headless_worker",
                     "headless_enabled": True,
-                    "worker_id": "puddingclaw",
+                    "worker_id": CLI_COMMAND,
                     "headless_caller_id": caller_id,
                     "headless_caller_name": caller_name,
                     "interaction_mode": "external",
