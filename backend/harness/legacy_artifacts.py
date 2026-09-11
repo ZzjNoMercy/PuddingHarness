@@ -23,6 +23,17 @@ def reject_legacy_selectors(value: Any) -> Any:
     return value
 
 
+def project_legacy_candidate(value: dict[str, Any]) -> dict[str, Any]:
+    """Remove retired candidate controls, preserving opaque nested evidence."""
+    result = deepcopy(value)
+    config = result.get('config')
+    for control in (result, config):
+        if isinstance(control, dict):
+            for field in _REMOVED_SELECTORS:
+                control.pop(field, None)
+    return result
+
+
 def project_legacy_run(value: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(value)
     for field in _REMOVED_SELECTORS:

@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from harness.legacy_artifacts import project_legacy_candidate, reject_legacy_selectors
+
 PROTOCOL_VERSION = "2.0"
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
@@ -300,9 +302,6 @@ class DatasetBundle(ProtocolModel):
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-_LEGACY_SELECTOR_FIELD = "analytics_model_id"
-
-
 def project_legacy_evaluation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Project a protocol-1.0 artifact in memory without rewriting its source bytes.
 
@@ -316,13 +315,7 @@ def project_legacy_evaluation_payload(payload: dict[str, Any]) -> dict[str, Any]
     projected = dict(payload)
     candidate = projected.get("candidate")
     if isinstance(candidate, dict):
-        candidate = dict(candidate)
-        candidate.pop(_LEGACY_SELECTOR_FIELD, None)
-        config = candidate.get("config")
-        if isinstance(config, dict):
-            config = dict(config)
-            config.pop(_LEGACY_SELECTOR_FIELD, None)
-            candidate["config"] = config
+        candidate = project_legacy_candidate(candidate)
         candidate["protocol_version"] = PROTOCOL_VERSION
         projected["candidate"] = candidate
     projected["protocol_version"] = PROTOCOL_VERSION
@@ -343,6 +336,16 @@ class HistoricalEvaluationArtifact(ProtocolModel):
 
 
 class ExperimentCandidate(ProtocolModel):
+    model_config = ConfigDict(extra="forbid", use_enum_values=True, revalidate_instances="always")
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_retired_controls(cls, value: Any) -> Any:
+        reject_legacy_selectors(value)
+        if isinstance(value, dict):
+            reject_legacy_selectors(value.get("config"))
+        return value
+
     protocol_version: Literal["1.0", "2.0"] = PROTOCOL_VERSION
     candidate_id: str = Field(default_factory=lambda: new_id("candidate"))
     name: str = Field(min_length=1, max_length=200)
@@ -356,6 +359,7 @@ class ExperimentCandidate(ProtocolModel):
     fingerprint_status: Literal["partial", "complete"] = "partial"
 
     def with_fingerprint(self) -> ExperimentCandidate:
+        reject_legacy_selectors(self.config)
         if self.fingerprint:
             return self
         payload = self.model_dump(mode="json", exclude={"fingerprint"})
