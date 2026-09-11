@@ -1,3 +1,18 @@
+# Independent frontend source authority
+
+The frontend packager now copies the independent repository's frontend source.
+Historical overlays cannot supply missing files or replace current source. The
+manifest records `runtimeAuthority=independent_repository_source`, empty overlay
+lists and `releaseable=false`. Source and staged bytes are checked after install,
+typecheck and build. These digest checks do not atomically fence source writers.
+
+`SourcesPanel.tsx` is a generic citation component owned by Harness and is copied
+from source. Removed business routes remain excluded. Dependency cache reuse is
+developer-only; release evidence requires an actual dependency installation and
+build. Existing extraction-specific descriptions below are historical context.
+
+## Historical extraction workflow
+
 # Effective frontend staging
 
 `scripts/stage_frontend.mjs` creates a reviewable effective Harness frontend

@@ -18,6 +18,9 @@ function write(relativePath, content = "fixture") {
   fs.writeFileSync(filePath, content);
 }
 
+for (const name of ["src/components/citations/SourcesPanel.tsx", "src/components/extensions/McpCatalog.tsx", "src/lib/api.ts"]) {
+  write(name, "independent source authority\n");
+}
 write("package.json", "{}\n");
 write("package-lock.json", "{}\n");
 write(".env.example", "PUBLIC_EXAMPLE=must-not-copy\n");
@@ -64,15 +67,18 @@ for (const relativePath of [
   "src/components/extensions/McpCatalog.tsx",
   "src/lib/api.ts",
 ]) {
-  assert.equal(fs.existsSync(path.join(stage, relativePath)), true, `target overlay missing: ${relativePath}`);
+  assert.equal(fs.existsSync(path.join(stage, relativePath)), true, `source missing: ${relativePath}`);
   assert.deepEqual(
     fs.readFileSync(path.join(stage, relativePath)),
-    fs.readFileSync(path.join(overlayRoot, relativePath)),
-    `stage must use the target overlay for ${relativePath}`,
+    fs.readFileSync(path.join(source, relativePath)),
+    `stage must use independent source for ${relativePath}`,
   );
 }
 const manifest = JSON.parse(fs.readFileSync(path.join(stage, "harness-frontend-artifact-manifest.json"), "utf8"));
 assert.equal(manifest.kind, "puddingharness-effective-frontend");
+assert.equal(manifest.runtimeAuthority, "independent_repository_source");
+assert.equal(manifest.releaseable, false);
+assert.equal(manifest.selection.selectedOverlayFileCount, 0);
 assert.equal(manifest.nodeModules.present, false);
 assert.equal(manifest.checks.typecheck, "not-run");
 assert.equal(manifest.checks.build, "not-run");
@@ -100,7 +106,6 @@ assert.deepEqual(manifest.selection.businessExclusions.map((item) => item.path),
   "src/app/knowledge",
   "src/components/knowledge",
   "src/app/api/chat/route.ts",
-  "src/components/citations/SourcesPanel.tsx",
   "src/components/settings/DocumentParserSettings.tsx",
 ]);
 
@@ -140,8 +145,25 @@ assert.throws(
 
 assert.throws(
   () => execFileSync(process.execPath, [scriptPath, "--source-frontend", source, "--output", path.join(overlayRoot, ".staging-safety-test")], { stdio: "pipe" }),
-  /inside or contain the overlay tree/,
+  /inside or contain the packaging tree/,
   "staging must reject an output nested inside the overlay tree",
 );
 
+// Execute a relocated packager with no historical overlay tree, then a poisoned one.
+const isolatedPackage = path.join(tempRoot, "packaging");
+const isolatedScript = path.join(isolatedPackage, "scripts/stage_frontend.mjs");
+fs.mkdirSync(path.dirname(isolatedScript), { recursive: true });
+fs.copyFileSync(scriptPath, isolatedScript);
+for (const state of ["absent", "poisoned"]) {
+  if (state === "poisoned") {
+    const poison = path.join(isolatedPackage, "overlays/frontend/src/lib/api.ts");
+    fs.mkdirSync(path.dirname(poison), { recursive: true });
+    fs.writeFileSync(poison, "export const legacyAnalytics = true;\n");
+  }
+  const destination = path.join(tempRoot, `isolated-${state}`);
+  execFileSync(process.execPath, [isolatedScript, "--source-frontend", source, "--output", destination]);
+  assert.deepEqual(fs.readFileSync(path.join(destination, "src/lib/api.ts")), fs.readFileSync(path.join(source, "src/lib/api.ts")));
+  assert.equal(fs.existsSync(path.join(destination, "src/app/settings/page.tsx")), false,
+    "missing source must not be supplied by historical overlay");
+}
 console.log("frontend staging selection and safety: passed");

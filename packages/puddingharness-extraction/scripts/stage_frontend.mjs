@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Build a self-contained effective frontend tree from a frontend checkout and
- * the target-only Harness overlays. The generated tree never imports files by
+ * Build a self-contained frontend tree from the independent repository.
+ * Historical extraction overlays are not consulted. The tree never imports files by
  * path from the source checkout; all source files needed by tsc/Next are
  * copied into the stage.
  */
@@ -15,29 +15,13 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const overlayRoot = path.join(packageRoot, "overlays", "frontend");
 const manifestName = "harness-frontend-artifact-manifest.json";
-
-const overlayFiles = [
-  "src/app/settings/page.tsx",
-  "src/components/chat/ChatInput.tsx",
-  "src/components/chat/ChatMessage.tsx",
-  "src/components/citations/SourcesPanel.tsx",
-  "src/components/extensions/McpCatalog.tsx",
-  "src/components/layout/Navbar.tsx",
-  "src/components/layout/Sidebar.tsx",
-  "src/hooks/useEvalStream.ts",
-  "src/lib/api.ts",
-  "src/lib/store.tsx",
-  "src/lib/useRuntimeProfile.ts",
-];
 
 const businessExclusions = [
   { type: "directory", path: "src/app/analytics" },
   { type: "directory", path: "src/app/knowledge" },
   { type: "directory", path: "src/components/knowledge" },
   { type: "file", path: "src/app/api/chat/route.ts" },
-  { type: "file", path: "src/components/citations/SourcesPanel.tsx" },
   { type: "file", path: "src/components/settings/DocumentParserSettings.tsx" },
 ];
 
@@ -119,7 +103,7 @@ function realPathCandidate(candidate) {
   return path.join(fs.realpathSync(existing), ...suffix);
 }
 
-function isExcluded(relativePath, includeTargetOverlays = true) {
+function isExcluded(relativePath) {
   const normalized = normalizeRelative(relativePath);
   const name = path.posix.basename(normalized);
   if (normalized === manifestName || normalized.startsWith(`${manifestName}/`)) return true;
@@ -135,12 +119,8 @@ function isExcluded(relativePath, includeTargetOverlays = true) {
   ) return true;
   if (name === ".DS_Store" || name.endsWith(".tsbuildinfo") || name.endsWith(".log")) return true;
   if ([".pem", ".key", ".p12", ".pfx", ".mobileprovision", ".provisionprofile"].some((suffix) => name.endsWith(suffix))) return true;
-  const isTargetOverlayPath = overlayFiles.includes(normalized);
-  const containsTargetOverlay = overlayFiles.some((overlayPath) => overlayPath.startsWith(`${normalized}/`));
-  const allowBusinessReplacement = includeTargetOverlays && (isTargetOverlayPath || containsTargetOverlay);
-  if (!allowBusinessReplacement && businessExclusions.some((rule) => rule.type === "directory" && (normalized === rule.path || normalized.startsWith(`${rule.path}/`)))) return true;
-  if (!allowBusinessReplacement && businessExclusions.some((rule) => rule.type === "file" && normalized === rule.path)) return true;
-  if (!includeTargetOverlays && overlayFiles.includes(normalized)) return true;
+  if (businessExclusions.some((rule) => rule.type === "directory" && (normalized === rule.path || normalized.startsWith(`${rule.path}/`)))) return true;
+  if (businessExclusions.some((rule) => rule.type === "file" && normalized === rule.path)) return true;
   return false;
 }
 
@@ -152,7 +132,7 @@ function copyBaseTree(source, output) {
     if (stat.isSymbolicLink()) {
       throw new Error(`source frontend contains an unsupported symlink: ${normalized}`);
     }
-    if (normalized && isExcluded(normalized, false)) return;
+    if (normalized && isExcluded(normalized)) return;
     const destination = path.join(output, relativePath);
     if (stat.isDirectory()) {
       fs.mkdirSync(destination, { recursive: true });
@@ -172,22 +152,6 @@ function copyBaseTree(source, output) {
   return selected;
 }
 
-function copyOverlays(output) {
-  const selected = [];
-  for (const relativePath of overlayFiles) {
-    const source = path.join(overlayRoot, relativePath);
-    if (!fs.existsSync(source)) throw new Error(`declared overlay is missing: ${relativePath}`);
-    const sourceStat = fs.lstatSync(source);
-    if (!sourceStat.isFile()) throw new Error(`declared overlay is not a regular file: ${relativePath}`);
-    const destination = path.join(output, relativePath);
-    if (!isWithin(output, destination)) throw new Error(`overlay escapes output: ${relativePath}`);
-    fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.copyFileSync(source, destination);
-    selected.push({ path: relativePath, sha256: sha256(source), bytes: sourceStat.size });
-  }
-  return selected;
-}
-
 function sha256(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
@@ -195,7 +159,7 @@ function sha256(filePath) {
 function listArtifactFiles(output) {
   const files = [];
   const visit = (current, relative) => {
-    if (relative && isExcluded(relative, true)) return;
+    if (relative && isExcluded(relative)) return;
     const stat = fs.lstatSync(current);
     if (stat.isDirectory()) {
       for (const entry of fs.readdirSync(current).sort()) visit(path.join(current, entry), path.join(relative, entry));
@@ -211,7 +175,7 @@ function listArtifactFiles(output) {
 function verifySnapshot(root, snapshot, label) {
   for (const expected of snapshot) {
     const filePath = path.join(root, expected.path);
-    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    if (!fs.existsSync(filePath) || !fs.lstatSync(filePath).isFile()) {
       throw new Error(`${label} file disappeared during staging: ${expected.path}`);
     }
     const actual = { sha256: sha256(filePath), bytes: fs.statSync(filePath).size };
@@ -237,14 +201,12 @@ const sourceFrontend = path.resolve(args.sourceFrontend);
 const output = path.resolve(args.output);
 if (!fs.existsSync(sourceFrontend) || !fs.lstatSync(sourceFrontend).isDirectory()) usage(`source frontend is not a directory: ${sourceFrontend}`);
 if (fs.lstatSync(sourceFrontend).isSymbolicLink()) usage("source frontend root must not be a symlink");
-if (!fs.existsSync(overlayRoot) || !fs.lstatSync(overlayRoot).isDirectory()) usage(`overlay root is not a directory: ${overlayRoot}`);
-if (fs.lstatSync(overlayRoot).isSymbolicLink()) usage("overlay root must not be a symlink");
 if (fs.existsSync(output) && fs.lstatSync(output).isSymbolicLink()) usage("output root must not be a symlink");
 const sourceReal = fs.realpathSync(sourceFrontend);
-const overlayReal = fs.realpathSync(overlayRoot);
+const packageReal = fs.realpathSync(packageRoot);
 const outputCandidate = realPathCandidate(output);
 if (isWithin(sourceReal, outputCandidate) || isWithin(outputCandidate, sourceReal)) usage("output must not be inside or contain the source frontend");
-if (isWithin(overlayReal, outputCandidate) || isWithin(outputCandidate, overlayReal)) usage("output must not be inside or contain the overlay tree");
+if (isWithin(packageReal, outputCandidate) || isWithin(outputCandidate, packageReal)) usage("output must not be inside or contain the packaging tree");
 if (fs.existsSync(output)) {
   if (!fs.statSync(output).isDirectory()) usage(`output exists and is not a directory: ${output}`);
   if (fs.readdirSync(output).length > 0) usage(`output must be absent or empty: ${output}`);
@@ -253,12 +215,11 @@ if (fs.existsSync(output)) {
 }
 const outputReal = fs.realpathSync(output);
 if (isWithin(sourceReal, outputReal) || isWithin(outputReal, sourceReal)) usage("output must not be inside or contain the source frontend");
-if (isWithin(overlayReal, outputReal) || isWithin(outputReal, overlayReal)) usage("output must not be inside or contain the overlay tree");
+if (isWithin(packageReal, outputReal) || isWithin(outputReal, packageReal)) usage("output must not be inside or contain the packaging tree");
 
 const selectedBaseFiles = copyBaseTree(sourceFrontend, output);
-const selectedOverlayFiles = copyOverlays(output);
 verifySnapshot(sourceFrontend, selectedBaseFiles, "source frontend");
-verifySnapshot(overlayRoot, selectedOverlayFiles, "overlay");
+verifySnapshot(output, selectedBaseFiles, "staged frontend");
 
 let nodeModulesMode = { present: false, developerOnly: false };
 if (args.reuseNodeModules) {
@@ -280,35 +241,29 @@ if (args.install) {
 if (args.typecheck) run(["./node_modules/.bin/tsc", "--noEmit", "--pretty", "false", "--project", "tsconfig.json"], output);
 if (args.build) run(["npm", "run", "build"], output, { NEXT_TELEMETRY_DISABLED: "1", NEXT_PRIVATE_BUILD_WORKER: "1" });
 verifySnapshot(sourceFrontend, selectedBaseFiles, "source frontend");
-verifySnapshot(overlayRoot, selectedOverlayFiles, "overlay");
+verifySnapshot(output, selectedBaseFiles, "staged frontend");
 
 const artifactFiles = listArtifactFiles(output);
-const artifactByPath = new Map(artifactFiles.map((file) => [file.path, file]));
-const overlayArtifacts = overlayFiles.map((relativePath) => {
-  const artifact = artifactByPath.get(relativePath);
-  if (!artifact) throw new Error(`overlay missing from artifact manifest: ${relativePath}`);
-  return artifact;
-});
-
 const manifest = {
   schemaVersion: 1,
   kind: "puddingharness-effective-frontend",
   generatedBy: "packages/puddingharness-extraction/scripts/stage_frontend.mjs",
   sourceFrontend: { requested: sourceFrontend, resolved: sourceReal },
-  overlayRoot: { requested: path.relative(process.cwd(), overlayRoot), resolved: overlayReal },
+  runtimeAuthority: "independent_repository_source",
+  releaseable: false,
   output: { requested: output, resolved: outputReal },
   selection: {
     baseCopy: "recursive frontend tree with sorted traversal",
     businessExclusions,
-    overlayFiles,
+    overlayFiles: [],
     cacheAndSecretRules,
     selectedBaseFileCount: selectedBaseFiles.length,
-    selectedOverlayFileCount: selectedOverlayFiles.length,
+    selectedOverlayFileCount: 0,
   },
-  sourceSnapshot: { base: selectedBaseFiles, overlays: selectedOverlayFiles },
+  sourceSnapshot: { base: selectedBaseFiles, overlays: [] },
   nodeModules: nodeModulesMode,
   checks: { typecheck: args.typecheck ? "passed" : "not-run", build: args.build ? "passed" : "not-run" },
-  overlayArtifacts,
+  overlayArtifacts: [],
   files: artifactFiles,
 };
 fs.writeFileSync(path.join(output, manifestName), `${JSON.stringify(manifest, null, 2)}\n`);
