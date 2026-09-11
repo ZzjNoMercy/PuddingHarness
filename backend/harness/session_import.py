@@ -38,7 +38,7 @@ def read_file(path):
     return data
 
 
-def inventory(source):
+def inventory(source, *, require_sessions=True):
     files={};total=0
     for name in ROOTS:
         root=checked(source/name)
@@ -56,7 +56,7 @@ def inventory(source):
                 data=read_file(path);total+=len(data)
                 if total>MAX_TOTAL or len(files)>=MAX_FILES:raise ValueError('Session migration budget exceeded')
                 files[relative]={'digest':digest(data),'size':len(data)}
-    if not any(name.startswith('sessions/') for name in files):raise ValueError('No session files found')
+    if require_sessions and not any(name.startswith('sessions/') for name in files):raise ValueError('No session files found')
     return dict(sorted(files.items()))
 
 
@@ -76,8 +76,12 @@ def _check_stage(stage,files):
     allowed={'manifest.json','.import.lock','manifest.json.migration-part'}
     allowed.update('payload/'+name for name in files)
     allowed.update('payload/'+name+'.migration-part' for name in files)
+    allowed_dirs = {str(parent) for name in allowed for parent in Path(name).parents if str(parent) != '.'}
     for parent,dirs,names in os.walk(stage,followlinks=False):
-        for name in dirs:checked(Path(parent)/name)
+        for name in dirs:
+            directory = checked(Path(parent)/name)
+            if directory.relative_to(stage).as_posix() not in allowed_dirs:
+                raise ValueError('Unowned staging directory')
         for name in names:
             path=checked(Path(parent)/name)
             if path.relative_to(stage).as_posix() not in allowed:raise ValueError('Unowned staging content')
