@@ -166,4 +166,17 @@ for (const state of ["absent", "poisoned"]) {
   assert.equal(fs.existsSync(path.join(destination, "src/app/settings/page.tsx")), false,
     "missing source must not be supplied by historical overlay");
 }
+const fakeBin = path.join(tempRoot, "bin");
+fs.mkdirSync(fakeBin);
+fs.writeFileSync(path.join(fakeBin, "npm"), '#!/bin/sh\nprintf "new source" > "$MUTATION_ROOT/new.ts"\n');
+fs.chmodSync(path.join(fakeBin, "npm"), 0o755);
+for (const kind of ["source", "staged"]) {
+  const destination = path.join(tempRoot, `mutation-${kind}`);
+  assert.throws(() => execFileSync(process.execPath,
+    [isolatedScript, "--source-frontend", source, "--output", destination, "--install"],
+    { env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, MUTATION_ROOT: kind === "source" ? source : destination }, stdio: "pipe" }),
+    /file set changed during staging/);
+  assert.equal(fs.existsSync(path.join(destination, "harness-frontend-artifact-manifest.json")), false);
+  if (kind === "source") fs.unlinkSync(path.join(source, "new.ts"));
+}
 console.log("frontend staging selection and safety: passed");

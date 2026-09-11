@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const sidebarPath = path.join(
   repositoryRoot,
-  "packages/puddingharness-extraction/overlays/frontend/src/components/layout/Sidebar.tsx",
+  "frontend/src/components/layout/Sidebar.tsx",
 );
 const source = fs.readFileSync(sidebarPath, "utf8");
 const requireFromFrontend = createRequire(path.join(repositoryRoot, "frontend/package.json"));
@@ -72,7 +72,7 @@ walk(sourceFile, (node) => {
   }
 });
 
-assert.equal(sourceFile.parseDiagnostics.length, 0, "Sidebar overlay must parse as TSX");
+assert.equal(sourceFile.parseDiagnostics.length, 0, "Sidebar source must parse as TSX");
 
 // This is a navigation boundary test, so inspect JSX and imports rather than
 // snapshotting the complete component. Platform-only paths cannot return via

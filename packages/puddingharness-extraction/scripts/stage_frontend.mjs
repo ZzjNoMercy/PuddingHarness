@@ -244,6 +244,11 @@ verifySnapshot(sourceFrontend, selectedBaseFiles, "source frontend");
 verifySnapshot(output, selectedBaseFiles, "staged frontend");
 
 const artifactFiles = listArtifactFiles(output);
+const sourcePaths = listArtifactFiles(sourceFrontend).map((file) => file.path).sort();
+const selectedPaths = selectedBaseFiles.map((file) => file.path).sort();
+const artifactPaths = artifactFiles.map((file) => file.path).sort();
+if (JSON.stringify(sourcePaths) !== JSON.stringify(selectedPaths)) throw new Error("source frontend file set changed during staging");
+if (JSON.stringify(artifactPaths) !== JSON.stringify(selectedPaths)) throw new Error("staged frontend file set changed during staging");
 const manifest = {
   schemaVersion: 1,
   kind: "puddingharness-effective-frontend",
