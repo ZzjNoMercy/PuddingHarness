@@ -13,7 +13,7 @@ stage_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(stage_module)
 
 
-def test_stage_is_flat_independent_and_records_blocked_audit(tmp_path: Path) -> None:
+def test_stage_is_flat_independent_and_retains_raw_audit(tmp_path: Path) -> None:
     output = tmp_path / "stage"
     manifest = stage_module.stage_backend(Path(__file__).parents[3], output)
 
@@ -60,9 +60,23 @@ def test_stage_refuses_to_overwrite_non_empty_directory(tmp_path: Path) -> None:
     assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
-def test_clean_audit_is_an_explicit_release_gate(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="effective target audit"):
-        stage_module.stage_backend(Path(__file__).parents[3], tmp_path / "strict", require_clean_audit=True)
+def test_reviewed_compatibility_stage_retains_raw_finding_without_release(tmp_path):
+    result = stage_module.stage_backend(Path(__file__).parents[3], tmp_path / "reviewed", require_clean_audit=True)
+    assert result["audit_status"] == "python_static_reviewed"
+    assert len(result["audit_findings"]) == 1
+    assert len(result["audit_reviewed_findings"]) == 1
+    assert result["audit_blocking_findings"] == []
+    assert result["releaseable"] is False
+
+
+def test_unreviewed_finding_still_blocks_strict_staging(tmp_path, monkeypatch):
+    class BlockedAudit:
+        @staticmethod
+        def audit(repo):
+            return {"status": "blocked", "selected": [], "findings": [{"kind": "forbidden_domain_import"}]}
+    monkeypatch.setattr(stage_module, "_load_audit", lambda: BlockedAudit)
+    with pytest.raises(ValueError, match="blocking finding"):
+        stage_module.stage_backend(Path(__file__).parents[3], tmp_path / "blocked", require_clean_audit=True)
 
 
 def test_static_clean_does_not_make_stage_releaseable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

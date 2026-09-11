@@ -8,7 +8,7 @@ artifact cannot silently survive a re-run.
 
 Static audit findings are recorded in the manifest because the extraction is
 being performed in phases.  ``--require-clean-audit`` turns those findings
-into a hard packaging gate; without it, the resulting artifact is explicitly
+into a hard gate for unresolved findings; reviewed dispositions remain visible. Without it, the resulting artifact is explicitly
 marked non-releaseable in ``.stage-manifest.json``.
 """
 
@@ -325,9 +325,10 @@ def stage_backend(
     report = audit_module.audit(repo)
     _verify_source_parity(repo, report)
     _ensure_empty_output(output)
-    if require_clean_audit and report["findings"]:
+    blocking_findings = report.get("blocking_findings", report["findings"])
+    if require_clean_audit and blocking_findings:
         raise ValueError(
-            f"effective target audit is {report['status']} with {len(report['findings'])} finding(s); "
+            f"effective target audit is {report['status']} with {len(blocking_findings)} blocking finding(s); "
             "resolve them or omit --require-clean-audit for a review artifact"
         )
 
@@ -390,6 +391,8 @@ def stage_backend(
         "python_static_status": report["status"],
         "audit_finding_count": len(report["findings"]),
         "audit_findings": report["findings"],
+        "audit_blocking_findings": blocking_findings,
+        "audit_reviewed_findings": report.get("reviewed_findings", []),
         "source_revision": _git_revision(repo),
         "python": {
             "selected_count": len(report["selected"]),
@@ -451,7 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--require-clean-audit",
         action="store_true",
-        help="fail instead of producing a review artifact when audit.selected has findings",
+        help="fail on unresolved audit findings; exact reviewed compatibility findings remain visible",
     )
     args = parser.parse_args(argv)
     try:
@@ -465,6 +468,8 @@ def main(argv: list[str] | None = None) -> int:
                 "releaseable": result["releaseable"],
                 "audit_status": result["audit_status"],
                 "audit_findings": result["audit_finding_count"],
+                "audit_blocking_findings": len(result["audit_blocking_findings"]),
+                "audit_reviewed_findings": len(result["audit_reviewed_findings"]),
                 "staged_python": result["python"]["staged_count"],
                 "skipped_skills": result["python"]["skipped_skill_count"],
             },

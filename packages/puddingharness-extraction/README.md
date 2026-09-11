@@ -13,7 +13,10 @@ it enforces the original immutable overlay receipt and may reject its stale
 inputs. That receipt is not current product build authority. Frontend extraction
 still uses its separately documented workflow.
 
-The source audit still reports unresolved findings and `releaseable=false`.
+The source audit retains one exact reviewed compatibility finding; any source
+drift makes it unresolved again. See
+[`compatibility review`](../../docs/knowledge-platform/harness-compatibility-audit-review.md).
+Staging still records `releaseable=false`.
 Independent repository packaging does not prove installation migration, production
 activation, or full product parity.
 

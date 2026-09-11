@@ -157,3 +157,54 @@ def test_real_skill_script_aliases_are_resolved_without_global_scripts_root():
     report = audit_module.audit(Path(__file__).parents[3])
     unresolved = [finding for finding in report['findings'] if finding['kind'] == 'unresolved_local_import']
     assert not any(finding['path'].startswith('backend/skills/') for finding in unresolved)
+
+
+@pytest.mark.parametrize("mutation", ["none", "body", "path", "business_import"])
+def test_compatibility_review_is_exact_source_and_finding_scoped(tmp_path, mutation):
+    original = Path(__file__).parents[3] / "backend/harness/legacy_artifacts.py"
+    content = original.read_text()
+    target = "backend/harness/legacy_artifacts.py"
+    if mutation == "body":
+        content += "\ndef forward_selector(value): return value\n"
+    elif mutation == "path":
+        target = "backend/other_legacy.py"
+    elif mutation == "business_import":
+        content += "\nimport knowledge\n"
+    put(tmp_path, target, content)
+    result = audit_module.audit(tmp_path)
+    assert result["findings"]  # raw detector output is never erased
+    if mutation == "none":
+        assert result["status"] == "python_static_reviewed"
+        assert result["blocking_findings"] == []
+        assert len(result["reviewed_findings"]) == 1
+    else:
+        assert result["status"] == "blocked"
+        assert result["reviewed_findings"] == []
+        assert result["blocking_findings"] == result["findings"]
+
+
+def test_compatibility_review_does_not_cover_other_rules_or_historical_overlays(tmp_path):
+    original = Path(__file__).parents[3] / "backend/harness/legacy_artifacts.py"
+    name = "backend/harness/legacy_artifacts.py"
+    raw = {"path": name, "line": 13, "kind": "forbidden_domain_import", "target": "knowledge"}
+    blocking, reviewed = audit_module._disposition_findings([raw], {name: original.read_bytes()}, historical=False)
+    assert blocking == [raw] and reviewed == []
+    put(tmp_path, name, original.read_text())
+    result = audit_module.audit(tmp_path, tmp_path / "empty-overlays")
+    assert result["status"] == "blocked" and result["reviewed_findings"] == []
+
+
+@pytest.mark.parametrize("code", [
+    "from external_provider import analytics_model_id",
+    "from external_provider import analytics_model_id as safe_name",
+    "from external_provider import generic as analytics_model_id",
+    "import external_provider as analytics_model_id",
+    "import analytics_model_id as safe_name",
+])
+def test_business_import_aliases_remain_blocking(tmp_path, code):
+    put(tmp_path, "backend/main.py", code + "\n")
+    result = audit_module.audit(tmp_path)
+    assert result["status"] == "blocked"
+    assert result["reviewed_findings"] == []
+    assert any(row["kind"] == "business_protocol_symbol" and row["target"] == "analytics_model_id"
+               for row in result["blocking_findings"])

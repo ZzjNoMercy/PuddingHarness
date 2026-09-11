@@ -190,6 +190,35 @@ def verify_overlay_provenance(repo: Path, overlays: Path, manifest: Path) -> Non
             raise ValueError("overlay changed after review: " + name)
 
 
+# This disposition is code-reviewed alongside the audited implementation. It is
+# not a signature or release authorization. Only this exact module's bytes and
+# this single finding are covered; every other detector remains blocking.
+_COMPATIBILITY_REVIEW = {
+    "path": "backend/harness/legacy_artifacts.py",
+    "sha256": "68f5e6e27e18df6a6556752410dcae9b4f2b59cfd4a30e7528e22fdb78dd1c60",
+    "kind": "business_protocol_symbol",
+    "target": "analytics_model_id",
+    "line": 13,
+    "reason": "Retired selector is only declared for rejection and read-only legacy projection; opaque payloads are preserved.",
+    "review_type": "automated_adversarial_boundary_review",
+    "evidence": "docs/knowledge-platform/harness-compatibility-audit-review.md",
+}
+
+
+def _disposition_findings(findings: list[dict], contents: dict[str, bytes], *, historical: bool):
+    blocking, reviewed = [], []
+    review = _COMPATIBILITY_REVIEW
+    exact_source = (not historical and review["path"] in contents and
+                    hashlib.sha256(contents[review["path"]]).hexdigest() == review["sha256"])
+    for finding in findings:
+        if exact_source and all(finding.get(key) == review[key] for key in ("path", "kind", "target", "line")):
+            reviewed.append({**finding, "disposition": "reviewed_compatibility_boundary",
+                             "review": dict(review)})
+        else:
+            blocking.append(finding)
+    return blocking, reviewed
+
+
 def audit(repo: Path, overlays: Path | None = None) -> dict:
     repo = repo.resolve()
     originals = {p.relative_to(repo).as_posix(): p for p in (repo / "backend").rglob("*.py")
@@ -278,6 +307,12 @@ def audit(repo: Path, overlays: Path | None = None) -> dict:
                         if alias.name != "*" and alias.name not in known[0] and qualified not in target_modules:
                             findings.append({"path": name, "line": node.lineno,
                                 "kind": "missing_local_export", "target": qualified})
+            if isinstance(node, ast.alias):
+                for imported_symbol in {node.name, node.asname}:
+                    if imported_symbol in BUSINESS_SYMBOLS and (node.lineno, imported_symbol) not in seen:
+                        findings.append({"path": name, "line": node.lineno,
+                                         "kind": "business_protocol_symbol", "target": imported_symbol})
+                        seen.add((node.lineno, imported_symbol))
             symbol = (node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute)
                       else node.arg if isinstance(node, (ast.arg, ast.keyword)) else node.value if isinstance(node, ast.Constant) else None)
             if (isinstance(node, ast.Constant) and isinstance(symbol, str)
@@ -298,10 +333,13 @@ def audit(repo: Path, overlays: Path | None = None) -> dict:
                                 findings.append({"path": name, "line": value.lineno,
                                     "kind": "business_tool_category", "target": value.value})
     findings.sort(key=lambda row: (row["path"], row["line"], row["kind"], row["target"]))
-    return {"format": "puddingharness-target-python-audit/v1", "status": "blocked" if findings else "python_static_clean",
+    blocking, reviewed = _disposition_findings(findings, contents, historical=overlays is not None)
+    status = "blocked" if blocking else "python_static_reviewed" if reviewed else "python_static_clean"
+    return {"format": "puddingharness-target-python-audit/v1", "status": status,
             "full_repository_verified": False, "production_activation_allowed": False,
             "scope": "all proposed Python runtime files; excludes tests; frontend/build/runtime tests remain required",
             "selected": rows, "excluded": excluded, "findings": findings,
+            "blocking_findings": blocking, "reviewed_findings": reviewed,
             "source_digest": hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()}
 
 
@@ -320,4 +358,6 @@ if __name__ == "__main__":
     with args.output.open("x", encoding="utf-8") as stream:
         json.dump(result, stream, indent=2)
     print(json.dumps({"status": result["status"], "selected": len(result["selected"]),
-                      "excluded": len(result["excluded"]), "findings": len(result["findings"])}))
+                      "excluded": len(result["excluded"]), "findings": len(result["findings"]),
+                      "blocking_findings": len(result["blocking_findings"]),
+                      "reviewed_findings": len(result["reviewed_findings"])}))
