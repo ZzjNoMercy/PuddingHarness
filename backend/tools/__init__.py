@@ -1,17 +1,11 @@
-"""PuddingHarness extraction overlay for the local tool factory.
+"""Explicit generic tool factories for the independent Harness runtime.
 
-This file is copied to ``backend/tools/__init__.py`` in the future target
-repository.  It deliberately does not scan the package directory.  A module
-and its factory must be reviewed and added to ``GENERIC_TOOL_FACTORIES``
-before it can be imported by this factory.
-
-The legacy PuddingClaw factory remains unchanged.  This overlay is a target
-repository preparation artifact, not a repository extraction or release.
+A tool must be registered and have a literal lazy import branch. Files added to
+this directory or arbitrary module names cannot become runtime tools.
 """
 
 from __future__ import annotations
 
-import importlib
 import inspect
 from pathlib import Path
 from typing import Final
@@ -100,7 +94,7 @@ def _factory_parameters(factory: object) -> tuple[list[inspect.Parameter], list[
 
 
 def _invoke_registered_factory(factory: object, base_dir: Path) -> object:
-    """Call only the small set of constructor shapes used by this overlay.
+    """Call only the small set of constructor shapes used by this registry.
 
     Factories that need runtime-injected dependencies are intentionally skipped
     here and remain attached by the runtime that owns those dependencies.  In
@@ -137,6 +131,53 @@ def _invoke_registered_factory(factory: object, base_dir: Path) -> object:
     )
 
 
+def _import_registered_module(module_name: str):
+    """Lazy literal imports keep discovery finite and statically auditable."""
+    if module_name == 'browser_tool':
+        from . import browser_tool as module
+    elif module_name == 'create_skill_version_tool':
+        from . import create_skill_version_tool as module
+    elif module_name == 'deep_research_tool':
+        from . import deep_research_tool as module
+    elif module_name == 'fetch_url_tool':
+        from . import fetch_url_tool as module
+    elif module_name == 'python_repl_tool':
+        from . import python_repl_tool as module
+    elif module_name == 'read_evidence_tool':
+        from . import read_evidence_tool as module
+    elif module_name == 'read_external_file_tool':
+        from . import read_external_file_tool as module
+    elif module_name == 'read_file_tool':
+        from . import read_file_tool as module
+    elif module_name == 'read_resource_tool':
+        from . import read_resource_tool as module
+    elif module_name == 'request_skill_runtime_tool':
+        from . import request_skill_runtime_tool as module
+    elif module_name == 'request_skill_secret_tool':
+        from . import request_skill_secret_tool as module
+    elif module_name == 'request_user_input_tool':
+        from . import request_user_input_tool as module
+    elif module_name == 'skill_inspection_tool':
+        from . import skill_inspection_tool as module
+    elif module_name == 'skill_management_tool':
+        from . import skill_management_tool as module
+    elif module_name == 'task_manager_tool':
+        from . import task_manager_tool as module
+    elif module_name == 'terminal_tool':
+        from . import terminal_tool as module
+    elif module_name == 'update_goal_tool':
+        from . import update_goal_tool as module
+    elif module_name == 'update_memory_tool':
+        from . import update_memory_tool as module
+    elif module_name == 'web_search_tool':
+        from . import web_search_tool as module
+    elif module_name == 'write_file_tool':
+        from . import write_file_tool as module
+    else:
+        raise ValueError("unregistered tool module")
+    return module
+
+
 def _load_tool_module(module_name: str, base_dir: Path) -> list[BaseTool]:
     """Load one reviewed module and invoke its reviewed factory, if possible."""
 
@@ -149,7 +190,7 @@ def _load_tool_module(module_name: str, base_dir: Path) -> list[BaseTool]:
         return _tool_instance_cache[cache_key]
 
     try:
-        module = importlib.import_module(f".{module_name}", package=__package__)
+        module = _import_registered_module(module_name)
         factory = getattr(module, factory_name, None)
         if not callable(factory) or getattr(factory, "__module__", None) != module.__name__:
             print(f"[tools] Warning: rejected unowned factory {module_name}.{factory_name}")
