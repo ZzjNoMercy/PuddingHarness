@@ -33,3 +33,17 @@ The runtime builder does not infer a sibling or parent checkout. It ships one
 Harness requirements profile, verifies checksums, removes environment files,
 rejects symlinks and credential material, and records only package-relative
 runtime paths. The historical source folder name is not the npm/bin identity.
+
+The default embedded builder now creates private backend and frontend stages,
+runs the strict backend audit and a fresh frontend dependency installation,
+typecheck and build, then builds the wheel and hash-locked requirements from the
+backend stage. It does not build inside the source tree or restore source config
+files afterward. Choose an absent output directory whose basename starts with
+`runtime-bundle`; existing output is never removed or replaced. A failed build
+may leave its empty output reservation for inspection.
+
+`build-evidence.json` is covered by the bundle checksum manifest. Full builds
+record the backend audit disposition, source file hashes and frontend checks.
+`--skip-build` is an unverified prebuilt development path, recorded as such; it
+has no source revision binding and cannot pass the hashed release lock gate.
+Neither evidence mode supplies release authorization or migration acceptance.

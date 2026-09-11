@@ -216,9 +216,20 @@ async function writeManifest(staging, version, { wheelName, requirementsNames, r
 
 async function main() {
   const options = parseArguments(process.argv.slice(2));
-  const { root: sourceRoot, backendRoot, frontendRoot } = sourceRoots();
+  const { root: sourceRoot, backendRoot: sourceBackendRoot, frontendRoot: sourceFrontendRoot } = sourceRoots();
+  let backendRoot = sourceBackendRoot;
+  let frontendRoot = sourceFrontendRoot;
+  const outputCandidate = path.join(await fs.realpath(path.dirname(options.output)), path.basename(options.output));
+  for (const ownedSource of [sourceBackendRoot, sourceFrontendRoot]) {
+    const relative = path.relative(await fs.realpath(ownedSource), outputCandidate);
+    if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) {
+      throw new Error("runtime output must not be inside backend or frontend source");
+    }
+  }
+  // Reserve an absent output. Never rotate or delete a caller-owned bundle.
+  await fs.mkdir(options.output);
   const packageDocument = JSON.parse(await fs.readFile(path.join(packageRoot, "package.json"), "utf8"));
-  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "puddingharness-runtime-build-"));
+  const temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "puddingharness-runtime-build-")));
   const staging = path.join(path.dirname(options.output), `.runtime-bundle-${crypto.randomUUID()}`);
   let frontendBuild = path.join(frontendRoot, ".next-build");
   let wheelDirectory = path.join(backendRoot, "dist");
@@ -226,10 +237,29 @@ async function main() {
     [["harness", path.join(backendRoot, "requirements.txt")]],
   );
   let requireHashes = false;
-  const frontendTsconfig = path.join(frontendRoot, "tsconfig.json");
-  let originalFrontendTsconfig;
+  let buildEvidence = { mode: "unverified_prebuilt", releaseable: false };
+
   try {
     if (!options.skipBuild) {
+      backendRoot = path.join(temporaryRoot, "backend-stage");
+      frontendRoot = path.join(temporaryRoot, "frontend-stage");
+      await run("python3", [path.join(sourceRoot, "packages/puddingharness-extraction/scripts/stage_backend.py"),
+        "--repo", sourceRoot, "--require-clean-audit", "--output", backendRoot]);
+      await run(process.execPath, [path.join(sourceRoot, "packages/puddingharness-extraction/scripts/stage_frontend.mjs"),
+        "--source-frontend", sourceFrontendRoot, "--output", frontendRoot,
+        "--install", "--typecheck", "--build"],
+        { env: { BACKEND_INTERNAL_URL: "http://127.0.0.1:8888", NEXT_TELEMETRY_DISABLED: "1" } });
+      const backendEvidence = JSON.parse(await fs.readFile(path.join(backendRoot, ".stage-manifest.json"), "utf8"));
+      const frontendEvidence = JSON.parse(await fs.readFile(path.join(frontendRoot, "harness-frontend-artifact-manifest.json"), "utf8"));
+      buildEvidence = { mode: "independent_source_stages", releaseable: false,
+        source_revision: backendEvidence.source_revision,
+        backend: { audit_status: backendEvidence.audit_status,
+          raw_findings: backendEvidence.audit_findings,
+          blocking_findings: backendEvidence.audit_blocking_findings,
+          reviewed_findings: backendEvidence.audit_reviewed_findings,
+          files: backendEvidence.python.files },
+        frontend: { checks: frontendEvidence.checks, files: frontendEvidence.files,
+          node_modules: frontendEvidence.nodeModules } };
       wheelDirectory = path.join(temporaryRoot, "wheel");
       await fs.mkdir(wheelDirectory, { recursive: true });
       await run("uv", ["build", "--wheel", "--out-dir", wheelDirectory], { cwd: backendRoot });
@@ -241,7 +271,7 @@ async function main() {
       for (const [profile, extras] of Object.entries(exportExtras)) {
         const destination = path.join(temporaryRoot, `requirements-${profile}.lock`);
         await run("uv", [
-          "export", "--quiet", "--frozen", "--format", "requirements.txt", "--no-dev", "--no-emit-project",
+          "export", "--quiet", "--frozen", "--no-header", "--format", "requirements.txt", "--no-dev", "--no-emit-project",
           ...extras,
           "--output-file", destination,
         ], { cwd: backendRoot });
@@ -252,12 +282,7 @@ async function main() {
         requirementsSources[profile] = destination;
       }
       requireHashes = true;
-      frontendBuild = path.join(frontendRoot, ".next-runtime-build");
-      originalFrontendTsconfig = await fs.readFile(frontendTsconfig);
-      await run("npm", ["run", "build"], {
-        cwd: frontendRoot,
-        env: { NEXT_DIST_DIR: ".next-runtime-build", BACKEND_INTERNAL_URL: "http://127.0.0.1:8888" },
-      });
+      frontendBuild = path.join(frontendRoot, ".next-build");
     }
 
     const wheel = await findWheel(wheelDirectory);
@@ -287,19 +312,19 @@ async function main() {
     }
     await removeEnvironmentFiles(web);
     await patchStandaloneServer(path.join(web, "server.js"));
-    await sanitizeBuildPaths(web, sourceRoot, frontendRoot);
+    await sanitizeBuildPaths(web, sourceRoot, sourceFrontendRoot);
+    await sanitizeBuildPaths(web, temporaryRoot, frontendRoot);
     await assertNoSensitiveFiles(staging);
+    await fs.writeFile(path.join(staging, "build-evidence.json"), `${JSON.stringify(buildEvidence, null, 2)}\n`);
     const manifest = await writeManifest(staging, packageDocument.version, {
       wheelName: path.basename(wheel),
       requirementsNames,
       requireHashes,
     });
 
-    const previous = `${options.output}.previous`;
-    await fs.rm(previous, { recursive: true, force: true });
-    try { await fs.rename(options.output, previous); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    // Rename can replace only our empty reservation; a populated destination
+    // fails rather than deleting a previous result.
     await fs.rename(staging, options.output);
-    await fs.rm(previous, { recursive: true, force: true });
     process.stdout.write(`${JSON.stringify({
       status: "built",
       output: options.output,
@@ -310,12 +335,7 @@ async function main() {
   } finally {
     await fs.rm(staging, { recursive: true, force: true }).catch(() => {});
     await fs.rm(temporaryRoot, { recursive: true, force: true }).catch(() => {});
-    if (!options.skipBuild) {
-      await fs.rm(path.join(frontendRoot, ".next-runtime-build"), { recursive: true, force: true }).catch(() => {});
-      if (originalFrontendTsconfig) {
-        await fs.writeFile(frontendTsconfig, originalFrontendTsconfig);
-      }
-    }
+
   }
 }
 
