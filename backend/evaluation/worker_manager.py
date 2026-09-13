@@ -314,6 +314,7 @@ class EvaluationWorkerManager:
                     environment["DOCKER_HOST"] = docker_host
             environment["PYTHONPATH"] = str(backend_dir)
             environment["PUDDINGHARNESS_HOME"] = str(runtime_root)
+            from harness.installation_guard import inherited_guard_fds
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
                 "-m",
@@ -325,6 +326,7 @@ class EvaluationWorkerManager:
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
                 start_new_session=os.name != "nt",
+                pass_fds=inherited_guard_fds(),
             )
             self._processes[experiment_id] = process
             asyncio.create_task(self._reap(experiment_id, process))

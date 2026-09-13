@@ -9,6 +9,9 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
+# Hold admission before importing any business singleton or opening Home stores.
+from harness.installation_guard import admit_backend_process
+_installation_guard = admit_backend_process()
 BASE_DIR = Path(__file__).resolve().parent
 
 def _exception_leaf_summary(exc: BaseException) -> str:

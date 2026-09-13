@@ -16,6 +16,7 @@ import re
 import signal
 import stat
 import subprocess
+from harness.installation_guard import inherited_guard_fds
 import sys
 import tempfile
 import threading
@@ -568,6 +569,7 @@ class MacOSSeatbeltRunner:
         env = self._execution_environment(environment)
         process = subprocess.Popen(  # noqa: S603
             argv,
+            pass_fds=inherited_guard_fds(),
             cwd=working_directory,
             env=env,
             stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
@@ -624,6 +626,7 @@ class MacOSSeatbeltRunner:
         effective_timeout = timeout or self.profile.timeout_seconds
         process = subprocess.Popen(  # noqa: S603
             [str(self.executable), "-p", self.render_profile(), *self._direct_argv(argv)],
+            pass_fds=inherited_guard_fds(),
             cwd=working_directory,
             env=self._execution_environment(environment),
             stdin=subprocess.DEVNULL,
@@ -685,6 +688,7 @@ class MacOSSeatbeltRunner:
         env = self._execution_environment(environment)
         return subprocess.Popen(  # noqa: S603
             argv,
+            pass_fds=inherited_guard_fds(),
             cwd=working_directory,
             env=env,
             stdin=subprocess.DEVNULL,
@@ -709,6 +713,7 @@ class MacOSSeatbeltRunner:
             raise ValueError("Seatbelt background profile is invalid")
         return subprocess.Popen(  # noqa: S603
             [str(self.executable), "-p", self.render_profile(), *self._direct_argv(argv)],
+            pass_fds=inherited_guard_fds(),
             cwd=_validated_working_directory(self.profile, cwd),
             env=self._execution_environment(environment),
             stdin=subprocess.DEVNULL,
@@ -1000,7 +1005,7 @@ class LinuxBwrapSeccompRunner:
                 text=True,
                 start_new_session=True,
                 close_fds=True,
-                pass_fds=(seccomp_fd,),
+                pass_fds=(seccomp_fd, *inherited_guard_fds()),
             )
         finally:
             os.close(seccomp_fd)

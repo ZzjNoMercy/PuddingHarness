@@ -17,8 +17,8 @@
     "path": "backend/harness/legacy_artifacts.py",
     "kind": "business_protocol_symbol",
     "target": "analytics_model_id",
-    "sha256": "2e15573817a0fbd0796798d68af6ee7c7888f044d4fd2cef06a5dc6d51e7a324",
-    "rationale": "Read-only schema-owned legacy projection and rejection of retired controls. User messages and evidence remain opaque."
+    "sha256": "68f5e6e27e18df6a6556752410dcae9b4f2b59cfd4a30e7528e22fdb78dd1c60",
+    "rationale": "Read-only schema-owned legacy projection and rejection of retired controls. Rechecked: recursive session projections touch only schema-owned control envelopes; user messages and nested evidence remain opaque. No filesystem writes or Platform imports."
   },
   {
     "path": "backend/tools/__init__.py",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from harness.installation_guard import inherited_guard_fds
 import asyncio
 import hashlib
 import importlib.util
@@ -201,6 +202,7 @@ async def _run_process(
 ) -> ProcessResult:
     process = await asyncio.create_subprocess_exec(
         *argv,
+        pass_fds=inherited_guard_fds(),
         cwd=cwd,
         env=environment,
         stdout=asyncio.subprocess.PIPE,
@@ -216,6 +218,7 @@ async def _run_process(
                 str(process.pid),
                 "-o",
                 "lstart=",
+                pass_fds=inherited_guard_fds(),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )

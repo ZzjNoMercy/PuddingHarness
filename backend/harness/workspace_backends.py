@@ -9,6 +9,7 @@ import os
 import re
 import shlex
 import subprocess
+from harness.installation_guard import inherited_guard_fds
 import sys
 import threading
 import time
@@ -508,6 +509,7 @@ class SpawnWorkspaceBackend(FilesystemBackend, SandboxBackendProtocol):
             with self._workspace_lock(str(self.workspace_path)):
                 result = subprocess.run(  # noqa: S602
                     command,
+                    pass_fds=inherited_guard_fds(),
                     check=False,
                     shell=True,
                     cwd=self.workspace_path,
@@ -571,6 +573,7 @@ class SpawnWorkspaceBackend(FilesystemBackend, SandboxBackendProtocol):
             with self._workspace_lock(str(directory)):
                 result = subprocess.run(  # noqa: S602
                     command,
+                    pass_fds=inherited_guard_fds(),
                     check=False,
                     shell=True,
                     cwd=directory,
@@ -1220,6 +1223,7 @@ class ProjectSandboxManager:
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [*self._docker_prefix(), *args],
+            pass_fds=inherited_guard_fds(),
             check=False,
             capture_output=True,
             text=True,
@@ -1236,6 +1240,7 @@ class ProjectSandboxManager:
     ) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
             [*self._docker_prefix(), *args],
+            pass_fds=inherited_guard_fds(),
             check=False,
             input=input_bytes,
             capture_output=True,

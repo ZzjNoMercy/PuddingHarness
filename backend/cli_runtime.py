@@ -8,6 +8,7 @@ the result to health/doctor callers without ever failing backend startup.
 
 from __future__ import annotations
 
+from harness.installation_guard import inherited_guard_fds
 import json
 import os
 import re
@@ -64,6 +65,7 @@ def _run(
     try:
         return runner(
             list(args),
+            pass_fds=inherited_guard_fds(),
             capture_output=True,
             text=True,
             timeout=timeout,

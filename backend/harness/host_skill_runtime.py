@@ -8,6 +8,7 @@ ordinary Skill package execution surface.
 
 from __future__ import annotations
 
+from harness.installation_guard import inherited_guard_fds
 import hashlib
 import io
 import json
@@ -196,6 +197,7 @@ class HostSkillRuntimeBackend:
         try:
             result = subprocess.run(  # noqa: S603
                 [str(executable), *argv],
+                pass_fds=inherited_guard_fds(),
                 check=False,
                 capture_output=True,
                 text=True,

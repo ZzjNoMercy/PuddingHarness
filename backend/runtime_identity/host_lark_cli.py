@@ -24,6 +24,7 @@ import re
 import shutil
 import signal
 import subprocess
+from harness.installation_guard import inherited_guard_fds
 import sys
 import tarfile
 import threading
@@ -115,6 +116,7 @@ class HostLarkCliRuntime:
             try:
                 completed = subprocess.run(
                     [str(resolved), "--version"],
+                    pass_fds=inherited_guard_fds(),
                     capture_output=True,
                     text=True,
                     timeout=10,
@@ -139,6 +141,7 @@ class HostLarkCliRuntime:
             raise ValueError("npm is unavailable; install Node.js before lark-cli")
         completed = subprocess.run(
             [npm, "view", distribution, "name", "version", "dist.integrity", "--json"],
+            pass_fds=inherited_guard_fds(),
             capture_output=True,
             text=True,
             timeout=60,
@@ -198,6 +201,7 @@ class HostLarkCliRuntime:
             raise ValueError("npm is unavailable; install Node.js before lark-cli")
         completed = subprocess.run(
             [npm, "install", "--global", distribution],
+            pass_fds=inherited_guard_fds(),
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -432,6 +436,7 @@ class HostLarkCliRuntime:
         try:
             completed = subprocess.run(
                 command,
+                pass_fds=inherited_guard_fds(),
                 cwd=workspace.expanduser().resolve(strict=True),
                 env=self.environment(owner_user_id, profile_id, environment),
                 capture_output=True,
@@ -506,6 +511,7 @@ class HostLarkCliRuntime:
         output_handle = output_path.open("w", encoding="utf-8")
         process = subprocess.Popen(
             [str(executable), *argv[1:]],
+            pass_fds=inherited_guard_fds(),
             cwd=workspace.expanduser().resolve(strict=True),
             env=self.environment(owner_user_id, profile_id, environment),
             stdout=output_handle,

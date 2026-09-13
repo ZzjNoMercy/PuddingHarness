@@ -9,7 +9,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 
@@ -65,19 +65,32 @@ class _Mcp:
 
 
 def _platform_app() -> FastAPI:
-    # Platform is deliberately imported only by this test fixture.  The target
-    # runtime module above must remain independent of Knowledge Platform code.
-    from knowledge_contracts import Correlation, Principal
-    from knowledge_platform.transport import create_mcp_router
+    # A protocol fixture owned by Harness: tests must not require a Platform
+    # checkout/package merely to exercise the standard MCP client boundary.
+    from fastapi import Response
+    from fastapi.responses import JSONResponse
 
     app = FastAPI()
-    app.include_router(
-        create_mcp_router(
-            _Mcp(),
-            principal_provider=lambda: Principal("harness-test", ("mcp:read",)),
-            correlation_provider=lambda: Correlation("harness-mcp"),
-        )
-    )
+
+    @app.post("/mcp")
+    async def endpoint(request: Request):
+        message = await request.json()
+        method = message.get("method")
+        if "id" not in message:
+            return Response(status_code=202)
+        if method == "initialize":
+            result = {"protocolVersion": message["params"]["protocolVersion"],
+                      "capabilities": {"resources": {}},
+                      "serverInfo": {"name": "harness-resource-fixture", "version": "1"}}
+        elif method == "resources/read":
+            result = await _Mcp().read_resource(
+                resource_uri=message["params"]["uri"], principal=None,
+                correlation=None, start=None, end=None)
+        else:
+            return JSONResponse({"jsonrpc": "2.0", "id": message["id"],
+                                 "error": {"code": -32601, "message": "Method not found"}})
+        return JSONResponse({"jsonrpc": "2.0", "id": message["id"], "result": result})
+
     return app
 
 

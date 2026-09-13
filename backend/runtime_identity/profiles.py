@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from harness.installation_guard import inherited_guard_fds
 import base64
 import hashlib
 import json
@@ -393,6 +394,7 @@ class MasterKeyProvider:
                 self.owner_user_id,
                 "-w",
             ],
+            pass_fds=inherited_guard_fds(),
             check=False,
             capture_output=True,
             text=True,
@@ -429,6 +431,7 @@ class MasterKeyProvider:
                 "-w",
                 encoded,
             ],
+            pass_fds=inherited_guard_fds(),
             check=False,
             capture_output=True,
             text=True,

@@ -12,6 +12,7 @@ import { writeError, writeHuman, writeJson } from "./output.js";
 import { workerCommand, workerDoctorCommand } from "./worker-commands.js";
 import { databaseCommand } from "./database-commands.js";
 import { profileCommand } from "./profile-commands.js";
+import { admitHomeWrite } from "./home-admission.js";
 
 const { version: VERSION } = createRequire(import.meta.url)("../package.json");
 
@@ -108,26 +109,51 @@ async function main({ positionals, flags }) {
       return { value: usage(), humanOnly: true, code: 0 };
     }
     if (["run", "respond", "cancel", "models", "capabilities"].includes(agentCommand)) {
-      return workerCommand(agentCommand, agentArgs, flags, paths);
+      const write = ["run", "respond", "cancel"].includes(agentCommand);
+      const invoke = () => workerCommand(agentCommand, agentArgs, flags, paths);
+      return await (write ? admitHomeWrite(paths.home, `agent-${agentCommand}`, invoke) : invoke());
     }
     throw new CliError(`unknown agent command: ${agentCommand}`, { code: "argument_error" });
   }
-  if (command === "init") return { value: await runInit({ flags, paths }), code: 0 };
-  if (command === "config") return { value: await configCommand(rest, paths), code: 0 };
-  if (command === "profile") return { value: await profileCommand(rest, paths), code: 0 };
-  if (command === "database") return { value: await databaseCommand(rest, flags, paths), code: 0 };
-  if (command === "runtime") return { value: await runtimeCommand(rest, paths), code: 0 };
+  if (command === "init") {
+    const run = () => runInit({ flags, paths });
+    return { value: await (flags.plan ? run() : admitHomeWrite(paths.home, "init", run)), code: 0 };
+  }
+  if (command === "config") {
+    const operation = rest[0] === "set" ? "config-set" : null;
+    const run = () => configCommand(rest, paths);
+    return { value: await (operation ? admitHomeWrite(paths.home, operation, run) : run()), code: 0 };
+  }
+  if (command === "profile") {
+    const operation = rest[0] === "apply" ? "profile-apply" : null;
+    const run = () => profileCommand(rest, paths);
+    return { value: await (operation ? admitHomeWrite(paths.home, operation, run) : run()), code: 0 };
+  }
+  if (command === "database") {
+    const operation = ["configure", "migrate"].includes(rest[0]) ? `database-${rest[0]}` : null;
+    const run = () => databaseCommand(rest, flags, paths);
+    return { value: await (operation ? admitHomeWrite(paths.home, operation, run) : run()), code: 0 };
+  }
+  if (command === "runtime") {
+    const operation = ["install", "prepare", "prune"].includes(rest[0]) ? `runtime-${rest[0]}` : null;
+    const run = () => runtimeCommand(rest, paths);
+    return { value: await (operation ? admitHomeWrite(paths.home, operation, run) : run()), code: 0 };
+  }
   if (command === "logs") return { value: await logsCommand(paths), code: 0 };
   if (command === "start") {
-    await requireRuntimeForStart(paths);
-    return { value: await startRuntime(paths, { automaticPorts: flags.port === "auto" }), code: 0 };
+    return { value: await admitHomeWrite(paths.home, "start", async () => {
+      await requireRuntimeForStart(paths);
+      return startRuntime(paths, { automaticPorts: flags.port === "auto" });
+    }), code: 0 };
   }
-  if (command === "stop") return { value: await stopRuntime(paths, { force: Boolean(flags.force) }), code: 0 };
+  if (command === "stop") return { value: await admitHomeWrite(paths.home, "stop", () => stopRuntime(paths, { force: Boolean(flags.force) })), code: 0 };
   if (command === "restart") {
-    const previous = await stopRuntime(paths, { force: Boolean(flags.force) });
-    await requireRuntimeForStart(paths);
-    const started = await startRuntime(paths, { automaticPorts: flags.port === "auto" });
-    return { value: { status: "restarted", previous, runtime: started.runtime }, code: 0 };
+    return { value: await admitHomeWrite(paths.home, "restart", async () => {
+      const previous = await stopRuntime(paths, { force: Boolean(flags.force) });
+      await requireRuntimeForStart(paths);
+      const started = await startRuntime(paths, { automaticPorts: flags.port === "auto" });
+      return { status: "restarted", previous, runtime: started.runtime };
+    }), code: 0 };
   }
   if (command === "open") return { value: await openRuntime(paths), code: 0 };
   if (command === "status") return { value: await statusCommand(paths), code: 0 };

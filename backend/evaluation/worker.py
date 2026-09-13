@@ -6,6 +6,9 @@ import argparse
 import asyncio
 from pathlib import Path
 
+from harness.installation_guard import admit_backend_process
+_installation_guard = admit_backend_process()
+
 from .repository import get_evaluation_repository
 from .runner import EvaluationRunner
 from .settings import get_evaluation_settings_store

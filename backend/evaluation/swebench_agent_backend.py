@@ -8,6 +8,7 @@ would have while the untrusted checkout remains outside the host process.
 
 from __future__ import annotations
 
+from harness.installation_guard import inherited_guard_fds
 import argparse
 import asyncio
 import hashlib
@@ -370,6 +371,7 @@ class SWEbenchAgentWorkspaceBackend(FilesystemBackend, SandboxBackendProtocol):
             raise RuntimeError("Docker CLI is unavailable")
         return subprocess.run(
             [docker_cli, *argv],
+            pass_fds=inherited_guard_fds(),
             capture_output=True,
             timeout=timeout,
             check=False,
@@ -505,6 +507,7 @@ class SWEbenchAgentWorkspaceBackend(FilesystemBackend, SandboxBackendProtocol):
                 "-",
                 ".",
             ],
+            pass_fds=inherited_guard_fds(),
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             start_new_session=os.name != "nt",
@@ -657,6 +660,7 @@ class SWEbenchAgentWorkspaceBackend(FilesystemBackend, SandboxBackendProtocol):
                     "-lc",
                     activation + command,
                 ],
+                pass_fds=inherited_guard_fds(),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 start_new_session=os.name != "nt",
@@ -812,6 +816,7 @@ class SWEbenchAgentWorkspaceBackend(FilesystemBackend, SandboxBackendProtocol):
             try:
                 subprocess.run(
                     [docker_cli, "rm", "-f", container_id],
+                    pass_fds=inherited_guard_fds(),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     timeout=30,

@@ -11,6 +11,7 @@ import { probeRuntimeState } from "./probes.js";
 import { selectPorts } from "./init.js";
 import { loadActiveRuntime, resolveRuntimeProcess } from "./runtime-bundle.js";
 import { readSecret } from "./secrets.js";
+import { admitHomeWrite } from "./home-admission.js";
 
 const launcherPath = fileURLToPath(new URL("./runtime-launcher.js", import.meta.url));
 
@@ -170,7 +171,7 @@ async function cleanupControlPath(item, home) {
   await fs.rm(target, { recursive: true, force: true }).catch(() => {});
 }
 
-export async function startRuntime(paths, { automaticPorts = false, timeoutMs = 30_000 } = {}) {
+async function startRuntimeInternal(paths, { automaticPorts = false, timeoutMs = 30_000 } = {}) {
   const config = await loadConfig(paths.config);
   if (!config?.initialized) {
     throw new CliError("deploy CLI is not initialized", { code: "not_initialized", exitCode: 1 });
@@ -360,7 +361,7 @@ export async function startRuntime(paths, { automaticPorts = false, timeoutMs = 
   }
 }
 
-export async function stopRuntime(paths, { force = false } = {}) {
+async function stopRuntimeInternal(paths, { force = false } = {}) {
   const state = await readJson(paths.runtimeState, null);
   if (!state) return { status: "stopped", message: "no managed runtime is recorded" };
   if (path.resolve(String(state.home || "")) !== path.resolve(paths.home)) {
@@ -413,6 +414,14 @@ export async function stopRuntime(paths, { force = false } = {}) {
   await Promise.all(items.map((item) => cleanupControlPath(item, paths.home)));
   await fs.rm(paths.runtimeState, { force: true });
   return { status: "stopped", instance_id: state.instance_id };
+}
+
+export async function startRuntime(paths, options = {}) {
+  return admitHomeWrite(paths.home, "start", () => startRuntimeInternal(paths, options));
+}
+
+export async function stopRuntime(paths, options = {}) {
+  return admitHomeWrite(paths.home, "stop", () => stopRuntimeInternal(paths, options));
 }
 
 export async function openRuntime(paths, { opener = spawn } = {}) {
