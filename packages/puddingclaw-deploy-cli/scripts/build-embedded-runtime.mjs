@@ -122,6 +122,7 @@ async function patchStandaloneServer(serverFile) {
   if (!source.includes(marker)) throw new Error("Next standalone server marker was not found");
   const runtimeRewrite = [
     "const fs = require('fs')",
+    "require('./runtime-health.cjs')",
     "if (!process.env.BACKEND_INTERNAL_URL?.trim()) throw new Error('BACKEND_INTERNAL_URL is required for the Harness standalone server')",
     "const runtimeBackendUrl = process.env.BACKEND_INTERNAL_URL.trim().replace(/\\/$/, '')",
     "const rewriteApiDestination = (destination) => destination.replace(/^https?:\\/\\/[^/]+/, runtimeBackendUrl)",
@@ -184,7 +185,7 @@ async function writeManifest(staging, version, { wheelName, requirementsNames, r
     schema_version: 1,
     release_version: version,
     protocol_version: "1",
-    contracts: { harness_home: 1, dynamic_ports: 1, ...(verifiedBuild ? { home_freeze: 1 } : {}) },
+    contracts: { harness_home: 1, dynamic_ports: 1, ...(verifiedBuild ? { home_freeze: 1, runtime_identity: 1 } : {}) },
     install: {
       python: {
         wheel: `backend/${wheelName}`,
@@ -209,7 +210,7 @@ async function writeManifest(staging, version, { wheelName, requirementsNames, r
         script: "web/server.js",
         args: [],
         cwd: "web",
-        health_path: "/",
+        health_path: "/.puddingharness/health",
       },
     },
   };
@@ -298,7 +299,7 @@ async function main() {
 
     const wheel = await findWheel(wheelDirectory);
     if (!options.skipBuild) {
-      buildEvidence.backend.wheel = JSON.parse(execFileSync(buildPython, [path.join(scriptDirectory,"verify-runtime-wheel.py"),"--stage",backendRoot,"--wheel",wheel], {encoding:"utf8"}));
+      buildEvidence.backend.wheel = JSON.parse(execFileSync(buildPython, [path.join(scriptDirectory,"verify-runtime-wheel.py"),"--stage",backendRoot,"--wheel",wheel,"--cli-version",packageDocument.version], {encoding:"utf8"}));
       if (await cleanSourceRevision(sourceRoot) !== sourceRevision) throw new Error("source commit changed during build");
     }
     const standalone = path.join(frontendBuild, "standalone");
@@ -326,6 +327,7 @@ async function main() {
       if (error?.code !== "ENOENT") throw error;
     }
     await removeEnvironmentFiles(web);
+    await fs.copyFile(path.join(scriptDirectory,"frontend-runtime-health.cjs"),path.join(web,"runtime-health.cjs"));
     await patchStandaloneServer(path.join(web, "server.js"));
     await sanitizeBuildPaths(web, sourceRoot, sourceFrontendRoot);
     await sanitizeBuildPaths(web, temporaryRoot, frontendRoot);

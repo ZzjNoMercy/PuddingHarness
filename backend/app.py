@@ -12,6 +12,8 @@ load_dotenv()
 # Hold admission before importing any business singleton or opening Home stores.
 from harness.installation_guard import admit_backend_process
 _installation_guard = admit_backend_process()
+from importlib.metadata import version as distribution_version
+BACKEND_VERSION = distribution_version("puddingharness-backend")
 BASE_DIR = Path(__file__).resolve().parent
 
 def _exception_leaf_summary(exc: BaseException) -> str:
@@ -130,7 +132,7 @@ async def lifespan(app: FastAPI):
                 await close_database()
             finally:
                 backend_lease.release()
-app = FastAPI(title='PuddingHarness', version='0.1.19', lifespan=lifespan)
+app = FastAPI(title='PuddingHarness', version=BACKEND_VERSION, lifespan=lifespan)
 cors_origins = [origin.strip() for origin in os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if origin.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 from runtime_control import MaintenanceModeError
@@ -194,4 +196,5 @@ app.include_router(headless_activity_router, prefix='/api')
 
 @app.get('/')
 async def root():
-    return {'name': 'PuddingHarness', 'version': '0.1.19', 'status': 'running'}
+    return {'name': 'PuddingHarness', 'version': BACKEND_VERSION, 'status': 'running',
+            'role': 'backend', 'instance_id': os.environ.get('PUDDINGHARNESS_INSTANCE_ID')}

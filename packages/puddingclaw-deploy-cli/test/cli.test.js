@@ -84,7 +84,7 @@ test("version exposes Harness runtime identity while retaining bin compatibility
 
 test("runtime manifest requires the Harness contract", () => {
   const manifest = {
-    schema_version: 1, release_version: "1.0.0", contracts: { harness_home: 1, dynamic_ports: 1, home_freeze: 1 }, files: { "bin/backend": "a".repeat(64), "bin/frontend": "b".repeat(64) },
+    schema_version: 1, release_version: "1.0.0", contracts: { harness_home: 1, dynamic_ports: 1, home_freeze: 1, runtime_identity: 1 }, files: { "bin/backend": "a".repeat(64), "bin/frontend": "b".repeat(64) },
     processes: { backend: { command: "bin/backend", args: [], cwd: "." }, frontend: { command: "bin/frontend", args: [], cwd: "." } },
   };
   assert.doesNotThrow(() => validateRuntimeManifest(manifest, "/tmp/runtime"));

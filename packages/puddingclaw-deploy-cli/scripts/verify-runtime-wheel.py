@@ -1,6 +1,7 @@
 """Bind wheel Python payload and package identity to the independent stage."""
 from __future__ import annotations
 import argparse
+import ast
 from email.parser import BytesParser
 import hashlib
 import json
@@ -10,9 +11,15 @@ import tomllib
 import zipfile
 
 
-def verify(stage: Path, wheel: Path):
+def verify(stage: Path, wheel: Path, cli_version=None):
     manifest=json.loads((stage/'.stage-manifest.json').read_bytes())
     project=tomllib.loads((stage/'pyproject.toml').read_text())['project']
+    if cli_version is not None:
+        tree=ast.parse((stage/'cli_runtime.py').read_text())
+        pinned=[node.value.value for node in tree.body if isinstance(node,ast.Assign)
+                and any(isinstance(target,ast.Name) and target.id=='CLI_VERSION' for target in node.targets)
+                and isinstance(node.value,ast.Constant)]
+        if pinned!=[cli_version]:raise ValueError('backend CLI compatibility version differs from npm release')
     expected={row['path']:row['sha256'] for row in manifest['python']['files']}
     if not expected: raise ValueError('empty staged Python inventory')
     with zipfile.ZipFile(wheel) as archive:
@@ -43,5 +50,6 @@ def verify(stage: Path, wheel: Path):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--stage',type=Path,required=True);parser.add_argument('--wheel',type=Path,required=True)
+    parser.add_argument("--cli-version")
     args=parser.parse_args()
-    print(json.dumps(verify(args.stage,args.wheel),sort_keys=True))
+    print(json.dumps(verify(args.stage,args.wheel,args.cli_version),sort_keys=True))

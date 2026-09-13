@@ -12,6 +12,7 @@ import { selectPorts } from "./init.js";
 import { loadActiveRuntime, resolveRuntimeProcess } from "./runtime-bundle.js";
 import { readSecret } from "./secrets.js";
 import { admitHomeWrite } from "./home-admission.js";
+import { probeRuntimeIdentity } from "./runtime-health.js";
 
 const launcherPath = fileURLToPath(new URL("./runtime-launcher.js", import.meta.url));
 
@@ -108,28 +109,22 @@ export async function probeManagedRuntimeState(paths, state) {
   const items = Object.values(state?.processes || {});
   if (!items.length) return { ...base, status: "unverified", ownership_verified: false };
   const verified = await Promise.all(items.map((item) => verifyOwnedProcess(item, paths.home)));
-  return verified.every(Boolean)
-    ? { ...base, ownership_verified: true }
-    : { ...base, status: "unverified", ownership_verified: false };
+  if (!verified.every(Boolean)) return { ...base, status: "unverified", ownership_verified: false };
+  const identities = await Promise.all([
+    probeRuntimeIdentity(state.backend_url, state.instance_id, "backend"),
+    probeRuntimeIdentity(state.frontend_url, state.instance_id, "frontend"),
+  ]);
+  return identities.every(Boolean)
+    ? { ...base, ownership_verified: true, runtime_identity_verified: true }
+    : { ...base, status: "unverified", ownership_verified: false, runtime_identity_verified: false };
 }
 
-async function waitForProcess(child, spec, url, timeoutMs) {
+async function waitForProcess(child, spec, url, timeoutMs, instanceId, role) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     if (child.exitCode !== null || !isAlive(child.pid)) return false;
-    if (!spec.health_path) {
-      if (Date.now() - started >= 400) return true;
-    } else {
-      try {
-        const response = await fetch(`${url}${spec.health_path}`, {
-          signal: AbortSignal.timeout(1500),
-          redirect: "manual",
-        });
-        if (response.status >= 200 && response.status < 400) return true;
-      } catch {
-        // Service may still be starting.
-      }
-    }
+    if (await probeRuntimeIdentity(url, instanceId, role)
+      && child.exitCode === null && isAlive(child.pid)) return true;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   return false;
@@ -307,6 +302,8 @@ async function startRuntimeInternal(paths, { automaticPorts = false, timeoutMs =
       active.manifest.processes.backend,
       variables.BACKEND_URL,
       timeoutMs,
+      instanceId,
+      "backend",
     );
     if (!backendReady) throw await startupFailure("backend", logPaths.backend);
     const frontendChild = launch("frontend", frontend);
@@ -315,6 +312,8 @@ async function startRuntimeInternal(paths, { automaticPorts = false, timeoutMs =
       active.manifest.processes.frontend,
       variables.FRONTEND_URL,
       timeoutMs,
+      instanceId,
+      "frontend",
     );
     if (!frontendReady) throw await startupFailure("frontend", logPaths.frontend);
     const controls = Object.fromEntries(children.map((item) => [item.name, item]));

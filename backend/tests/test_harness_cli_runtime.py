@@ -102,3 +102,11 @@ def test_lock_io_failure_does_not_strand_install_thread_lock(tmp_path,monkeypatc
     result=cli_runtime.ensure_cli_runtime(tmp_path/'site-packages',runner=runner(''))
     assert not result['install_attempted'] and not result['installed']
     assert not cli_runtime._install_thread_lock.locked()
+
+
+def test_cli_prerelease_identity_is_preserved(tmp_path,monkeypatch):
+    monkeypatch.setattr(cli_runtime.shutil,'which',lambda name:'/fake/'+name)
+    expected=cli_runtime.detect_cli_runtime(tmp_path,runner=runner(json.dumps(payload())))
+    assert expected['installed'] and expected['version']==cli_runtime.CLI_VERSION
+    other=cli_runtime.detect_cli_runtime(tmp_path,runner=runner(json.dumps(payload(cli_version='0.1.20'))))
+    assert not other['installed'] and other['version_mismatch']

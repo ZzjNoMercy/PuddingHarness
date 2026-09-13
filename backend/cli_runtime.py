@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 CLI_COMMAND = "puddingharness"
-CLI_VERSION = "0.1.19"
+CLI_VERSION = "0.1.20-rc.1"
 MIN_NODE_MAJOR = 20
 INSTALL_POLICIES = frozenset({"auto", "prompt", "never"})
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -102,7 +102,8 @@ def _cli_status(command: str | None, *, runner: CommandRunner) -> dict[str, Any]
     try:
         payload = json.loads(output)
         if isinstance(payload, dict):
-            version = _version_from_output(str(payload.get("cli_version") or ""))
+            reported = str(payload.get("cli_version") or "").strip()
+            version = reported.removeprefix("v") if _parse_version(reported) is not None else None
             identity_verified = (
                 payload.get("cli") == CLI_COMMAND
                 and payload.get("agent_id") == CLI_COMMAND

@@ -63,3 +63,10 @@ package remains private. It does not certify installation migration, runtime
 health, signatures, production activation or publication. A release candidate
 still needs actual temporary-Home installation and lifecycle validation.
 Registry publication remains blocked by the normal `verify:publish` gate.
+
+Managed startup verifies a fresh instance ID and role from both HTTP services,
+not just HTTP status. The manifest requires `runtime_identity=1`; the frontend
+health route is `/.puddingharness/health`. This identity is public and separate
+from the private launcher control token. API package version and CLI release
+version are reported separately; the backend declares the exact compatible CLI
+version, including prerelease suffixes.
