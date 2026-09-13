@@ -26,7 +26,7 @@ export function validateRuntimeManifest(manifest, bundleRoot) {
   if (!SAFE_VERSION.test(String(manifest.release_version || ""))) {
     throw new CliError("runtime manifest release_version is invalid", { code: "invalid_runtime_manifest" });
   }
-  for (const contract of ["harness_home", "dynamic_ports"]) {
+  for (const contract of ["harness_home", "dynamic_ports", "home_freeze"]) {
     if (manifest.contracts?.[contract] !== 1) {
       throw new CliError(`runtime contract ${contract}=1 is required`, {
         code: "incompatible_runtime_contract",

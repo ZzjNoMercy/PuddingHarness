@@ -38,3 +38,28 @@ PUDDINGHARNESS_SOURCE_ROOT=/absolute/path/to/harness npm run build:runtime
 ```
 
 The builder never derives a source checkout by walking above this package.
+
+For a local release candidate, commit the source first and use Python 3.11 or
+3.12 for the staging/wheel verifier:
+
+```bash
+PUDDINGHARNESS_SOURCE_ROOT=/absolute/path/to/harness \
+PUDDINGHARNESS_BUILD_PYTHON=/absolute/path/to/python3.12 \
+npm run build:runtime
+npm run verify:candidate
+npm pack
+```
+
+A candidate build records the full clean source commit, checks staged Python
+and frontend source against that commit, and checks every wheel Python file
+and its package metadata against the independent backend stage. The Python
+package version and npm release version are separate identities. The current
+CLI requires `home_freeze=1`; older runtime bundles must be rebuilt instead of
+being relabeled. `--skip-build` remains an explicitly unverified developer
+artifact and cannot pass candidate or publication checks.
+
+`verify:candidate` validates artifact structure and build evidence while the
+package remains private. It does not certify installation migration, runtime
+health, signatures, production activation or publication. A release candidate
+still needs actual temporary-Home installation and lifecycle validation.
+Registry publication remains blocked by the normal `verify:publish` gate.

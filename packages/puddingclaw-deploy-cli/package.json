@@ -1,6 +1,6 @@
 {
   "name": "@puddingai/puddingharness",
-  "version": "0.1.19",
+  "version": "0.1.20-rc.1",
   "private": true,
   "description": "CLI installer, runtime manager, and Agent Harness client for PuddingHarness",
   "license": "MIT",
@@ -26,6 +26,7 @@
     "build:runtime": "node scripts/build-embedded-runtime.mjs",
     "test": "node --test test/*.test.js",
     "verify:publish": "node scripts/verify-publish.mjs",
-    "prepublishOnly": "npm test && npm run verify:publish"
+    "prepublishOnly": "npm test && npm run verify:publish",
+    "verify:candidate": "node scripts/verify-publish.mjs --candidate"
   }
 }

@@ -6,18 +6,20 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { verifyRuntimeBundle } from "../src/runtime-bundle.js";
+import { verifyBuildEvidence } from "./runtime-evidence.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
 
 async function main() {
+  const candidate = process.argv.includes("--candidate");
   const packageDocument = JSON.parse(await fs.readFile(path.join(packageRoot, "package.json"), "utf8"));
   const failures = [];
   if (packageDocument.name !== "@puddingai/puddingharness") failures.push("unexpected Harness package identity");
   if (JSON.stringify(Object.keys(packageDocument.bin || {})) !== JSON.stringify(["puddingharness"])) {
     failures.push("Harness must own only the puddingharness command");
   }
-  if (packageDocument.private) failures.push("package.json is still private");
+  if (packageDocument.private && !candidate) failures.push("package.json is still private");
   if (packageDocument.name.includes("-dev")) failures.push("development package name is not publishable");
   if (Object.keys(packageDocument.bin || {}).some((name) => name.endsWith("-dev"))) {
     failures.push("development CLI bin name is not publishable");
@@ -50,6 +52,8 @@ async function main() {
   try {
     manifest = JSON.parse(await fs.readFile(path.join(runtimeRoot, "manifest.json"), "utf8"));
     await verifyRuntimeBundle(runtimeRoot, manifest);
+    await verifyBuildEvidence(runtimeRoot, manifest);
+    if (manifest.contracts?.home_freeze !== 1) failures.push("runtime contract home_freeze=1 is required");
   } catch (error) {
     failures.push(`embedded runtime is invalid: ${error.message}`);
   }
@@ -76,10 +80,11 @@ async function main() {
     throw new Error(`publish verification failed:\n- ${failures.join("\n- ")}`);
   }
   process.stdout.write(`${JSON.stringify({
-    status: "publish_ready",
+    status: candidate ? "candidate_artifact_verified" : "publish_ready",
     package: packageDocument.name,
     version: packageDocument.version,
     runtime_files: Object.keys(manifest.files).length,
+    ...(candidate ? { activation_allowed: false, production_ready: false } : {}),
   })}\n`);
 }
 

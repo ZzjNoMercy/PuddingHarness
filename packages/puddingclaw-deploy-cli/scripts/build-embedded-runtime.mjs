@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { cleanSourceRevision, verifyCommittedStage } from "./source-provenance.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(scriptDirectory, "..");
@@ -53,7 +55,7 @@ async function findWheel(directory) {
   const wheels = (await fs.readdir(directory))
     .filter((name) => /^puddingharness_backend-.*\.whl$/.test(name))
     .sort();
-  if (!wheels.length) throw new Error(`PuddingHarness Backend wheel not found in ${directory}`);
+  if (wheels.length !== 1) throw new Error(`Exactly one PuddingHarness Backend wheel is required in ${directory}`);
   return path.join(directory, wheels.at(-1));
 }
 
@@ -172,7 +174,7 @@ async function sha256(file) {
   return hash.digest("hex");
 }
 
-async function writeManifest(staging, version, { wheelName, requirementsNames, requireHashes }) {
+async function writeManifest(staging, version, { wheelName, requirementsNames, requireHashes, verifiedBuild }) {
   const files = {};
   for (const relative of await listFiles(staging)) {
     if (relative === "manifest.json") continue;
@@ -182,7 +184,7 @@ async function writeManifest(staging, version, { wheelName, requirementsNames, r
     schema_version: 1,
     release_version: version,
     protocol_version: "1",
-    contracts: { harness_home: 1, dynamic_ports: 1 },
+    contracts: { harness_home: 1, dynamic_ports: 1, ...(verifiedBuild ? { home_freeze: 1 } : {}) },
     install: {
       python: {
         wheel: `backend/${wheelName}`,
@@ -238,13 +240,19 @@ async function main() {
     [["harness", path.join(backendRoot, "requirements.txt")]],
   );
   let requireHashes = false;
+  const buildPython = process.env.PUDDINGHARNESS_BUILD_PYTHON || "python3";
+  let sourceRevision;
   let buildEvidence = { mode: "unverified_prebuilt", releaseable: false };
 
   try {
     if (!options.skipBuild) {
+      if (await fs.realpath(packageRoot) !== await fs.realpath(path.join(sourceRoot,"packages/puddingclaw-deploy-cli"))) {
+        throw new Error("builder and runtime source must belong to the same checkout");
+      }
+      sourceRevision = await cleanSourceRevision(sourceRoot);
       backendRoot = path.join(temporaryRoot, "backend-stage");
       frontendRoot = path.join(temporaryRoot, "frontend-stage");
-      await run("python3", [path.join(sourceRoot, "packages/puddingharness-extraction/scripts/stage_backend.py"),
+      await run(buildPython, [path.join(sourceRoot, "packages/puddingharness-extraction/scripts/stage_backend.py"),
         "--repo", sourceRoot, "--require-clean-audit", "--output", backendRoot]);
       await run(process.execPath, [path.join(sourceRoot, "packages/puddingharness-extraction/scripts/stage_frontend.mjs"),
         "--source-frontend", sourceFrontendRoot, "--output", frontendRoot,
@@ -252,14 +260,16 @@ async function main() {
         { env: { BACKEND_INTERNAL_URL: "http://127.0.0.1:8888", NEXT_TELEMETRY_DISABLED: "1" } });
       const backendEvidence = JSON.parse(await fs.readFile(path.join(backendRoot, ".stage-manifest.json"), "utf8"));
       const frontendEvidence = JSON.parse(await fs.readFile(path.join(frontendRoot, "harness-frontend-artifact-manifest.json"), "utf8"));
+      await verifyCommittedStage(sourceRoot,"backend",backendRoot,backendEvidence.python.files,sourceRevision);
+      await verifyCommittedStage(sourceRoot,"frontend",frontendRoot,frontendEvidence.files,sourceRevision);
       buildEvidence = { mode: "independent_source_stages", releaseable: false,
-        source_revision: backendEvidence.source_revision,
+        source_revision: sourceRevision, source_clean: true,
         backend: { audit_status: backendEvidence.audit_status,
           raw_findings: backendEvidence.audit_findings,
           blocking_findings: backendEvidence.audit_blocking_findings,
           reviewed_findings: backendEvidence.audit_reviewed_findings,
           files: backendEvidence.python.files },
-        frontend: { checks: frontendEvidence.checks, files: frontendEvidence.files,
+        frontend: { checks: { ...frontendEvidence.checks, install: frontendEvidence.nodeModules.mode === "installed" ? "passed" : "not-run" }, files: frontendEvidence.files,
           node_modules: frontendEvidence.nodeModules } };
       wheelDirectory = path.join(temporaryRoot, "wheel");
       await fs.mkdir(wheelDirectory, { recursive: true });
@@ -287,6 +297,10 @@ async function main() {
     }
 
     const wheel = await findWheel(wheelDirectory);
+    if (!options.skipBuild) {
+      buildEvidence.backend.wheel = JSON.parse(execFileSync(buildPython, [path.join(scriptDirectory,"verify-runtime-wheel.py"),"--stage",backendRoot,"--wheel",wheel], {encoding:"utf8"}));
+      if (await cleanSourceRevision(sourceRoot) !== sourceRevision) throw new Error("source commit changed during build");
+    }
     const standalone = path.join(frontendBuild, "standalone");
     await fs.access(path.join(standalone, "server.js"));
     await fs.mkdir(path.join(staging, "backend"), { recursive: true, mode: 0o700 });
@@ -320,7 +334,7 @@ async function main() {
     const manifest = await writeManifest(staging, packageDocument.version, {
       wheelName: path.basename(wheel),
       requirementsNames,
-      requireHashes,
+      requireHashes, verifiedBuild: !options.skipBuild,
     });
 
     // Rename can replace only our empty reservation; a populated destination
