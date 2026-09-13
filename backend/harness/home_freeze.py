@@ -61,6 +61,14 @@ def _cli_freeze_gate(root):
     except FileExistsError as error:
         raise ValueError('CLI admission is busy or unresolved') from error
     try:
+        # A managed frontend/launcher can still write logs after the backend
+        # exits. Only a completed CLI stop removes this ownership record.
+        try:
+            (root / 'runtime.json').lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            raise ValueError('Managed runtime must be stopped before Home freeze')
         leases = root / '.installation-cli-leases'
         if leases.exists() or leases.is_symlink():
             info = leases.lstat()

@@ -55,3 +55,8 @@ explicitly rejects write operations before creating Home or admission files;
 read-only commands remain available. A native Windows writer/lease protocol
 is not implemented or validated. The Python non-POSIX marker-only startup
 compatibility path must not be interpreted as equivalent exclusion.
+
+Freeze also refuses any existing `runtime.json`, including stale or malformed
+records. A managed frontend/launcher may write logs after the backend exits.
+Complete the CLI ownership-checked stop before freezing; the freeze command
+does not infer process death from a PID or remove the runtime record.

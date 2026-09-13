@@ -238,3 +238,14 @@ def test_python_created_home_admits_node_writer(tmp_path):
         assert result.returncode==0,result.stderr
         assert result.stdout.strip()=='admitted'
     freeze_home(home,'freeze')
+
+
+@pytest.mark.parametrize('kind', ['regular','symlink','directory'])
+def test_managed_runtime_record_blocks_freeze_even_without_backend(tmp_path,kind):
+    path=tmp_path/'runtime.json'
+    if kind=='regular': path.write_text('{"frontend":"potentially live"}')
+    elif kind=='symlink': path.symlink_to(tmp_path/'missing')
+    else: path.mkdir()
+    with pytest.raises(ValueError,match='Managed runtime must be stopped'):
+        freeze_home(tmp_path.resolve(),'freeze')
+    assert not (tmp_path/FREEZE_NAME).exists()

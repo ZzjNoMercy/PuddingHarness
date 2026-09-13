@@ -12,6 +12,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const execFileAsync = promisify(execFile);
 
 async function main() {
+  if (process.argv.slice(2).some(arg => arg !== "--candidate")) throw new Error("unknown verification argument");
   const candidate = process.argv.includes("--candidate");
   const packageDocument = JSON.parse(await fs.readFile(path.join(packageRoot, "package.json"), "utf8"));
   const failures = [];
@@ -49,10 +50,11 @@ async function main() {
   }
   const runtimeRoot = path.join(packageRoot, "runtime-bundle");
   let manifest;
+  let buildEvidence;
   try {
     manifest = JSON.parse(await fs.readFile(path.join(runtimeRoot, "manifest.json"), "utf8"));
     await verifyRuntimeBundle(runtimeRoot, manifest);
-    await verifyBuildEvidence(runtimeRoot, manifest);
+    buildEvidence = await verifyBuildEvidence(runtimeRoot, manifest);
     if (manifest.contracts?.home_freeze !== 1) failures.push("runtime contract home_freeze=1 is required");
   } catch (error) {
     failures.push(`embedded runtime is invalid: ${error.message}`);
@@ -84,6 +86,7 @@ async function main() {
     package: packageDocument.name,
     version: packageDocument.version,
     runtime_files: Object.keys(manifest.files).length,
+    source_revision: buildEvidence.source_revision,
     ...(candidate ? { activation_allowed: false, production_ready: false } : {}),
   })}\n`);
 }
