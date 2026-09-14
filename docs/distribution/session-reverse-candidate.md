@@ -40,7 +40,7 @@ candidate content is rejected without silent repair. Final verification checks
 both revocations, source bytes, baseline and current session inventories, plus
 the entire candidate inventory before publishing `verified_inactive`.
 
-This candidate reverses only the session file domain. Source settings, Catalog,
+This candidate reverses only the session file domain. By default source settings, Catalog,
 Wiki, indices and credentials have not incorporated their target-side changes.
 It must not be used as a runnable rollback Home until those domain reversals,
 credential continuity and the audited installation revision/thaw gates pass.
@@ -55,3 +55,25 @@ runtime file modes inside its private Home, but must be owned, regular and
 unlinked. Arbitrary nonparticipating writers and hostile same-user file/lock
 replacement remain outside the cooperative process fence. Changed inputs reject;
 there is no automatic thaw or rollback of a completed suspension.
+
+## Include generic Harness settings
+
+Add `--include-generic-settings` to the same command to reverse `compression`,
+`cache`, `subagents`, `harness` and `write_middleware` alongside session files.
+Source snapshot, baseline Home and current Harness Home must each have a bounded,
+owned, unlinked config.json. The baseline's validated generic projection must
+match the source snapshot. Unsupported target sections must be identical between
+baseline and current config; any change requires a separate reverse migration
+and is rejected. A rejection during current-target validation can leave both
+products suspended; no automatic thaw is performed.
+
+Selected sections are replaced from the current validated target, including
+section removal. All other source configuration fields are retained as JSON
+values, including knowledge configuration and source credential references.
+Formatting/order may change in the generated config.json. Preserving old
+credential values does not prove they are still valid or usable: credential
+continuity remains explicitly unverified. No target credential value is promoted
+through this generic projection. Plan/receipt contain hashes and fixed section
+names, never configuration values. Target/baseline bytes are checked again before
+completion; generated settings are covered by the candidate inventory. Reusing a
+candidate with a different settings option or changed settings rejects.
