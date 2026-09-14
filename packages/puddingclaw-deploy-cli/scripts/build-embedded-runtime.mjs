@@ -185,7 +185,7 @@ async function writeManifest(staging, version, { wheelName, requirementsNames, r
     schema_version: 1,
     release_version: version,
     protocol_version: "1",
-    contracts: { harness_home: 1, dynamic_ports: 1, ...(verifiedBuild ? { home_freeze: 1, runtime_identity: 1 } : {}) },
+    contracts: { harness_home: 1, dynamic_ports: 1, ...(verifiedBuild ? { home_freeze: 1, runtime_identity: 1, writer_authority: 1 } : {}) },
     install: {
       python: {
         wheel: `backend/${wheelName}`,

@@ -223,11 +223,22 @@ export async function verifyRuntimeBundle(bundleRoot, manifest) {
   return { status: "verified", release_version: manifest.release_version, files: checked };
 }
 
+export async function assertRuntimeAuthorityContract(manifest, home) {
+  for (const name of [".installation-authority-v1.json", ".installation-authority-v1.json.part"]) {
+    try { await fs.lstat(path.join(home, name)); }
+    catch (error) { if (error?.code === "ENOENT") continue; throw error; }
+    if (manifest?.contracts?.writer_authority !== 1) {
+      throw new CliError("enrolled Home requires a runtime with writer_authority v1", { code: "runtime_authority_unsupported", exitCode: 1 });
+    }
+  }
+}
+
 export async function installRuntimeBundle(bundleRoot, paths) {
   const source = path.resolve(bundleRoot);
   const manifest = await readJson(path.join(source, "manifest.json"), null);
   if (!manifest) throw new CliError("runtime bundle manifest.json is missing", { code: "runtime_manifest_missing" });
   validateRuntimeManifest(manifest, source);
+  await assertRuntimeAuthorityContract(manifest, paths.home);
   const releases = path.join(paths.runtime, "releases");
   const target = path.join(releases, manifest.release_version);
   try {
@@ -273,6 +284,7 @@ export async function loadActiveRuntime(paths) {
   if (!manifest || manifest.release_version !== active.release_version) {
     throw new CliError("active runtime manifest does not match active.json", { code: "invalid_runtime_state" });
   }
+  await assertRuntimeAuthorityContract(manifest, paths.home);
   await verifyRuntimeBundle(root, manifest);
   return { active, manifest, root };
 }

@@ -67,6 +67,8 @@ already-admitted process through the supported business path factories.
 
 This stage is tested through the independent noneditable backend and a packaged
 CLI source closure. The full embedded runtime candidate remains the artifact
-built at `bc2b422`; it has not been rebuilt for this protocol. Full multi-product
+built at `bc2b422`; it has not been rebuilt for this protocol. The current CLI
+refuses to install or start that older runtime in an enrolled Home because it
+lacks `writer_authority: 1`. Full verified builds now emit this contract. Full multi-product
 active-installation revision, lossless rollback, credential continuity and final
 product/release validation remain required.
