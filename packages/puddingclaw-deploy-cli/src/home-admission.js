@@ -5,6 +5,8 @@ import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { CliError } from "./errors.js";
 
+import { assertWriterAuthority } from "./writer-authority.js";
+
 const admissionContext = new AsyncLocalStorage();
 const GATE = ".installation-cli-admission";
 const LEASES = ".installation-cli-leases";
@@ -114,7 +116,7 @@ async function releaseGate(home, gate) {
   await syncDirectory(home);
 }
 
-async function createTicket(home, operation) {
+async function createTicket(home, operation, writerAuthority) {
   const leases = path.join(home, LEASES);
   const existing = await statPrivateDirectory(leases, { missingOk: true });
   if (!existing) {
@@ -123,7 +125,7 @@ async function createTicket(home, operation) {
   }
   await statPrivateDirectory(leases);
   const ticket = path.join(leases, `${randomUUID()}.json`);
-  const payload = JSON.stringify({ format: "puddingharness-installation-cli-ticket/v1", operation, pid: process.pid }) + "\n";
+  const payload = JSON.stringify({ format: "puddingharness-installation-cli-ticket/v1", operation, pid: process.pid, writer_authority: writerAuthority }) + "\n";
   const handle = await fs.open(
     ticket,
     fsSync.constants.O_WRONLY | fsSync.constants.O_CREAT | fsSync.constants.O_EXCL | (fsSync.constants.O_NOFOLLOW || 0),
@@ -201,7 +203,8 @@ export async function admitHomeWrite(homeValue, operation, callback) {
   let ticket;
   try {
     await assertNoFreezeMarker(home);
-    ticket = await createTicket(home, operation);
+    const writerAuthority = await assertWriterAuthority(home);
+    ticket = await createTicket(home, operation, writerAuthority);
   } finally {
     await releaseGate(home, gate);
   }

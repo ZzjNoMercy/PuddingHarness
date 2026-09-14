@@ -296,11 +296,8 @@ def _strip_empty_inherited_overrides(config: dict[str, Any]) -> bool:
 def _config_path() -> Path:
     if CONFIG_FILE is not None:
         return Path(CONFIG_FILE)
-    configured = os.environ.get("PUDDINGHARNESS_HOME", "").strip()
-    root = Path(configured).expanduser() if configured else Path.home() / ".puddingharness"
-    if not root.is_absolute():
-        raise ValueError("PUDDINGHARNESS_HOME must be an absolute host path")
-    return root.resolve(strict=False) / "config.json"
+    from harness.installation_guard import bound_installation_home
+    return bound_installation_home() / "config.json"
 
 
 def load_config() -> dict[str, Any]:

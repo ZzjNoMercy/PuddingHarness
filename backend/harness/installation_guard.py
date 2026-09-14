@@ -39,6 +39,7 @@ class InstallationGuard:
         if allow_frozen and not exclusive:
             raise ValueError("Frozen Home inspection requires exclusive admission")
         self.fd = None
+        self.authority_fd = None
         self._identity = None
 
     def acquire(self):
@@ -62,10 +63,15 @@ class InstallationGuard:
                 raise AdmissionUnavailable('Installation admission lock changed')
             if not self.allow_frozen:
                 self._check_not_frozen()
+                from harness.installation_authority import acquire_writer
+                self.authority_fd = acquire_writer(self.home)
             self.fd = fd
             self._identity = (info.st_dev, info.st_ino)
             return self
         except BaseException:
+            if self.authority_fd is not None:
+                os.close(self.authority_fd)
+                self.authority_fd = None
             os.close(fd)
             raise
 
@@ -88,6 +94,9 @@ class InstallationGuard:
             self._check_not_frozen()
 
     def close(self):
+        if self.authority_fd is not None:
+            os.close(self.authority_fd)
+            self.authority_fd = None
         if self.fd is not None:
             # close, rather than LOCK_UN, preserves the lease in forked copies.
             os.close(self.fd)
@@ -109,11 +118,22 @@ def installation_home():
     return home.resolve()
 
 
+def bound_installation_home():
+    """Keep business path factories on the Home admitted for this process."""
+    requested = installation_home()
+    if _process_guard is not None:
+        if requested != _process_guard.home:
+            raise AdmissionUnavailable('Cannot change admitted Home through the environment')
+        _process_guard.verify()
+        return _process_guard.home
+    return requested
+
+
 def inherited_guard_fds():
     """Retain process admission across managed POSIX child startup/parent death."""
     if _process_guard is None:return ()
     _process_guard.verify()
-    return (_process_guard.fd,)
+    return tuple(fd for fd in (_process_guard.fd, _process_guard.authority_fd) if fd is not None)
 
 
 def admit_backend_process():
@@ -121,6 +141,9 @@ def admit_backend_process():
     if fcntl is None:
         guard=InstallationGuard(installation_home())
         guard._check_not_frozen()
+        for name in (".installation-authority-v1.json", ".installation-authority-v1.json.part"):
+            if (guard.home/name).exists() or (guard.home/name).is_symlink():
+                raise AdmissionUnavailable("Enrolled writer authority requires POSIX admission")
         return None
     return _admit_process(exclusive=False)
 

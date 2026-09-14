@@ -22,11 +22,8 @@ def resolve_puddingclaw_home() -> Path:
     process, never by an Agent command or a sandbox container.
     """
 
-    configured = os.environ.get("PUDDINGHARNESS_HOME", "").strip()
-    candidate = Path(configured).expanduser() if configured else Path.home() / ".puddingharness"
-    if not candidate.is_absolute():
-        raise ValueError("PUDDINGHARNESS_HOME must be an absolute host path")
-    resolved = candidate.resolve(strict=False)
+    from harness.installation_guard import bound_installation_home
+    resolved = bound_installation_home()
     if resolved.exists() and not resolved.is_dir():
         raise ValueError("PUDDINGHARNESS_HOME must point to a directory, not a file")
     return resolved
