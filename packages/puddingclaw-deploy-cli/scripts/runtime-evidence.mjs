@@ -100,3 +100,10 @@ function validateFiles(files, label) {
     paths.add(item.path);
   }
 }
+
+/** Current releases must include all admission and instance contracts. */
+export function verifyReleaseContracts(manifest) {
+  for (const name of ["harness_home", "dynamic_ports", "home_freeze", "runtime_identity", "writer_authority"]) {
+    if (manifest?.contracts?.[name] !== 1) fail(`runtime contract ${name}=1 is required`);
+  }
+}

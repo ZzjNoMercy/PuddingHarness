@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { verifyRuntimeBundle } from "../src/runtime-bundle.js";
-import { verifyBuildEvidence } from "./runtime-evidence.mjs";
+import { verifyBuildEvidence, verifyReleaseContracts } from "./runtime-evidence.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
@@ -55,7 +55,7 @@ async function main() {
     manifest = JSON.parse(await fs.readFile(path.join(runtimeRoot, "manifest.json"), "utf8"));
     await verifyRuntimeBundle(runtimeRoot, manifest);
     buildEvidence = await verifyBuildEvidence(runtimeRoot, manifest);
-    if (manifest.contracts?.home_freeze !== 1) failures.push("runtime contract home_freeze=1 is required");
+    verifyReleaseContracts(manifest);
   } catch (error) {
     failures.push(`embedded runtime is invalid: ${error.message}`);
   }

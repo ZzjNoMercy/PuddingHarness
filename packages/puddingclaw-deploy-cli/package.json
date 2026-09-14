@@ -1,6 +1,6 @@
 {
   "name": "@puddingai/puddingharness",
-  "version": "0.1.20-rc.1",
+  "version": "0.1.20-rc.2",
   "private": true,
   "description": "CLI installer, runtime manager, and Agent Harness client for PuddingHarness",
   "license": "MIT",

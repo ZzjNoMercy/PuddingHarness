@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { verifyBuildEvidence } from "../scripts/runtime-evidence.mjs";
+import { verifyBuildEvidence, verifyReleaseContracts } from "../scripts/runtime-evidence.mjs";
 
 async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "puddingharness-evidence-"));
@@ -46,4 +46,16 @@ test("rejects missing or unlisted build evidence", async () => {
   await assert.rejects(() => verifyBuildEvidence(root, { files: {} }), /covered by manifest/);
   await fs.unlink(path.join(root, "build-evidence.json"));
   await assert.rejects(() => verifyBuildEvidence(root, manifest), /cannot be read/);
+});
+
+
+test("release gate rejects historical or malformed admission capabilities", () => {
+  const contracts = { harness_home: 1, dynamic_ports: 1, home_freeze: 1, runtime_identity: 1, writer_authority: 1 };
+  verifyReleaseContracts({ contracts });
+  for (const name of Object.keys(contracts)) {
+    for (const value of [undefined, 0, 2, "1", true]) {
+      assert.throws(() => verifyReleaseContracts({ contracts: { ...contracts, [name]: value } }), new RegExp(name));
+    }
+  }
+  assert.throws(() => verifyReleaseContracts({}), /harness_home/);
 });
