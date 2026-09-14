@@ -191,4 +191,3 @@ def validate_receipt(raw: bytes, workspace: Path, binding: dict[str, Any], opera
     if len(events) == 2:
         _validate_freeze(_path(workspace), actual_binding, events[-1])
     return actual
-
