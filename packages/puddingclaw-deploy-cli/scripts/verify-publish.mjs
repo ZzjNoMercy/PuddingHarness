@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import { verifyRuntimeBundle } from "../src/runtime-bundle.js";
 import { verifyBuildEvidence, verifyReleaseContracts } from "./runtime-evidence.mjs";
 
+import { verifyCurrentSourceEvidence } from "./source-provenance.mjs";
+
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
 
@@ -56,6 +58,7 @@ async function main() {
     await verifyRuntimeBundle(runtimeRoot, manifest);
     buildEvidence = await verifyBuildEvidence(runtimeRoot, manifest);
     verifyReleaseContracts(manifest);
+    await verifyCurrentSourceEvidence(path.resolve(packageRoot, "../.."), buildEvidence);
   } catch (error) {
     failures.push(`embedded runtime is invalid: ${error.message}`);
   }

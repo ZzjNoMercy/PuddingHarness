@@ -39,3 +39,11 @@ export async function verifyCommittedStage(root, prefix, stage, files, revision)
     }
   }
 }
+
+export async function verifyCurrentSourceEvidence(root, evidence) {
+  const revision = await cleanSourceRevision(root);
+  if (evidence?.source_revision !== revision) {
+    throw new Error('runtime build evidence does not match the current source commit');
+  }
+  return revision;
+}

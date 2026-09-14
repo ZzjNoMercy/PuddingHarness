@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {cleanSourceRevision,verifyCommittedStage} from '../scripts/source-provenance.mjs';
+import {cleanSourceRevision,verifyCommittedStage,verifyCurrentSourceEvidence} from '../scripts/source-provenance.mjs';
 
 test('staged bytes must match the exact clean commit, including restored-source races',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'harness-source-proof-'));
@@ -24,4 +24,21 @@ test('staged bytes must match the exact clean commit, including restored-source 
  await fs.writeFile(path.join(stage,'app.py'),'dirty');
  rows[0].sha256=crypto.createHash('sha256').update('dirty').digest('hex');
  await assert.rejects(verifyCommittedStage(root,'backend',stage,rows,revision),/does not match/);
+});
+
+
+test('release rejects an old runtime even after source advances to a clean commit', async () => {
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'harness-release-source-'));
+ const git=(...args)=>execFileSync('git',['-C',root,...args],{stdio:'pipe'});
+ try {
+  git('init');git('config','user.email','fixture@example.invalid');git('config','user.name','Fixture');
+  await fs.writeFile(path.join(root,'source'),'first');git('add','source');git('commit','-m','first');
+  const evidence={source_revision:await cleanSourceRevision(root)};
+  await verifyCurrentSourceEvidence(root,evidence);
+  await fs.writeFile(path.join(root,'source'),'second');
+  await assert.rejects(verifyCurrentSourceEvidence(root,evidence),/clean committed/);
+  git('add','source');git('commit','-m','second');
+  await assert.rejects(verifyCurrentSourceEvidence(root,evidence),/current source commit/);
+  await verifyCurrentSourceEvidence(root,{source_revision:await cleanSourceRevision(root)});
+ } finally {await fs.rm(root,{recursive:true,force:true});}
 });
