@@ -175,3 +175,46 @@ def test_final_checkpoint_failure_preserves_both_revocations(roots,monkeypatch):
     assert committed['events'][-1]['state']=='suspended'
     monkeypatch.setattr(barrier,'_replace_private',original)
     assert run(roots)['journals']['knowledge']==committed
+
+
+def test_same_version_release_change_preserves_completed_checkpoint(roots,monkeypatch):
+    original=barrier._installed_knowledge_identity
+    run(roots);before=(roots[3]/'checkpoint.json').read_bytes()
+    def changed(*args,**kwargs):return dict(original(*args,**kwargs),inventory_sha256='sha256:'+'b'*64)
+    monkeypatch.setattr(barrier,'_installed_knowledge_identity',changed)
+    with pytest.raises(ValueError,match='plan changed'):run(roots)
+    assert (roots[3]/'checkpoint.json').read_bytes()==before
+
+
+def test_release_change_after_partial_freeze_preserves_recovery(roots,monkeypatch):
+    original=barrier._installed_knowledge_identity;drift=[False]
+    def observe(*args,**kwargs):
+        value=original(*args,**kwargs)
+        return dict(value,inventory_sha256='sha256:'+'b'*64) if drift[0] else value
+    monkeypatch.setattr(barrier,'_installed_knowledge_identity',observe)
+    def change(phase):
+        if phase=='harness_suspended':drift[0]=True
+    with pytest.raises(ValueError,match='release changed'):run(roots,_after_checkpoint=change)
+    assert json.loads((roots[3]/'checkpoint.json').read_text())['state']=='harness_suspended'
+    assert (roots[0]/'.installation-freeze-v1.json').exists()
+    assert not (roots[1]/'.workspace-freeze-v1.json').exists()
+    drift[0]=False
+    assert run(roots)['state']=='both_writers_suspended'
+
+
+def test_release_change_during_knowledge_suspend_cannot_publish_completion(roots,monkeypatch):
+    original_identity=barrier._installed_knowledge_identity;original_delegate=barrier._delegate;drift=[False]
+    def observe(*args,**kwargs):
+        value=original_identity(*args,**kwargs)
+        return dict(value,inventory_sha256='sha256:'+'b'*64) if drift[0] else value
+    def delegate(command,*args,**kwargs):
+        raw=original_delegate(command,*args,**kwargs)
+        if 'suspend' in command:drift[0]=True
+        return raw
+    monkeypatch.setattr(barrier,'_installed_knowledge_identity',observe)
+    monkeypatch.setattr(barrier,'_delegate',delegate)
+    with pytest.raises(ValueError,match='release changed'):run(roots)
+    assert json.loads((roots[3]/'checkpoint.json').read_text())['state']=='harness_suspended'
+    assert (roots[1]/'.workspace-freeze-v1.json').exists()
+    drift[0]=False;monkeypatch.setattr(barrier,'_delegate',original_delegate)
+    assert run(roots)['state']=='both_writers_suspended'

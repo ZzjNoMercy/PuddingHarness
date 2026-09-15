@@ -49,3 +49,7 @@ A successful receipt always leaves `activation_allowed`, `rollback_completed`,
 CLI candidate built at `bc2b422` predates this Python orchestrator; this stage is
 validated through the independent noneditable backend distribution, not a newly
 rebuilt npm candidate.
+
+## Installed-code continuity
+
+The plan now includes the versioned installed Knowledge identity, captured before the first Harness freeze/suspension. Control checks compare fresh observations before and after delegated work and before publishing completion. Same-version inventory changes or older plans without this binding reject without downgrading a completed checkpoint. Partial freezes remain frozen; restoring the exact trusted installation permits explicit retry. This RECORD-based observation is unauthenticated and does not fence concurrent package replacement, dependencies, bytecode or hostile interpreters. It grants no new writer authority.

@@ -17,6 +17,7 @@ import stat
 from harness.home_freeze import freeze_home, _sync_directory
 from harness.migration_orchestrator import (
     _path, _read_private, _replace_private, _json, _delegate, _validate_executable,
+    _installed_knowledge_identity,
 )
 
 FORMAT = 'puddingharness-target-freeze-barrier/v1'
@@ -116,12 +117,20 @@ def freeze_targets(harness_home, knowledge_state, knowledge_python, checkpoint_d
             raise ValueError('Unknown barrier checkpoint entry')
         plan = {'format':FORMAT,'operation_id':operation_id,'targets':identities,'checkpoint_identity':stage_identity,
                 'knowledge_python':str(python),'knowledge_executable':_executable_identity(python),'knowledge_protocol':KNOWLEDGE_FORMAT}
-        def verify_control():
+        # Bind the selected Knowledge installation before Harness is frozen.  The
+        # identity is a RECORD-checked drift observation, not an attestation.
+        plan['knowledge_release_identity'] = _installed_knowledge_identity(python, stage, fd, timeout_seconds)
+        def verify_control_files():
             current = lock.lstat()
             if _identity(stage) != stage_identity or (current.st_dev,current.st_ino) != (info.st_dev,info.st_ino):
                 raise ValueError('Barrier checkpoint directory or lock changed')
             if _executable_identity(python) != plan['knowledge_executable']:
                 raise ValueError('Knowledge executable changed')
+        def verify_control():
+            verify_control_files()
+            if _installed_knowledge_identity(python, stage, fd, timeout_seconds) != plan['knowledge_release_identity']:
+                raise ValueError('Knowledge release changed during target freeze')
+            verify_control_files()
         plan_bytes = _encoded(plan)
         verify_control()
         plan_path = stage/'plan.json'; checkpoint = stage/'checkpoint.json'
@@ -146,6 +155,7 @@ def freeze_targets(harness_home, knowledge_state, knowledge_python, checkpoint_d
             _record(home,'.installation-freeze-v1.json',receipts['harness']['receipt_sha256'])
             if 'knowledge' in receipts:
                 _knowledge_receipt(_encoded(receipts['knowledge']),knowledge,operation_id)
+        verify_control()
         harness_receipt = freeze_home(home,operation_id)
         if 'harness' in receipts and receipts['harness'] != harness_receipt:
             raise ValueError('Harness receipt changed')

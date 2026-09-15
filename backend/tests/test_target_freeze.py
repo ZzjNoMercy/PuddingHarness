@@ -13,6 +13,9 @@ def roots(tmp_path):
     python=root/'knowledge-fixture'
     python.write_text('#!'+sys.executable+'''\nimport hashlib,json,os,sys,time
 from pathlib import Path
+if '-m' in sys.argv and sys.argv[sys.argv.index('-m')+1]=='knowledge_platform.distribution.installed_identity':
+ print((Path(__file__).with_name('installed_identity.json')).read_text())
+ sys.exit(0)
 root=Path(sys.argv[sys.argv.index('--state-dir')+1]);operation=sys.argv[sys.argv.index('--operation-id')+1]
 mode=(root/'mode').read_text() if (root/'mode').exists() else 'ok'
 if mode=='fail':sys.exit(1)
@@ -25,12 +28,16 @@ p=root/'.workspace-freeze-v1.json'
 if not p.exists():
  fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.write(fd,raw);os.fsync(fd);os.close(fd)
 v.update(status='workspace_frozen',receipt_sha256=hashlib.sha256(raw).hexdigest())
+if mode=='identity_changed':
+ identity=Path(__file__).with_name('installed_identity.json')
+ identity.write_text(identity.read_text().replace('a'*64,'b'*64))
 if mode=='wrong_operation':v['operation_id']='other'
 if mode=='wrong_hash':v['receipt_sha256']='0'*64
 if mode=='extra':v['activation_allowed']=True
 if mode=='oversized':v['padding']='x'*1100000
 print(json.dumps(v))
 ''');python.chmod(0o700)
+    (root/'installed_identity.json').write_text(json.dumps({'format':'puddingknowledge-installed-identity/v1','package':'puddingknowledge-local','version':'0.1.0','inventory_sha256':'sha256:'+'a'*64,'file_count':4,'scope':'owned_distribution_files','authenticated':False}))
     return home,knowledge,python,stage
 
 def run(roots,**kwargs):return freeze_targets(*roots,'operation-1',**kwargs)
@@ -125,3 +132,18 @@ def test_executable_drift(roots):
     (roots[1]/'mode').unlink()
     with pytest.raises(ValueError,match='plan changed'):run(roots)
     assert not (roots[1]/'.workspace-freeze-v1.json').exists()
+
+def test_release_drift_during_delegate_does_not_commit(roots):
+    (roots[1]/'mode').write_text('identity_changed')
+    with pytest.raises(ValueError, match='release changed'):
+        run(roots)
+    assert json.loads((roots[3]/'checkpoint.json').read_text())['state']=='harness_frozen'
+
+def test_same_version_release_drift_rejects_resume_without_downgrade(roots):
+    run(roots)
+    checkpoint=(roots[3]/'checkpoint.json').read_bytes()
+    identity=roots[2].with_name('installed_identity.json')
+    identity.write_text(identity.read_text().replace('a'*64,'b'*64))
+    with pytest.raises(ValueError, match='plan changed'):
+        run(roots)
+    assert (roots[3]/'checkpoint.json').read_bytes()==checkpoint

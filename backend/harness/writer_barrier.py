@@ -11,7 +11,7 @@ import re
 
 from harness import installation_authority as authority
 from harness.home_freeze import _sync_directory
-from harness.migration_orchestrator import _delegate, _replace_private, _validate_executable
+from harness.migration_orchestrator import _delegate, _replace_private, _validate_executable, _installed_knowledge_identity
 from harness.target_freeze import _executable_identity, _record
 from harness.knowledge_writer_receipt import inspect_binding, validate_receipt
 
@@ -47,14 +47,15 @@ def suspend_writers(harness_home, knowledge_state, knowledge_python, checkpoint_
                 authority.read(entry)
                 continue
             raise ValueError('Unknown writer barrier entry')
+        release_identity = _installed_knowledge_identity(python, stage, fd, timeout_seconds)
         plan = {'format': FORMAT, 'operation_id': operation_id,
                 'harness_binding': harness_binding, 'knowledge_binding': knowledge_binding,
                 'checkpoint_identity': stage_identity, 'knowledge_python': str(python),
-                'knowledge_executable': executable}
+                'knowledge_executable': executable, 'knowledge_release_identity': release_identity}
         import os
         lock_identity = os.fstat(fd)
 
-        def verify_control():
+        def verify_control_files():
             current = (stage/'.writer-authority.lock').lstat()
             if (current.st_dev, current.st_ino) != (lock_identity.st_dev, lock_identity.st_ino):
                 raise ValueError('Writer barrier lock changed')
@@ -62,6 +63,12 @@ def suspend_writers(harness_home, knowledge_state, knowledge_python, checkpoint_
                 raise ValueError('Writer barrier control changed')
             if authority.load_binding(home) != harness_binding or inspect_binding(knowledge) != knowledge_binding:
                 raise ValueError('Writer enrollment changed')
+
+        def verify_control():
+            verify_control_files()
+            if _installed_knowledge_identity(python, stage, fd, timeout_seconds) != release_identity:
+                raise ValueError('Installed Knowledge release changed during writer suspension')
+            verify_control_files()
 
         def harness_status():
             result = authority.journal(harness_binding)

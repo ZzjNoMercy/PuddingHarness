@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 CLI_COMMAND = "puddingharness"
-CLI_VERSION = "0.1.20-rc.3"
+CLI_VERSION = "0.1.20-rc.4"
 MIN_NODE_MAJOR = 20
 INSTALL_POLICIES = frozenset({"auto", "prompt", "never"})
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]

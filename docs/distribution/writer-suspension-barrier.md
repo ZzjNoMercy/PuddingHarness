@@ -55,3 +55,7 @@ KNOWLEDGE_TEST_PYTHON=/absolute/knowledge/.venv/bin/python \
 
 Without that explicit dependency the integration tests skip; a skip is not proof
 of the cross-product contract. Pure receipt tests run independently.
+
+## Installed-code continuity
+
+The plan now includes the versioned installed Knowledge identity, captured before the first Harness freeze/suspension. Control checks compare fresh observations before and after delegated work and before publishing completion. Same-version inventory changes or older plans without this binding reject without downgrading a completed checkpoint. Partial freezes remain frozen; restoring the exact trusted installation permits explicit retry. This RECORD-based observation is unauthenticated and does not fence concurrent package replacement, dependencies, bytecode or hostile interpreters. It grants no new writer authority.
