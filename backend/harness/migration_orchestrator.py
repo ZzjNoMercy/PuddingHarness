@@ -210,6 +210,23 @@ def _delegate(command, stage, lock_fd, timeout_seconds, additional_fds=()):
         child.stdout.close()
 
 
+def _installed_knowledge_identity(python, stage, lock_fd, timeout_seconds, additional_fds=()):
+    raw = _delegate([str(python), '-m', 'knowledge_platform.distribution.installed_identity'],
+                    stage, lock_fd, timeout_seconds, additional_fds=additional_fds)
+    value = _json(raw)
+    expected = {'format', 'package', 'version', 'inventory_sha256', 'file_count', 'scope', 'authenticated'}
+    if (set(value) != expected or value['format'] != 'puddingknowledge-installed-identity/v1'
+            or value['package'] != 'puddingknowledge-local'
+            or not isinstance(value['version'], str)
+            or not re.fullmatch(r'[0-9][A-Za-z0-9.!+_-]{0,79}', value['version'])
+            or not isinstance(value['inventory_sha256'], str)
+            or not re.fullmatch(r'sha256:[0-9a-f]{64}', value['inventory_sha256'])
+            or type(value['file_count']) is not int or not 2 <= value['file_count'] <= 10000
+            or value['scope'] != 'owned_distribution_files' or value['authenticated'] is not False):
+        raise ValueError('Invalid installed Knowledge identity receipt')
+    return value
+
+
 def prepare_migration(source_snapshot: Path | str, knowledge_request: bytes, knowledge_python: Path | str,
                       staging: Path | str, *, timeout_seconds: int = 120, _after_checkpoint=None,
                       source_home_snapshot: Path | str | None = None) -> dict:
@@ -259,8 +276,15 @@ def _prepare_migration(source_snapshot: Path | str, knowledge_request: bytes, kn
             raise ValueError("Knowledge request changed")
         if not request_path.exists():
             _replace_private(request_path, knowledge_request)
+        from harness.target_freeze import _executable_identity
+        executable_identity = _executable_identity(python)
+        identity_fds = (snapshot_guard.fd,) if snapshot_guard is not None else ()
+        release_identity = _installed_knowledge_identity(python, stage, fd, timeout_seconds, identity_fds)
+        if _executable_identity(python) != executable_identity:
+            raise ValueError('Knowledge executable changed during identity inspection')
         plan = {"format": "puddingharness-migration-orchestrator/v1", "request_digest": request_digest,
-                "source_identity": _digest(str(source).encode()), "knowledge_python_identity": _digest(str(python).encode())}
+                "source_identity": _digest(str(source).encode()), "knowledge_python_identity": _digest(str(python).encode()),
+                "knowledge_executable": executable_identity, "knowledge_release_identity": release_identity}
         if snapshot_guard is not None:
             plan['source_snapshot_commitment'] = snapshot_guard.commitment
         plan_digest = _digest(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode())
@@ -305,6 +329,9 @@ def _prepare_migration(source_snapshot: Path | str, knowledge_request: bytes, kn
             raw_receipt = _delegate(command, stage, fd, timeout_seconds)
         else:
             raw_receipt = _delegate(command, stage, fd, timeout_seconds, additional_fds=(snapshot_guard.fd,))
+        if (_executable_identity(python) != executable_identity
+                or _installed_knowledge_identity(python, stage, fd, timeout_seconds, identity_fds) != release_identity):
+            raise ValueError('Installed Knowledge release changed during migration')
         result = _receipt(raw_receipt, knowledge, request_digest, plan["source_identity"])
         if _read_private(request_path) != knowledge_request:
             raise ValueError("Staged request changed during delegation")

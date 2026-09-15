@@ -33,6 +33,11 @@ def _python_module(root: Path) -> Path:
         "'pending_domains':['other_catalog_domains','wiki','indexes','knowledge_credentials'],"
         "'activation_allowed':False,'installation_prepared':False,'writer_fence_verified':False,'credential_rebind_required':True}))\n"
     )
+    identity = {'format':'puddingknowledge-installed-identity/v1', 'package':'puddingknowledge-local',
+                'version':'0.1.0', 'inventory_sha256':'sha256:'+'a'*64, 'file_count':10,
+                'scope':'owned_distribution_files', 'authenticated':False}
+    (package / 'installed_identity.json').write_text(json.dumps(identity))
+    (package / 'installed_identity.py').write_text("from pathlib import Path\nprint(Path(__file__).with_suffix('.json').read_text())\n")
     return root / "fake-python"
 
 
@@ -168,3 +173,24 @@ def test_live_delegate_retains_lock_after_parent_sigkill(tmp_path):
         if child_pid:
             try: os.kill(child_pid,signal.SIGKILL)
             except ProcessLookupError: pass
+
+
+def test_same_version_new_installed_release_cannot_resume_old_plan(tmp_path):
+    source=_source(tmp_path);python=_python_wrapper(tmp_path);stage=tmp_path/'stage'
+    prepare_migration(source,b'{}',python,stage)
+    checkpoint=(stage/'checkpoint.json').read_bytes()
+    identity=tmp_path/'fake-python/knowledge_platform/distribution/installed_identity.json'
+    identity.write_text(identity.read_text().replace('a'*64,'b'*64))
+    with pytest.raises(ValueError,match='plan changed'):
+        prepare_migration(source,b'{}',python,stage)
+    assert (stage/'checkpoint.json').read_bytes()==checkpoint
+
+
+def test_release_change_during_delegate_cannot_complete_checkpoint(tmp_path):
+    source=_source(tmp_path);python=_python_wrapper(tmp_path);stage=tmp_path/'stage'
+    module=tmp_path/'fake-python/knowledge_platform/distribution/migrate_from_claw.py'
+    identity=module.with_name('installed_identity.json')
+    module.write_text(module.read_text()+f"\np=pathlib.Path({str(identity)!r});p.write_text(p.read_text().replace('a'*64,'b'*64))\n")
+    with pytest.raises(ValueError,match='release changed'):
+        prepare_migration(source,b'{}',python,stage)
+    assert json.loads((stage/'checkpoint.json').read_text())['state']=='harness_verified'
