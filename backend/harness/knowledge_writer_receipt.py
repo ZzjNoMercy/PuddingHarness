@@ -3,6 +3,9 @@
 This module deliberately contains no Knowledge imports.  It validates the
 published binding, authority journal, and (for suspension) the durable marker
 using only the shared Harness file primitives and the documented protocol.
+Journal revisions at and above 2 alternate assigned/suspended exactly as the
+Harness journal does; an assigned revision binds its migration manifest,
+active installation revision and (for rollback) reverse evidence digests.
 """
 from __future__ import annotations
 
@@ -82,6 +85,10 @@ def _operation(value: Any) -> None:
         _fail("invalid authority operation")
 
 
+def _hex64(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
 def _validate_catalog(workspace: Path) -> None:
     path = workspace / "catalog.sqlite3"
     info = path.lstat()
@@ -120,11 +127,13 @@ def _journal(binding: dict[str, Any]) -> dict[str, Any]:
             or value["format"] != FORMAT or value["binding_sha256"] != digest(binding)):
         _fail("authority journal binding mismatch")
     events = value["events"]
-    if not isinstance(events, list) or not 1 <= len(events) <= 2:
+    if not isinstance(events, list) or not events:
         _fail("invalid authority history")
+    base = {"revision", "previous", "operation_id", "state", "writers", "freeze_receipt_sha256", "sha256"}
     previous = None
     for number, event in enumerate(events):
-        expected = {"revision", "previous", "operation_id", "state", "writers", "freeze_receipt_sha256", "sha256"}
+        expected = base | ({"active_installation_revision", "migration_manifest_sha256", "rollback_evidence_sha256"}
+                           if number > 0 and number % 2 == 0 else set())
         if (not isinstance(event, dict) or set(event) != expected or type(event["revision"]) is not int
                 or event["revision"] != number or event["previous"] != previous):
             _fail("invalid authority revision chain")
@@ -138,11 +147,31 @@ def _journal(binding: dict[str, Any]) -> dict[str, Any]:
                     or event["freeze_receipt_sha256"] is not None
                     or event["operation_id"] != binding["enrollment_id"]):
                 _fail("invalid existing writer enrollment")
-        elif (event["state"] != "suspended"
-              or event["writers"] != {"knowledge_catalog": None, "connector_jobs": None}
-              or not isinstance(event["freeze_receipt_sha256"], str)
-              or not re.fullmatch(r"[0-9a-f]{64}", event["freeze_receipt_sha256"])):
-            _fail("invalid suspended authority")
+        elif number % 2:
+            if (event["state"] != "suspended"
+                    or event["writers"] != {"knowledge_catalog": None, "connector_jobs": None}
+                    or not _hex64(event["freeze_receipt_sha256"])):
+                _fail("invalid suspended authority")
+        else:
+            writers = event["writers"]
+            if (event["state"] != "assigned" or not isinstance(writers, dict)
+                    or set(writers) != {"knowledge_catalog", "connector_jobs"}
+                    or writers["knowledge_catalog"] != writers["connector_jobs"]
+                    or writers["knowledge_catalog"] not in ("puddingclaw", "puddingknowledge")):
+                _fail("invalid assigned authority")
+            if (not _hex64(event["freeze_receipt_sha256"])
+                    or event["freeze_receipt_sha256"] != events[number - 1]["freeze_receipt_sha256"]):
+                _fail("invalid assigned freeze commitment")
+            if (not isinstance(event["active_installation_revision"], str)
+                    or not re.fullmatch(r"sha256:[0-9a-f]{64}", event["active_installation_revision"])):
+                _fail("invalid active installation revision commitment")
+            if not _hex64(event["migration_manifest_sha256"]):
+                _fail("invalid migration manifest commitment")
+            if writers["knowledge_catalog"] == "puddingclaw":
+                if not _hex64(event["rollback_evidence_sha256"]):
+                    _fail("invalid rollback evidence commitment")
+            elif event["rollback_evidence_sha256"] is not None:
+                _fail("invalid rollback evidence commitment")
         previous = event["sha256"]
     return value
 
@@ -188,6 +217,6 @@ def validate_receipt(raw: bytes, workspace: Path, binding: dict[str, Any], opera
         _operation(operation_id)
         if len(events) != 2 or events[-1]["state"] != "suspended" or events[-1]["operation_id"] != operation_id:
             _fail("operation requires exact suspended revision 1")
-    if len(events) == 2:
+    if events[-1]["state"] == "suspended":
         _validate_freeze(_path(workspace), actual_binding, events[-1])
     return actual

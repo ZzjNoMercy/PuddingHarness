@@ -2,7 +2,10 @@
 
 Enrollment records its existing session_harness writer; it does not activate a
 migrated installation. Suspension first persistently freezes all participating
-Home writers. Reassignment/thaw require a future verified migration protocol.
+Home writers. Reassignment commits an assigned revision bound to a verified
+installation migration manifest, and audited thaw retires the freeze marker
+into the authority record only for an installation assigned to this Harness.
+Cross-product CUTOVER orchestration remains a future increment.
 """
 from __future__ import annotations
 import argparse
@@ -18,6 +21,8 @@ from contextlib import contextmanager
 BINDING = '.installation-authority-v1.json'
 FORMAT = 'puddingharness-writer-authority/v1'
 MAX_BYTES = 65536
+SELF = 'puddingharness'
+WRITERS = ('puddingclaw', 'puddingharness')
 
 
 def encoded(value):
@@ -103,10 +108,11 @@ def journal(binding):
     if set(value)!={'format','binding_sha256','events'} or value['format']!=FORMAT or value['binding_sha256']!=digest(binding):
         raise ValueError('Authority journal binding mismatch')
     events=value['events']
-    if not isinstance(events,list) or not 1<=len(events)<=2:raise ValueError('Invalid authority history')
+    if not isinstance(events,list) or not events:raise ValueError('Invalid authority history')
+    base={'revision','previous','operation_id','state','writer','freeze_receipt_sha256','sha256'}
     previous=None
     for number,event in enumerate(events):
-        expected={'revision','previous','operation_id','state','writer','freeze_receipt_sha256','sha256'}
+        expected=base|({'active_installation_revision','migration_manifest_sha256','rollback_evidence_sha256'} if number>0 and number%2==0 else set())
         if not isinstance(event,dict) or set(event)!=expected or type(event['revision']) is not int or event['revision']!=number or event['previous']!=previous:
             raise ValueError('Invalid authority revision chain')
         payload={key:item for key,item in event.items() if key!='sha256'}
@@ -115,18 +121,33 @@ def journal(binding):
         if number==0:
             if event['state']!='existing_writer' or event['writer']!='session_harness' or event['freeze_receipt_sha256'] is not None or event['operation_id']!=binding['enrollment_id']:
                 raise ValueError('Invalid existing writer enrollment')
-        elif event['state']!='suspended' or event['writer'] is not None or not isinstance(event['freeze_receipt_sha256'],str) or not re.fullmatch('[0-9a-f]{64}',event['freeze_receipt_sha256']):
-            raise ValueError('Invalid suspended authority')
+        elif number%2:
+            if event['state']!='suspended' or event['writer'] is not None or not _hex64(event['freeze_receipt_sha256']):
+                raise ValueError('Invalid suspended authority')
+        else:
+            if event['state']!='assigned' or event['writer'] not in WRITERS:raise ValueError('Invalid assigned authority')
+            if not _hex64(event['freeze_receipt_sha256']) or event['freeze_receipt_sha256']!=events[number-1]['freeze_receipt_sha256']:
+                raise ValueError('Invalid assigned freeze commitment')
+            if not isinstance(event['active_installation_revision'],str) or not re.fullmatch(r'sha256:[0-9a-f]{64}',event['active_installation_revision']):
+                raise ValueError('Invalid active installation revision commitment')
+            if not _hex64(event['migration_manifest_sha256']):raise ValueError('Invalid migration manifest commitment')
+            if event['writer']=='puddingclaw':
+                if not _hex64(event['rollback_evidence_sha256']):raise ValueError('Invalid rollback evidence commitment')
+            elif event['rollback_evidence_sha256'] is not None:raise ValueError('Invalid rollback evidence commitment')
         previous=event['sha256']
     return value
+
+
+def _hex64(value):
+    return isinstance(value,str) and re.fullmatch('[0-9a-f]{64}',value) is not None
 
 
 def _operation(value):
     if not isinstance(value,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,159}',value):raise ValueError('Invalid authority operation')
 
 
-def _event(number,previous,operation,state,writer,receipt):
-    value={'revision':number,'previous':previous,'operation_id':operation,'state':state,'writer':writer,'freeze_receipt_sha256':receipt}
+def _event(number,previous,operation,state,writer,receipt,**extra):
+    value={'revision':number,'previous':previous,'operation_id':operation,'state':state,'writer':writer,'freeze_receipt_sha256':receipt,**extra}
     return dict(value,sha256=digest(value))
 
 
@@ -136,7 +157,9 @@ def acquire_writer(home):
     root=Path(binding['authority']['path'])
     with lock(root,exclusive=False) as fd:
         current=journal(binding)['events'][-1]
-        if current['state']!='existing_writer':raise ValueError('Installation has no active Harness writer authority')
+        if current['state']=='assigned':
+            if current['writer']!=SELF:raise ValueError('Installation writer authority is assigned to another product')
+        elif current['state']!='existing_writer':raise ValueError('Installation has no active Harness writer authority')
         if load_binding(home)!=binding:raise ValueError('Authority binding changed')
         return os.dup(fd)
 
@@ -154,8 +177,10 @@ def enroll(home,authority,enrollment_id):
         binding={'format':FORMAT,'home':identity(home),'authority':identity(root),'enrollment_id':enrollment_id}
         with lock(root,exclusive=True):
             allowed={'.writer-authority.lock','journal.json'}
+            artifact=r'(?:thaw-receipt|freeze-marker)-rev[0-9]+\.json'
+            temporary=r'\.(?:journal\.json|(?:thaw-receipt|freeze-marker)-rev[0-9]+\.json)\.tmp-[0-9a-f]{16}'
             for entry in root.iterdir():
-                if entry.name not in allowed and not re.fullmatch(r'\.journal.json\.tmp-[0-9a-f]{16}',entry.name):raise ValueError('Unknown authority entry')
+                if entry.name not in allowed and not re.fullmatch(artifact,entry.name) and not re.fullmatch(temporary,entry.name):raise ValueError('Unknown authority entry')
             existing=home/BINDING;part=home/(BINDING+'.part')
             for path in (existing,part):
                 if path.exists() or path.is_symlink():
@@ -186,7 +211,7 @@ def suspend(home,operation_id):
     _operation(operation_id);home=_path(home);binding=load_binding(home)
     if binding is None:raise ValueError('Harness Home is not enrolled')
     before=journal(binding)
-    if len(before['events'])==2:
+    if before['events'][-1]['state']=='suspended':
         if before['events'][-1]['operation_id']!=operation_id:
             raise ValueError('Authority suspension operation changed')
         from harness.target_freeze import _record
@@ -195,28 +220,119 @@ def suspend(home,operation_id):
     with lock(Path(binding['authority']['path']),exclusive=True):
         if load_binding(home)!=binding:raise ValueError('Authority binding changed')
         current=journal(binding)
-        event=_event(1,current['events'][0]['sha256'],operation_id,'suspended',None,receipt['receipt_sha256'])
-        if len(current['events'])==2:
-            if current['events'][1]!=event:raise ValueError('Authority suspension changed')
+        head=current['events'][-1]
+        if head['state']=='suspended':
+            event=_event(head['revision'],current['events'][-2]['sha256'],operation_id,'suspended',None,receipt['receipt_sha256'])
+            if head!=event:raise ValueError('Authority suspension changed')
         else:
+            event=_event(len(current['events']),head['sha256'],operation_id,'suspended',None,receipt['receipt_sha256'])
             current=dict(current,events=[*current['events'],event])
             _replace_private(Path(binding['authority']['path'])/'journal.json',encoded(current))
         return current
 
 
+def assign(home,manifest,operation_id,writer,*,rollback_evidence=None):
+    from harness.installation_manifest import validate_manifest
+    from harness.migration_orchestrator import _json,_read_private,_replace_private
+    from harness.target_freeze import _record
+    _operation(operation_id);home=_path(home)
+    if writer not in WRITERS:raise ValueError('Invalid assigned writer')
+    raw=_read_private(manifest)
+    document=_json(raw);validate_manifest(document)
+    commitment=hashlib.sha256(raw).hexdigest()
+    evidence=None
+    if writer==SELF:
+        if document['state']!='PREPARED':raise ValueError('Assignment to this Harness requires a PREPARED installation manifest')
+        if rollback_evidence is not None:raise ValueError('Forward assignment carries no rollback evidence')
+    else:
+        if document['state']!='ROLLED_BACK':raise ValueError('Rollback assignment requires a ROLLED_BACK installation manifest')
+        if rollback_evidence is None:raise ValueError('Rollback assignment requires rollback evidence')
+        evidence=hashlib.sha256(_read_private(rollback_evidence)).hexdigest()
+        if document.get('rollback_evidence_digest')!='sha256:'+evidence:raise ValueError('Rollback evidence does not match the installation manifest')
+    binding=load_binding(home)
+    if binding is None:raise ValueError('Harness Home is not enrolled')
+    with lock(Path(binding['authority']['path']),exclusive=True):
+        if load_binding(home)!=binding:raise ValueError('Authority binding changed')
+        current=journal(binding)
+        head=current['events'][-1]
+        extra={'active_installation_revision':'sha256:'+commitment,'migration_manifest_sha256':commitment,'rollback_evidence_sha256':evidence}
+        if head['state']=='assigned':
+            event=_event(head['revision'],current['events'][-2]['sha256'],operation_id,'assigned',writer,head['freeze_receipt_sha256'],**extra)
+            if head!=event:raise ValueError('Authority assignment changed')
+            return current
+        if head['state']!='suspended':raise ValueError('Installation writer authority is not suspended')
+        if head['operation_id']!=operation_id:raise ValueError('Authority assignment operation changed')
+        _record(home,'.installation-freeze-v1.json',head['freeze_receipt_sha256'])
+        event=_event(len(current['events']),head['sha256'],operation_id,'assigned',writer,head['freeze_receipt_sha256'],**extra)
+        current=dict(current,events=[*current['events'],event])
+        _replace_private(Path(binding['authority']['path'])/'journal.json',encoded(current))
+        return current
+
+
+def thaw(home,manifest,operation_id,*,_after_receipt=None):
+    from harness.home_freeze import _cli_freeze_gate,_sync_directory
+    from harness.installation_guard import InstallationGuard
+    from harness.installation_manifest import validate_manifest
+    from harness.migration_orchestrator import _json,_read_private,_replace_private
+    from harness.target_freeze import _record
+    _operation(operation_id);home=_path(home)
+    raw=_read_private(manifest)
+    document=_json(raw);validate_manifest(document)
+    commitment=hashlib.sha256(raw).hexdigest()
+    binding=load_binding(home)
+    if binding is None:raise ValueError('Harness Home is not enrolled')
+    root=Path(binding['authority']['path'])
+    with InstallationGuard(home,exclusive=True,allow_frozen=True) as guard,_cli_freeze_gate(home):
+        with lock(root,exclusive=True):
+            if load_binding(home)!=binding:raise ValueError('Authority binding changed')
+            current=journal(binding);head=current['events'][-1]
+            if head['state']!='assigned' or head['writer']!=SELF:raise ValueError('Installation writer authority is not assigned to this Harness')
+            if head['operation_id']!=operation_id:raise ValueError('Authority thaw operation changed')
+            if head['migration_manifest_sha256']!=commitment or head['active_installation_revision']!='sha256:'+commitment:
+                raise ValueError('Authority thaw manifest changed')
+            receipt_path=root/f"thaw-receipt-rev{head['revision']}.json"
+            retired_path=root/f"freeze-marker-rev{head['revision']}.json"
+            marker_path=home/'.installation-freeze-v1.json'
+            if (home/'.installation-freeze-v1.json.part').exists() or (home/'.installation-freeze-v1.json.part').is_symlink():
+                raise ValueError('Freeze publication is incomplete')
+            receipt={'format':FORMAT,'state':'thawed','operation_id':operation_id,'writer':SELF,'revision':head['revision'],
+                     'revision_sha256':head['sha256'],'freeze_receipt_sha256':head['freeze_receipt_sha256'],
+                     'migration_manifest_sha256':head['migration_manifest_sha256'],'active_installation_revision':head['active_installation_revision']}
+            retired=retired_path.exists() or retired_path.is_symlink()
+            if retired:
+                if marker_path.exists() or marker_path.is_symlink():raise ValueError('Conflicting authority thaw state')
+                if hashlib.sha256(_read_private(retired_path,4096)).hexdigest()!=head['freeze_receipt_sha256']:raise ValueError('Retired freeze marker changed')
+            else:
+                _record(home,'.installation-freeze-v1.json',head['freeze_receipt_sha256'])
+            if receipt_path.exists() or receipt_path.is_symlink():
+                if read(receipt_path)!=receipt:raise ValueError('Authority thaw receipt changed')
+            else:
+                if retired:raise ValueError('Authority thaw receipt missing for retired freeze marker')
+                _replace_private(receipt_path,encoded(receipt))
+            if _after_receipt:_after_receipt()
+            if not retired:
+                os.rename(marker_path,retired_path)
+                _sync_directory(home);_sync_directory(root)
+            guard.verify()
+            return {'state':'thawed','thaw_receipt_sha256':hashlib.sha256(encoded(receipt)).hexdigest(),'journal':current,'activation_allowed':True}
+
+
 def main(argv=None):
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('action',choices=['enroll','suspend','status']);parser.add_argument('--home',required=True);parser.add_argument('--authority');parser.add_argument('--operation-id')
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('action',choices=['enroll','suspend','assign','thaw','status']);parser.add_argument('--home',required=True);parser.add_argument('--authority');parser.add_argument('--operation-id');parser.add_argument('--manifest');parser.add_argument('--writer',choices=WRITERS);parser.add_argument('--rollback-evidence')
     args=parser.parse_args(argv)
     try:
-        if args.action=='enroll':result=enroll(args.home,args.authority,args.operation_id)
-        elif args.action=='suspend':result=suspend(args.home,args.operation_id)
+        if args.action=='enroll':report={'journal':enroll(args.home,args.authority,args.operation_id)}
+        elif args.action=='suspend':report={'journal':suspend(args.home,args.operation_id)}
+        elif args.action=='assign':report={'journal':assign(args.home,args.manifest,args.operation_id,args.writer,rollback_evidence=args.rollback_evidence),'activation_allowed':False}
+        elif args.action=='thaw':report=thaw(args.home,args.manifest,args.operation_id)
         else:
             binding=load_binding(_path(args.home))
             if binding is None:raise ValueError('Home is not enrolled')
-            result=journal(binding)
+            current=journal(binding);head=current['events'][-1]
+            report={'journal':current,'head':{'revision':head['revision'],'state':head['state'],'writer':head['writer']}}
     except Exception:
         print(json.dumps({'format':FORMAT,'status':'error','activation_allowed':False}));return 1
-    print(json.dumps({'format':FORMAT,'status':'ok','journal':result,'installation_cutover_performed':False},sort_keys=True));return 0
+    print(json.dumps({'format':FORMAT,'status':'ok',**report,'installation_cutover_performed':False},sort_keys=True));return 0
 
 
 if __name__=='__main__':raise SystemExit(main())

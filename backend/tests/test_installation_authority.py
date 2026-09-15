@@ -1,7 +1,7 @@
-import json,os,subprocess,sys
+import json,hashlib,os,select,subprocess,sys
 from pathlib import Path
 import pytest
-from harness.installation_authority import enroll,suspend,read,journal,load_binding,lock,BINDING
+from harness.installation_authority import enroll,suspend,assign,thaw,read,journal,load_binding,lock,encoded,digest,BINDING
 from harness.installation_guard import InstallationGuard,AdmissionUnavailable
 BACKEND=Path(__file__).resolve().parents[1]
 NODE=BACKEND.parent/'packages/puddingclaw-deploy-cli/src/home-admission.js'
@@ -139,3 +139,212 @@ def test_legacy_public_home_rejected_without_permission_repair(roots):
  with pytest.raises(ValueError):enroll(home,authority,'enroll-1')
  assert home.stat().st_mode&0o777==0o755
  assert not authority.exists() and not (home/BINDING).exists()
+
+
+def _manifest(root,state,*,rollback_digest=None,suffix=''):
+ value={'format':'agent-knowledge-platform-installation-migration/v1',
+  'source':{'installation_id':'inst-1'+suffix,'schema_revision':'rev-1','catalog_revision':'rev-1'},
+  'targets':{'puddingharness':'puddingharness-backend@0.1.0'},
+  'object_summaries':[{'domain':'session_harness','object_count':1,'source_digest':'sha256:'+'a'*64}],
+  'id_resource_mappings':[],'credential_rebinds':[],
+  'active_writers':{'session_harness':'puddingclaw','knowledge_catalog':'puddingclaw','connector_jobs':'puddingclaw'},
+  'checkpoint':{'stage':'prepared'},'rollback_strategy':'no_write_until_finalized','state':state,'rollback_window_open':True}
+ if rollback_digest is not None:value['rollback_evidence_digest']='sha256:'+rollback_digest
+ path=root/f'manifest-{state.lower()}{suffix}.json'
+ path.write_bytes((json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode());path.chmod(0o600)
+ return path
+
+def _evidence(root,name='reverse-evidence.json'):
+ path=root/name;path.write_bytes(('{"reverse":"candidate","name":'+json.dumps(name)+'}\n').encode());path.chmod(0o600)
+ return path,hashlib.sha256(path.read_bytes()).hexdigest()
+
+def test_assign_and_thaw_restores_self_writes(roots):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ manifest=_manifest(home.parent,'PREPARED')
+ result=assign(home,manifest,'op-1','puddingharness')
+ assert result==assign(home,manifest,'op-1','puddingharness')
+ head=result['events'][-1]
+ assert head['revision']==2 and head['state']=='assigned' and head['writer']=='puddingharness'
+ assert head['freeze_receipt_sha256']==result['events'][1]['freeze_receipt_sha256']
+ assert head['rollback_evidence_sha256'] is None
+ with pytest.raises(AdmissionUnavailable):InstallationGuard(home).acquire()
+ assert node(home,'console.log("BAD")').returncode!=0
+ report=thaw(home,manifest,'op-1')
+ assert report==thaw(home,manifest,'op-1') and report['activation_allowed'] is True
+ assert not (home/'.installation-freeze-v1.json').exists()
+ retired=authority/'freeze-marker-rev2.json';receipt=authority/'thaw-receipt-rev2.json'
+ assert hashlib.sha256(retired.read_bytes()).hexdigest()==head['freeze_receipt_sha256']
+ assert read(receipt)['revision_sha256']==head['sha256'] and report['journal']==journal(load_binding(home))
+ with InstallationGuard(home) as guard:assert guard.authority_fd is not None
+ result=node(home,'console.log("accepted")');assert result.returncode==0,result.stderr
+ assert result.stdout.strip()=='accepted'
+
+def test_assign_requires_suspended_authority(roots):
+ home,authority=roots;enroll(home,authority,'op-1')
+ manifest=_manifest(home.parent,'PREPARED')
+ with pytest.raises(ValueError,match='not suspended'):assign(home,manifest,'op-1','puddingharness')
+ with pytest.raises(ValueError,match='not assigned'):thaw(home,manifest,'op-1')
+ assert len(journal(load_binding(home))['events'])==1
+
+def test_assign_and_thaw_bind_the_suspension_operation(roots):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ manifest=_manifest(home.parent,'PREPARED')
+ with pytest.raises(ValueError,match='operation'):assign(home,manifest,'other','puddingharness')
+ assign(home,manifest,'op-1','puddingharness')
+ with pytest.raises(ValueError,match='operation'):thaw(home,manifest,'other')
+ with pytest.raises(ValueError,match='assignment changed'):assign(home,_manifest(home.parent,'PREPARED',suffix='-2'),'op-1','puddingharness')
+ assert thaw(home,manifest,'op-1')['activation_allowed'] is True
+
+@pytest.mark.parametrize('state',['DISCOVERED','CUTOVER','ROLLED_BACK','FINALIZED'])
+def test_forward_assign_requires_prepared_manifest(roots,state):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ with pytest.raises(ValueError,match='PREPARED'):assign(home,_manifest(home.parent,state),'op-1','puddingharness')
+ assert len(journal(load_binding(home))['events'])==2
+
+def test_rollback_assign_requires_rolled_back_manifest_and_matching_evidence(roots):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ evidence,commitment=_evidence(home.parent)
+ with pytest.raises(ValueError,match='ROLLED_BACK'):assign(home,_manifest(home.parent,'PREPARED'),'op-1','puddingclaw',rollback_evidence=evidence)
+ rolled=_manifest(home.parent,'ROLLED_BACK',rollback_digest=commitment)
+ with pytest.raises(ValueError,match='requires rollback evidence'):assign(home,rolled,'op-1','puddingclaw')
+ other,_=_evidence(home.parent,'other-evidence.json')
+ with pytest.raises(ValueError,match='does not match'):assign(home,rolled,'op-1','puddingclaw',rollback_evidence=other)
+ with pytest.raises(ValueError,match='does not match'):assign(home,_manifest(home.parent,'ROLLED_BACK'),'op-1','puddingclaw',rollback_evidence=evidence)
+ with pytest.raises(ValueError,match='no rollback evidence'):assign(home,_manifest(home.parent,'PREPARED',suffix='-3'),'op-1','puddingharness',rollback_evidence=evidence)
+ assert len(journal(load_binding(home))['events'])==2
+
+def test_rollback_assignment_denies_self_runtime_and_offers_no_thaw(roots):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ forward=_manifest(home.parent,'PREPARED')
+ assign(home,forward,'op-1','puddingharness');thaw(home,forward,'op-1')
+ with InstallationGuard(home):pass
+ suspend(home,'op-2')
+ evidence,commitment=_evidence(home.parent)
+ rolled=_manifest(home.parent,'ROLLED_BACK',rollback_digest=commitment)
+ result=assign(home,rolled,'op-2','puddingclaw',rollback_evidence=evidence)
+ assert result==assign(home,rolled,'op-2','puddingclaw',rollback_evidence=evidence)
+ head=result['events'][-1]
+ assert head['revision']==4 and head['writer']=='puddingclaw' and head['rollback_evidence_sha256']==commitment
+ with pytest.raises(AdmissionUnavailable):InstallationGuard(home).acquire()
+ with pytest.raises(ValueError,match='not assigned'):thaw(home,rolled,'op-2')
+ (home/'.installation-freeze-v1.json').unlink()
+ with pytest.raises(ValueError,match='assigned to another product'):InstallationGuard(home).acquire()
+ denied=node(home,'console.log("BAD")');assert denied.returncode!=0 and 'BAD' not in denied.stdout
+
+@pytest.mark.parametrize('mode',['repeat_suspend','skip_revision','missing_binding','bad_writer','rollback_without_evidence','forward_with_evidence','receipt_mismatch','bad_revision_pointer','bad_manifest_digest'])
+def test_assigned_chain_violations_rejected(roots,mode):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ binding=load_binding(home);current=journal(binding);head=current['events'][-1]
+ value={'revision':2,'previous':head['sha256'],'operation_id':'op-1','state':'assigned','writer':'puddingharness',
+  'freeze_receipt_sha256':head['freeze_receipt_sha256'],'active_installation_revision':'sha256:'+'b'*64,
+  'migration_manifest_sha256':'c'*64,'rollback_evidence_sha256':None}
+ if mode=='repeat_suspend':value={'revision':2,'previous':head['sha256'],'operation_id':'op-1','state':'suspended','writer':None,'freeze_receipt_sha256':head['freeze_receipt_sha256']}
+ if mode=='skip_revision':value['revision']=3
+ if mode=='missing_binding':del value['migration_manifest_sha256']
+ if mode=='bad_writer':value['writer']='puddingknowledge'
+ if mode=='rollback_without_evidence':value['writer']='puddingclaw'
+ if mode=='forward_with_evidence':value['rollback_evidence_sha256']='d'*64
+ if mode=='receipt_mismatch':value['freeze_receipt_sha256']='e'*64
+ if mode=='bad_revision_pointer':value['active_installation_revision']='b'*64
+ if mode=='bad_manifest_digest':value['migration_manifest_sha256']='sha256:'+'c'*64
+ crafted=dict(value,sha256=digest(value))
+ (authority/'journal.json').write_bytes(encoded(dict(current,events=[*current['events'],crafted])))
+ with pytest.raises(ValueError):journal(binding)
+ assert node(home,'console.log("BAD")').returncode!=0
+
+def test_thaw_interrupted_after_receipt_resumes_exactly(roots):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ manifest=_manifest(home.parent,'PREPARED');assign(home,manifest,'op-1','puddingharness')
+ def stop():raise RuntimeError('injected interruption after receipt')
+ with pytest.raises(RuntimeError):thaw(home,manifest,'op-1',_after_receipt=stop)
+ assert (authority/'thaw-receipt-rev2.json').exists() and (home/'.installation-freeze-v1.json').exists()
+ with pytest.raises(AdmissionUnavailable):InstallationGuard(home).acquire()
+ report=thaw(home,manifest,'op-1')
+ assert report==thaw(home,manifest,'op-1') and report['activation_allowed'] is True
+ assert (authority/'freeze-marker-rev2.json').exists() and not (home/'.installation-freeze-v1.json').exists()
+
+def test_thaw_receipt_write_failure_preserves_freeze(roots,monkeypatch):
+ import harness.migration_orchestrator as module
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ manifest=_manifest(home.parent,'PREPARED');assign(home,manifest,'op-1','puddingharness')
+ original=module._replace_private
+ def fail(*args):raise OSError('injected receipt failure')
+ monkeypatch.setattr(module,'_replace_private',fail)
+ with pytest.raises(OSError):thaw(home,manifest,'op-1')
+ assert (home/'.installation-freeze-v1.json').exists() and not (authority/'thaw-receipt-rev2.json').exists()
+ monkeypatch.setattr(module,'_replace_private',original)
+ assert thaw(home,manifest,'op-1')['activation_allowed'] is True
+
+@pytest.mark.parametrize('sync_failure',[1,2,3])
+def test_thaw_directory_sync_failure_retry_is_exact(roots,monkeypatch,sync_failure):
+ import harness.home_freeze as module
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ manifest=_manifest(home.parent,'PREPARED');assign(home,manifest,'op-1','puddingharness')
+ original=module._sync_directory;calls=0
+ def sync(root):
+  nonlocal calls;calls+=1
+  if calls==sync_failure:raise OSError('injected directory fsync failure')
+  return original(root)
+ monkeypatch.setattr(module,'_sync_directory',sync)
+ with pytest.raises(OSError):thaw(home,manifest,'op-1')
+ monkeypatch.setattr(module,'_sync_directory',original)
+ report=thaw(home,manifest,'op-1')
+ assert report==thaw(home,manifest,'op-1') and report['activation_allowed'] is True
+
+def test_sigkill_during_thaw_retains_gate_and_marker_then_recovers(roots):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ manifest=_manifest(home.parent,'PREPARED');assign(home,manifest,'op-1','puddingharness')
+ code='import time\nfrom harness.installation_authority import thaw\n'
+ code+='def hold():\n print("receipt",flush=True)\n time.sleep(60)\n'
+ code+='thaw('+repr(str(home))+','+repr(str(manifest))+',"op-1",_after_receipt=hold)'
+ env=dict(os.environ,PYTHONPATH=str(BACKEND))
+ process=subprocess.Popen([sys.executable,'-c',code],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+ try:
+  assert select.select([process.stdout],[],[],15)[0],'child did not become ready'
+  assert process.stdout.readline().strip()=='receipt'
+ finally:
+  process.kill();process.communicate(timeout=15)
+ assert (authority/'thaw-receipt-rev2.json').exists() and (home/'.installation-freeze-v1.json').exists()
+ with pytest.raises(AdmissionUnavailable):InstallationGuard(home).acquire()
+ with pytest.raises(ValueError,match='busy or unresolved'):thaw(home,manifest,'op-1')
+ (home/'.installation-cli-admission').rmdir()
+ assert thaw(home,manifest,'op-1')['activation_allowed'] is True
+
+def test_thaw_receipt_or_retired_marker_tamper_rejected(roots):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ manifest=_manifest(home.parent,'PREPARED');assign(home,manifest,'op-1','puddingharness');thaw(home,manifest,'op-1')
+ receipt=authority/'thaw-receipt-rev2.json';committed=receipt.read_bytes()
+ receipt.write_bytes(b'{}\n')
+ with pytest.raises(ValueError,match='thaw receipt changed'):thaw(home,manifest,'op-1')
+ receipt.write_bytes(committed)
+ retired=authority/'freeze-marker-rev2.json';marker=retired.read_bytes()
+ retired.write_bytes(b'{}\n')
+ with pytest.raises(ValueError,match='Retired freeze marker changed'):thaw(home,manifest,'op-1')
+ retired.write_bytes(marker)
+ assert thaw(home,manifest,'op-1')['activation_allowed'] is True
+
+def test_thaw_missing_receipt_for_retired_marker_rejected(roots):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ manifest=_manifest(home.parent,'PREPARED');assign(home,manifest,'op-1','puddingharness');thaw(home,manifest,'op-1')
+ (authority/'thaw-receipt-rev2.json').unlink()
+ with pytest.raises(ValueError,match='receipt missing'):thaw(home,manifest,'op-1')
+
+def test_thaw_rejects_changed_manifest(roots):
+ home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
+ manifest=_manifest(home.parent,'PREPARED');assign(home,manifest,'op-1','puddingharness')
+ with pytest.raises(ValueError,match='thaw manifest changed'):thaw(home,_manifest(home.parent,'PREPARED',suffix='-2'),'op-1')
+
+def test_cli_assign_status_thaw_fail_closed_reporting(roots):
+ home,authority=roots
+ env=dict(os.environ,PYTHONPATH=str(BACKEND))
+ def run(*args):return subprocess.run([sys.executable,'-m','harness.installation_authority',*args],env=env,capture_output=True,text=True)
+ assert run('enroll','--home',str(home),'--authority',str(authority),'--operation-id','op-1').returncode==0
+ assert run('suspend','--home',str(home),'--operation-id','op-1').returncode==0
+ manifest=_manifest(home.parent,'PREPARED')
+ bad=run('assign','--home',str(home),'--operation-id','other','--manifest',str(manifest),'--writer','puddingharness')
+ assert bad.returncode==1 and json.loads(bad.stdout)['activation_allowed'] is False
+ assert run('assign','--home',str(home),'--operation-id','op-1','--manifest',str(manifest),'--writer','puddingharness').returncode==0
+ status=run('status','--home',str(home))
+ assert status.returncode==0 and json.loads(status.stdout)['head']=={'revision':2,'state':'assigned','writer':'puddingharness'}
+ done=run('thaw','--home',str(home),'--operation-id','op-1','--manifest',str(manifest))
+ assert done.returncode==0 and json.loads(done.stdout)['activation_allowed'] is True
