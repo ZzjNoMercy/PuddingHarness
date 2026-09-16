@@ -8,8 +8,12 @@ machine.  DISCOVERED and PREPARED are derived from verified snapshot and
 orchestrator staging evidence.  PREPARED advances to CUTOVER once both writer
 journals commit their assigned revision 2 to the exact PREPARED bytes, or to
 ROLLED_BACK bound to caller-supplied rollback evidence; CUTOVER advances to
-FINALIZED only by explicit command.  ROLLED_BACK to FINALIZED remains a future
-increment and fails closed here.  No Knowledge source is imported; Knowledge
+FINALIZED by explicit command, or to ROLLED_BACK inside the rollback window,
+again bound to caller-supplied rollback evidence with active writers flipped
+back to puddingclaw.  ROLLED_BACK to FINALIZED remains a future increment and
+fails closed here, and re-CUTOVER after a window rollback is a new migration
+operation, not an advance of the rolled back manifest.  No Knowledge source is
+imported; Knowledge
 evidence enters only as verified receipt digests committed by the offline
 migration orchestrator's private staging or as journal events already validated
 by the writer authority layer.
@@ -342,7 +346,7 @@ def cutover_installation(output, *, harness_journal, knowledge_journal, _after_c
 
 
 def rollback_installation(output, *, rollback_evidence, _after_checkpoint=None):
-    """Advance a PREPARED manifest to ROLLED_BACK bound to rollback evidence bytes."""
+    """Advance a PREPARED or CUTOVER manifest to ROLLED_BACK bound to rollback evidence bytes."""
     output = _output_path(output)
     evidence = _read_private(rollback_evidence)
     commitment = 'sha256:' + hashlib.sha256(evidence).hexdigest()
@@ -357,9 +361,20 @@ def rollback_installation(output, *, rollback_evidence, _after_checkpoint=None):
         stored = _stored_manifest(output)
         if stored is None:
             raise ValueError('Installation manifest is missing; run discover first')
-        if stored['state'] == 'PREPARED':
-            _pre_cutover_invariants(stored)
-            advanced = dict(stored, state='ROLLED_BACK', rollback_evidence_digest=commitment)
+        if stored['state'] in ('PREPARED', 'CUTOVER'):
+            if stored['state'] == 'PREPARED':
+                _pre_cutover_invariants(stored)
+                advanced = dict(stored, state='ROLLED_BACK', rollback_evidence_digest=commitment)
+            else:
+                # Post-cutover window rollback: writers flip back to puddingclaw
+                # and the window stays open.  started_at, staging_namespace,
+                # active_installation_revision and the cutover checkpoint
+                # registrations are carried as history; nothing new is
+                # registered because the rev4 events are journal-level — the
+                # manifest binds the rollback by this evidence digest only.
+                _cutover_invariants(stored)
+                advanced = dict(stored, state='ROLLED_BACK', rollback_evidence_digest=commitment,
+                                active_writers={domain: 'puddingclaw' for domain in _DOMAINS})
             validate_manifest(advanced)
             _replace_private(output, encoded(advanced))
             if _after_checkpoint:
@@ -709,7 +724,7 @@ def main(argv=None):
                          help='Private JSON file carrying the validated Harness writer journal')
     cutover.add_argument('--knowledge-journal', type=Path, required=True,
                          help='Private JSON file carrying the validated Knowledge writer journal')
-    rollback = commands.add_parser('rollback', help='Advance a PREPARED manifest to ROLLED_BACK bound to rollback evidence')
+    rollback = commands.add_parser('rollback', help='Advance a PREPARED or CUTOVER manifest to ROLLED_BACK bound to rollback evidence')
     rollback.add_argument('--output', type=Path, required=True, help='Manifest file inside a private directory')
     rollback.add_argument('--rollback-evidence', type=Path, required=True,
                           help='Private rollback evidence file bound by digest')

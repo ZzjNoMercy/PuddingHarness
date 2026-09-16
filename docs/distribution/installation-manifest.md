@@ -7,11 +7,14 @@ the versioned Installation Migration Manifest
 are derived from verified snapshot and orchestrator staging evidence. PREPARED
 advances to CUTOVER once both writer journals commit their assigned revision 2
 to the exact PREPARED bytes, or to ROLLED_BACK bound to caller-supplied
-rollback evidence; CUTOVER advances to FINALIZED only by explicit command.
-ROLLED_BACK to FINALIZED remains a future increment and rejects. No Knowledge
-source is imported; Knowledge evidence enters only as the verified receipt
-digests committed by the offline migration orchestrator's private staging or as
-journal events already validated by the writer authority layer.
+rollback evidence; CUTOVER advances to FINALIZED by explicit command, or to
+ROLLED_BACK inside the rollback window, again bound to caller-supplied
+rollback evidence with active writers flipped back to puddingclaw. ROLLED_BACK
+to FINALIZED remains a future increment and rejects, and a rolled back
+manifest never re-advances to CUTOVER. No Knowledge source is imported;
+Knowledge evidence enters only as the verified receipt digests committed by
+the offline migration orchestrator's private staging or as journal events
+already validated by the writer authority layer.
 
 ```sh
 python -m harness.installation_manifest discover \
@@ -176,6 +179,26 @@ by this module. The full reverse-direction choreography — manifest advance,
 both writer reassignments bound to the evidence digest, and the persistent
 no-thaw freeze verification — is driven by `harness.rollback_orchestrator`
 (see `docs/distribution/rollback-orchestrator.md`).
+
+`rollback` also advances a CUTOVER manifest to ROLLED_BACK — the post-cutover
+window rollback of specification section 11.20 point 5. The CUTOVER invariants
+are re-verified first, so a state label without the flipped writers and both
+registered assigned events rejects. The advance binds
+`rollback_evidence_digest` to the new evidence SHA-256 and flips
+`active_writers` back to puddingclaw in all three domains;
+`rollback_window_open` stays true and `started_at`, `staging_namespace`,
+`active_installation_revision` and the cutover checkpoint registrations are
+carried unchanged as history. Nothing new is registered: the rev4 rollback
+assignments are journal-level events committed by the writer authority layer,
+and the manifest-level evidence binding for the window rollback is the
+`rollback_evidence_digest` alone. Idempotent re-entry with the same evidence
+returns `idempotent=true` with unchanged bytes; conflicting evidence or active
+writer drift rejects. The full choreography — rev3 re-suspension of both
+writers under a new operation with freeze-marker verification, this advance,
+and both rev4 reassignments bound to the evidence digest — is driven by
+`harness.rollback_orchestrator window-rollback`. A rolled back manifest never
+re-advances to CUTOVER: re-migration after a window rollback is a new
+migration operation, not a state transition of this manifest.
 
 ## FINALIZED
 
