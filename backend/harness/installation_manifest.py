@@ -1,20 +1,24 @@
-"""Installation Migration Manifest production and consumption (DISCOVERED/PREPARED).
+"""Installation Migration Manifest production and consumption.
 
 The manifest contract is
 ``docs/knowledge-platform/installation-migration-manifest.schema.json``
 (format ``agent-knowledge-platform-installation-migration/v1``).  This module is
-the first Harness-side producer/consumer and deliberately covers only the
-DISCOVERED and PREPARED states of the specification section 11.20 state machine.
-CUTOVER, ROLLED_BACK and FINALIZED remain future increments: manifests carrying
-those states validate structurally but are never reopened, advanced or
-downgraded here.  No Knowledge source is imported; Knowledge evidence enters
-only as the verified receipt digests committed by the offline migration
-orchestrator's private staging.
+the Harness-side producer/consumer for the specification section 11.20 state
+machine.  DISCOVERED and PREPARED are derived from verified snapshot and
+orchestrator staging evidence.  PREPARED advances to CUTOVER once both writer
+journals commit their assigned revision 2 to the exact PREPARED bytes, or to
+ROLLED_BACK bound to caller-supplied rollback evidence; CUTOVER advances to
+FINALIZED only by explicit command.  ROLLED_BACK to FINALIZED remains a future
+increment and fails closed here.  No Knowledge source is imported; Knowledge
+evidence enters only as verified receipt digests committed by the offline
+migration orchestrator's private staging or as journal events already validated
+by the writer authority layer.
 """
 from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -68,6 +72,11 @@ _OPTIONAL = _DIGEST_FIELDS | _TEXT_FIELDS | {
     'recovery_count', 'started_at',
 }
 _MANIFEST_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,159}')
+_CUTOVER_WRITERS = {'session_harness': 'puddingharness',
+                    'knowledge_catalog': 'puddingknowledge',
+                    'connector_jobs': 'puddingknowledge'}
+_ASSIGNED_KEYS = ('harness_assigned_event_sha256', 'knowledge_assigned_event_sha256')
+_HEX64 = re.compile(r'[0-9a-f]{64}')
 
 
 def _sha(value):
@@ -214,6 +223,189 @@ def _pre_cutover_invariants(value):
         raise ValueError('Resource URI mappings are not minted before CUTOVER')
     if any(item['status'] != 'pending' for item in value['credential_rebinds']):
         raise ValueError('Credential rebind drift before CUTOVER')
+
+
+def _cutover_invariants(value):
+    """Evidence-backed invariants this increment can assert on a CUTOVER manifest."""
+    if value['active_writers'] != _CUTOVER_WRITERS:
+        raise ValueError('Active writer drift after CUTOVER')
+    if (value['rollback_strategy'] != 'no_write_until_finalized'
+            or value['rollback_window_open'] is not True or value['completed_at'] is not None):
+        raise ValueError('Rollback policy drift after CUTOVER')
+    if not _text(value['started_at']) or not _text(value['staging_namespace']):
+        raise ValueError('CUTOVER manifest lost its preparation evidence')
+    if not _sha(value['active_installation_revision']):
+        raise ValueError('CUTOVER manifest does not bind the committed prepared revision')
+    if not all(_sha(value['checkpoint'].get(key)) for key in _ASSIGNED_KEYS):
+        raise ValueError('CUTOVER manifest does not register both assigned events')
+
+
+def _finalized_invariants(value):
+    """Evidence-backed invariants this increment can assert on a FINALIZED manifest."""
+    if value['active_writers'] != _CUTOVER_WRITERS:
+        raise ValueError('Active writer drift at FINALIZED')
+    if value['rollback_window_open'] is not False or not _text(value['completed_at']):
+        raise ValueError('Finalized installation does not close the rollback window')
+    if not _text(value['started_at']) or not _text(value['staging_namespace']):
+        raise ValueError('Finalized manifest lost its preparation evidence')
+    if not _sha(value['active_installation_revision']):
+        raise ValueError('Finalized manifest does not bind the committed prepared revision')
+    if not all(_sha(value['checkpoint'].get(key)) for key in _ASSIGNED_KEYS):
+        raise ValueError('Finalized manifest does not register both assigned events')
+
+
+def _assigned_event(journal, writer):
+    """Pin the assigned revision 2 head of a forward-cutover writer journal."""
+    events = journal.get('events') if isinstance(journal, dict) else None
+    if not isinstance(events, list) or len(events) != 3:
+        raise ValueError('Cutover journal does not contain exactly revisions 0-2')
+    suspended, head = events[1], events[2]
+    if not isinstance(suspended, dict) or not isinstance(head, dict):
+        raise ValueError('Cutover journal events are invalid')
+    if (suspended.get('revision') != 1 or suspended.get('state') != 'suspended'
+            or suspended.get('operation_id') != head.get('operation_id')):
+        raise ValueError('Cutover assignment does not bind its suspension')
+    if head.get('revision') != 2 or head.get('state') != 'assigned':
+        raise ValueError('Cutover journal head is not an assigned revision 2')
+    if writer == 'puddingharness':
+        if head.get('writer') != 'puddingharness':
+            raise ValueError('Harness cutover assignment writer is invalid')
+    elif head.get('writers') != {'knowledge_catalog': 'puddingknowledge',
+                                 'connector_jobs': 'puddingknowledge'}:
+        raise ValueError('Knowledge cutover assignment writers are invalid')
+    if head.get('rollback_evidence_sha256') is not None:
+        raise ValueError('Forward cutover assignment carries rollback evidence')
+    commitment = head.get('migration_manifest_sha256')
+    if not isinstance(commitment, str) or _HEX64.fullmatch(commitment) is None:
+        raise ValueError('Cutover assignment manifest commitment is invalid')
+    if head.get('active_installation_revision') != 'sha256:' + commitment:
+        raise ValueError('Cutover assignment does not bind the active installation revision')
+    # Journals normally arrive fully chain-validated from the writer authority
+    # layer; the self-digest is re-verified so bare journal files also fail closed.
+    for event in (suspended, head):
+        payload = {key: item for key, item in event.items() if key != 'sha256'}
+        canonical = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n'
+        if event.get('sha256') != hashlib.sha256(canonical.encode()).hexdigest():
+            raise ValueError('Cutover journal event digest mismatch')
+    return head
+
+
+def cutover_installation(output, *, harness_journal, knowledge_journal, _after_checkpoint=None):
+    """Advance a PREPARED manifest to CUTOVER committed by both assigned journals."""
+    output = _output_path(output)
+    directory = output.parent
+    if not directory.exists() or directory.is_symlink():
+        raise ValueError('Installation manifest is missing; run discover first')
+    _private_directory(directory)
+    fd = _lock(directory)
+    try:
+        _check_manifest_directory(directory, output.name)
+        _clean_temporary(directory, output.name)
+        raw = _read_private(output)
+        stored = _json(raw)
+        validate_manifest(stored)
+        harness_head = _assigned_event(harness_journal, 'puddingharness')
+        knowledge_head = _assigned_event(knowledge_journal, 'puddingknowledge')
+        if harness_head['operation_id'] != knowledge_head['operation_id']:
+            raise ValueError('Cutover journals bind different operations')
+        commitment = harness_head['migration_manifest_sha256']
+        if commitment != knowledge_head['migration_manifest_sha256']:
+            raise ValueError('Cutover journals commit to different manifests')
+        if stored['state'] == 'PREPARED':
+            _pre_cutover_invariants(stored)
+            if hashlib.sha256(raw).hexdigest() != commitment:
+                raise ValueError('Cutover journals commit to a different manifest')
+            advanced = dict(stored, state='CUTOVER', active_writers=dict(_CUTOVER_WRITERS),
+                            active_installation_revision='sha256:' + commitment)
+            advanced['checkpoint'] = {
+                **stored['checkpoint'],
+                'harness_assigned_event_sha256': 'sha256:' + harness_head['sha256'],
+                'knowledge_assigned_event_sha256': 'sha256:' + knowledge_head['sha256'],
+            }
+            validate_manifest(advanced)
+            _replace_private(output, encoded(advanced))
+            if _after_checkpoint:
+                _after_checkpoint('CUTOVER')
+            return _result(advanced, False)
+        if stored['state'] != 'CUTOVER':
+            raise ValueError('Installation manifest state cannot be advanced to CUTOVER')
+        _cutover_invariants(stored)
+        if stored['active_installation_revision'] != 'sha256:' + commitment:
+            raise ValueError('Cutover journals commit to a different manifest')
+        if stored['checkpoint']['harness_assigned_event_sha256'] != 'sha256:' + harness_head['sha256']:
+            raise ValueError('Cutover Harness assignment changed')
+        if stored['checkpoint']['knowledge_assigned_event_sha256'] != 'sha256:' + knowledge_head['sha256']:
+            raise ValueError('Cutover Knowledge assignment changed')
+        return _result(stored, True)
+    finally:
+        os.close(fd)
+
+
+def rollback_installation(output, *, rollback_evidence, _after_checkpoint=None):
+    """Advance a PREPARED manifest to ROLLED_BACK bound to rollback evidence bytes."""
+    output = _output_path(output)
+    evidence = _read_private(rollback_evidence)
+    commitment = 'sha256:' + hashlib.sha256(evidence).hexdigest()
+    directory = output.parent
+    if not directory.exists() or directory.is_symlink():
+        raise ValueError('Installation manifest is missing; run discover first')
+    _private_directory(directory)
+    fd = _lock(directory)
+    try:
+        _check_manifest_directory(directory, output.name)
+        _clean_temporary(directory, output.name)
+        stored = _stored_manifest(output)
+        if stored is None:
+            raise ValueError('Installation manifest is missing; run discover first')
+        if stored['state'] == 'PREPARED':
+            _pre_cutover_invariants(stored)
+            advanced = dict(stored, state='ROLLED_BACK', rollback_evidence_digest=commitment)
+            validate_manifest(advanced)
+            _replace_private(output, encoded(advanced))
+            if _after_checkpoint:
+                _after_checkpoint('ROLLED_BACK')
+            return _result(advanced, False)
+        if stored['state'] != 'ROLLED_BACK':
+            raise ValueError('Installation manifest state cannot be advanced to ROLLED_BACK')
+        # Active writers stay puddingclaw and the window stays open, so the
+        # pre-cutover invariants still hold for the rolled back manifest.
+        _pre_cutover_invariants(stored)
+        if stored.get('rollback_evidence_digest') != commitment:
+            raise ValueError('Rollback evidence does not match the rolled back manifest')
+        return _result(stored, True)
+    finally:
+        os.close(fd)
+
+
+def finalize_installation(output, *, _after_checkpoint=None):
+    """Advance a CUTOVER manifest to FINALIZED, closing the rollback window."""
+    output = _output_path(output)
+    directory = output.parent
+    if not directory.exists() or directory.is_symlink():
+        raise ValueError('Installation manifest is missing; run discover first')
+    _private_directory(directory)
+    fd = _lock(directory)
+    try:
+        _check_manifest_directory(directory, output.name)
+        _clean_temporary(directory, output.name)
+        stored = _stored_manifest(output)
+        if stored is None:
+            raise ValueError('Installation manifest is missing; run discover first')
+        if stored['state'] == 'CUTOVER':
+            _cutover_invariants(stored)
+            advanced = dict(stored, state='FINALIZED', rollback_window_open=False,
+                            completed_at=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+            validate_manifest(advanced)
+            _replace_private(output, encoded(advanced))
+            if _after_checkpoint:
+                _after_checkpoint('FINALIZED')
+            return _result(advanced, False)
+        if stored['state'] != 'FINALIZED':
+            raise ValueError('Installation manifest state cannot be advanced to FINALIZED')
+        _finalized_invariants(stored)
+        return _result(stored, True)
+    finally:
+        os.close(fd)
 
 
 def _result(manifest, idempotent):
@@ -511,14 +703,34 @@ def main(argv=None):
     prepare.add_argument('--knowledge-receipt', type=Path, required=True,
                          help='Private JSON file carrying the orchestrator knowledge_receipt object')
     prepare.add_argument('--output', type=Path, required=True, help='Manifest file inside a private directory')
+    cutover = commands.add_parser('cutover', help='Advance a PREPARED manifest to CUTOVER from both assigned journals')
+    cutover.add_argument('--output', type=Path, required=True, help='Manifest file inside a private directory')
+    cutover.add_argument('--harness-journal', type=Path, required=True,
+                         help='Private JSON file carrying the validated Harness writer journal')
+    cutover.add_argument('--knowledge-journal', type=Path, required=True,
+                         help='Private JSON file carrying the validated Knowledge writer journal')
+    rollback = commands.add_parser('rollback', help='Advance a PREPARED manifest to ROLLED_BACK bound to rollback evidence')
+    rollback.add_argument('--output', type=Path, required=True, help='Manifest file inside a private directory')
+    rollback.add_argument('--rollback-evidence', type=Path, required=True,
+                          help='Private rollback evidence file bound by digest')
+    finalize = commands.add_parser('finalize', help='Advance a CUTOVER manifest to FINALIZED, closing the rollback window')
+    finalize.add_argument('--output', type=Path, required=True, help='Manifest file inside a private directory')
     args = parser.parse_args(argv)
     try:
         if args.command == 'discover':
             result = discover_installation(args.source_snapshot, args.output,
                 credential_rebinds=[_parse_rebind(value) for value in args.credential_rebind])
-        else:
+        elif args.command == 'prepare':
             result = prepare_installation(args.source_snapshot, args.orchestrator_staging,
                                           args.knowledge_receipt, args.output)
+        elif args.command == 'cutover':
+            result = cutover_installation(args.output,
+                harness_journal=_json(_read_private(args.harness_journal)),
+                knowledge_journal=_json(_read_private(args.knowledge_journal)))
+        elif args.command == 'rollback':
+            result = rollback_installation(args.output, rollback_evidence=args.rollback_evidence)
+        else:
+            result = finalize_installation(args.output)
     except Exception:
         print(json.dumps({'format': FORMAT, 'status': 'error',
                           'error_code': 'installation_manifest_rejected',

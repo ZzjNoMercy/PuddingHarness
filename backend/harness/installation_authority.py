@@ -5,7 +5,7 @@ migrated installation. Suspension first persistently freezes all participating
 Home writers. Reassignment commits an assigned revision bound to a verified
 installation migration manifest, and audited thaw retires the freeze marker
 into the authority record only for an installation assigned to this Harness.
-Cross-product CUTOVER orchestration remains a future increment.
+Cross-product CUTOVER orchestration lives in ``harness.cutover_orchestrator``.
 """
 from __future__ import annotations
 import argparse

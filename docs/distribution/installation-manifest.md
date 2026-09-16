@@ -1,15 +1,17 @@
-# Installation migration manifest (DISCOVERED/PREPARED)
+# Installation migration manifest
 
-`harness.installation_manifest` is the first Harness-side producer and consumer
-of the versioned Installation Migration Manifest
+`harness.installation_manifest` is the Harness-side producer and consumer of
+the versioned Installation Migration Manifest
 (`docs/knowledge-platform/installation-migration-manifest.schema.json`, format
-`agent-knowledge-platform-installation-migration/v1`). It covers only the
-DISCOVERED and PREPARED states of the specification section 11.20 state machine.
-CUTOVER, ROLLED_BACK and FINALIZED remain future increments: manifests carrying
-those states validate structurally but are never reopened, advanced or
-downgraded by this module. No Knowledge source is imported; Knowledge evidence
-enters only as verified receipt digests committed by the offline migration
-orchestrator's private staging.
+`agent-knowledge-platform-installation-migration/v1`). DISCOVERED and PREPARED
+are derived from verified snapshot and orchestrator staging evidence. PREPARED
+advances to CUTOVER once both writer journals commit their assigned revision 2
+to the exact PREPARED bytes, or to ROLLED_BACK bound to caller-supplied
+rollback evidence; CUTOVER advances to FINALIZED only by explicit command.
+ROLLED_BACK to FINALIZED remains a future increment and rejects. No Knowledge
+source is imported; Knowledge evidence enters only as the verified receipt
+digests committed by the offline migration orchestrator's private staging or as
+journal events already validated by the writer authority layer.
 
 ```sh
 python -m harness.installation_manifest discover \
@@ -21,6 +23,18 @@ python -m harness.installation_manifest prepare \
   --source-snapshot /absolute/snapshot-envelope \
   --orchestrator-staging /absolute/migration-staging \
   --knowledge-receipt /absolute/private-receipt.json \
+  --output /absolute/private-manifest-dir/manifest.json
+
+python -m harness.installation_manifest cutover \
+  --output /absolute/private-manifest-dir/manifest.json \
+  --harness-journal /absolute/private-harness-journal.json \
+  --knowledge-journal /absolute/private-knowledge-journal.json
+
+python -m harness.installation_manifest rollback \
+  --output /absolute/private-manifest-dir/manifest.json \
+  --rollback-evidence /absolute/private-rollback-evidence.json
+
+python -m harness.installation_manifest finalize \
   --output /absolute/private-manifest-dir/manifest.json
 ```
 
@@ -110,9 +124,72 @@ forward; like every module's first private commit, their integrity rests on the
 
 The manifest file lives alone in a private directory with a dedicated permanent
 flock (`.installation-manifest.lock`), atomic replacement, and validated stale
-temporary recovery; unknown entries and symlinks reject. Both commands print a
+temporary recovery; unknown entries and symlinks reject. All commands print a
 path-free JSON report and are fail-closed: on any rejection the CLI prints
 `activation_allowed:false` and `installation_cutover_performed:false` and exits 1.
+
+## CUTOVER
+
+`cutover` advances a PREPARED manifest once both writer journals carry their
+assigned revision 2. It is normally driven by `harness.cutover_orchestrator`,
+which passes live authority-validated journals; the CLI form accepts both
+journals as private JSON files. Each journal must contain exactly revisions
+0-2: a rev1 suspension whose operation matches the rev2 assignment, a rev2 head
+assigned to the correct new writer (`puddingharness`, or both Knowledge domains
+`puddingknowledge`), no rollback evidence, and a self-consistent event digest.
+Both heads must bind the same operation and the same
+`migration_manifest_sha256`, which must equal the SHA-256 of the stored
+PREPARED bytes — the manifest advances only if it is exactly what both journals
+committed to.
+
+The CUTOVER manifest flips `active_writers` (`session_harness` →
+puddingharness, `knowledge_catalog`/`connector_jobs` → puddingknowledge),
+registers both rev2 event digests in `checkpoint` as
+`harness_assigned_event_sha256` and `knowledge_assigned_event_sha256`, and sets
+`active_installation_revision` to `sha256:` + the committed PREPARED digest —
+the same value both rev2 events carry (see the binding ruling in
+`docs/distribution/cutover-orchestrator.md`). `rollback_window_open` stays
+true, `completed_at` stays null, and credential rebinds, resource mappings and
+all PREPARED evidence are carried unchanged. The re-encode is canonical and
+byte-stable.
+
+Retry is exact: a stored CUTOVER manifest is validated against the post-cutover
+invariants (flipped writers, window open, preparation evidence intact, both
+assigned events registered, committed revision bound), and both supplied
+journals must still match the registered event digests and commitment, returning
+`idempotent=true` with unchanged bytes; conflicting journals reject. Unlike
+PREPARED, the CUTOVER state cannot be fully re-derived from staging evidence —
+the registered commitments are re-verified against the live journals, while the
+carried PREPARED fields rest on the 0600 file inside the 0700 directory.
+
+## ROLLED_BACK
+
+`rollback` advances a PREPARED manifest to ROLLED_BACK, binding
+`rollback_evidence_digest` to the SHA-256 of the caller-supplied private
+rollback evidence file. Active writers stay puddingclaw and the rollback window
+stays open; the reverse-migration chain assembly that produces the evidence is
+a separate increment. Retry with the same evidence returns `idempotent=true`;
+different evidence rejects (`does not match`), and any other stored state
+rejects. The rollback journal assignment (rev4, writer puddingclaw) is
+performed by the writer authority layer against the ROLLED_BACK manifest, never
+by this module.
+
+## FINALIZED
+
+`finalize` advances a CUTOVER manifest to FINALIZED by explicit command only:
+`rollback_window_open` becomes false and `completed_at` is stamped once and
+carried verbatim on retry. The CUTOVER invariants are re-verified first, so a
+manifest that never registered both assigned events rejects. Retry returns
+`idempotent=true` with unchanged bytes. ROLLED_BACK → FINALIZED is not
+specified for this increment and fails closed. `finalize` here validates the
+manifest layer only; `harness.cutover_orchestrator finalize` additionally
+requires the completed `both_thawed` cutover checkpoint bound to the same
+manifest, so an installation is never finalized while a thaw is outstanding.
+
+The advance reports keep `activation_allowed`, `installation_prepared`,
+`installation_cutover_performed`, `rollback_completed` and
+`writer_fence_verified` false: the manifest layer records state transitions but
+performs no writer fencing, thaw or activation itself.
 
 ## What PREPARED is not
 
@@ -120,11 +197,12 @@ A PREPARED manifest is not installation readiness. The report keeps
 `activation_allowed`, `installation_prepared`, `installation_cutover_performed`,
 `rollback_completed` and `writer_fence_verified` false and
 `credential_rebind_required` true. PREPARED records that a verified inactive
-staging exists and is bound to a verified source snapshot. Still required by
-specification section 11.20 before any CUTOVER: per-domain active-writer
-fencing and the auditable active-installation revision switch, Knowledge-side
-object summaries and old-ID to Resource URI mappings, credential rebind
-execution, remaining Knowledge domains (their receipt evidence stays partial),
-rollback evidence production, and the reverse-delta or snapshot-restore
-contracts that would let `rollback_strategy` change. Until that increment
-exists, no source files are modified or removed and nothing is activated.
+staging exists and is bound to a verified source snapshot. Per-domain
+active-writer fencing and the auditable active-installation revision switch are
+now performed by `harness.cutover_orchestrator` on top of a PREPARED manifest.
+Still required by specification section 11.20: Knowledge-side object summaries
+and old-ID to Resource URI mappings, credential rebind execution, remaining
+Knowledge domains (their receipt evidence stays partial), rollback evidence
+production, and the reverse-delta or snapshot-restore contracts that would let
+`rollback_strategy` change. Until those increments exist, no source files are
+modified or removed.
