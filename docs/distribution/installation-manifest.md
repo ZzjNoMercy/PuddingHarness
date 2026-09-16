@@ -170,9 +170,12 @@ rollback evidence file. Active writers stay puddingclaw and the rollback window
 stays open; the reverse-migration chain assembly that produces the evidence is
 a separate increment. Retry with the same evidence returns `idempotent=true`;
 different evidence rejects (`does not match`), and any other stored state
-rejects. The rollback journal assignment (rev4, writer puddingclaw) is
+rejects. The rollback journal assignment (rev2, writer puddingclaw) is
 performed by the writer authority layer against the ROLLED_BACK manifest, never
-by this module.
+by this module. The full reverse-direction choreography — manifest advance,
+both writer reassignments bound to the evidence digest, and the persistent
+no-thaw freeze verification — is driven by `harness.rollback_orchestrator`
+(see `docs/distribution/rollback-orchestrator.md`).
 
 ## FINALIZED
 
