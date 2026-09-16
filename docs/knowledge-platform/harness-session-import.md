@@ -40,9 +40,15 @@ reports `idempotent=true` and creates no duplicate sessions. Empty `.lock` files
 are not imported and do not establish writer fencing.
 
 Source bytes are read only. Symlinks, hardlinked files and non-regular files
-are refused. Limits are 32 MiB per file, 256 MiB total and 10,000 files. Staging
-uses a 0700 directory and 0600 files; reports expose counts and digests, not
-session contents or source paths. The local manifest contains relative file
+are refused. Limits are 128 MiB per file, 2 GiB total and 10,000 files. The
+budgets were originally sized for small synthetic test fixtures; the
+specification section 11.20 item 10 real-data rehearsal measured a real
+PuddingClaw Home (67 MB largest document, about 300 MiB of sessions, 50 MB
+catalog.sqlite3) that exceeded them, so they were raised to the unified
+migration budgets shared with Knowledge. The source snapshot envelope
+(2 GiB per file, 16 GiB total) remains the outer denial-of-service gate.
+Staging uses a 0700 directory and 0600 files; reports expose counts and
+digests, not session contents or source paths. The local manifest contains relative file
 names and digests required for verification and resume, so it must remain
 private. Filesystem checks are not a defense against a hostile process racing
 path replacement outside the staging lock.

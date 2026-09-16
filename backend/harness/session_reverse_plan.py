@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 from typing import Any
 
-from harness.session_import import MAX_FILES, MAX_TOTAL, ROOTS
+from harness.session_import import MAX_FILE, MAX_FILES, MAX_TOTAL, ROOTS
 from harness.source_snapshot import MAX_ENTRIES, _validate_inventory
 
 
@@ -50,7 +50,7 @@ def _session_files(value: Any, *, name: str) -> dict[str, dict[str, Any]]:
         digest, size = fact["digest"], fact["size"]
         if not (isinstance(digest, str) and digest.startswith("sha256:") and _hex(digest[7:])):
             raise ValueError("Invalid session file digest")
-        if type(size) is not int or size < 0 or size > 32 * 1024 * 1024:
+        if type(size) is not int or size < 0 or size > MAX_FILE:
             raise ValueError("Invalid session file size")
         total += size
         if total > MAX_TOTAL:

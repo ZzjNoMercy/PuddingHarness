@@ -49,8 +49,13 @@ normalization. This command does not claim SQLite consistency or complete
 installation rollback. Output flags keep activation and rollback completion false.
 
 Bounds remain those of the existing source snapshot (2 GiB per file, 16 GiB
-aggregate, 50,000 entries) and session import (32 MiB per file, 256 MiB aggregate,
-10,000 files). Output files are private. Current Harness files may retain normal
+aggregate, 50,000 entries) and session import (128 MiB per file, 2 GiB aggregate,
+10,000 files). The session import budgets were sized for small synthetic
+fixtures and were raised after the specification section 11.20 item 10
+real-data rehearsal measured a real PuddingClaw Home (67 MB largest document,
+about 300 MiB of sessions, 50 MB catalog.sqlite3) exceeding them; the source
+snapshot envelope remains the outer denial-of-service gate. Output files are
+private. Current Harness files may retain normal
 runtime file modes inside its private Home, but must be owned, regular and
 unlinked. Arbitrary nonparticipating writers and hostile same-user file/lock
 replacement remain outside the cooperative process fence. Changed inputs reject;
