@@ -201,6 +201,35 @@ def test_sigkill_mid_reverse_chain_resumes_to_a_byte_identical_record(tmp_path):
 
 
 @installed
+def test_window_reverse_resolves_relative_references_through_layout_aliases(tmp_path):
+    base = tmp_path.resolve()
+    corpus = _corpus(base)
+    deep = corpus / 'imported/deep'
+    deep.mkdir()
+    body = b'# Note\n\n![figure](../../assets/figure.png)\n'
+    (deep / 'note.md').write_bytes(body)
+    (corpus / 'assets/figure.png').write_bytes(b'figure')
+    documents = _documents(corpus) + [
+        {'id': 'doc-4', 'source_path': str(deep / 'note.md'),
+         'storage_path': str(deep / 'note.md'),
+         'content_sha256': hashlib.sha256(body).hexdigest()},
+    ]
+    home, connection = _legacy_home(base, documents)
+    assert connection is None
+    work = base / 'work'
+    report = _report(_run_window(work, home, corpus))
+    assert report['status'] == 'rolled_back' and report['rollback_completed'] is True
+    aliases = json.loads((work / 'document-reverse/resolution-aliases.json').read_bytes())
+    assert 'resources/external/knowledge/imported/deep/note.md' in aliases.values()
+    # The relative reference rode the alias into the migrated resources tree...
+    assert (work / 'knowledge-home/resources/external/knowledge/assets/figure.png'
+            ).read_bytes() == b'figure'
+    # ...and the reverse bundle materialized it from there.
+    assert (work / 'document-reverse/reverse/bodies/resources/external/knowledge/assets/figure.png'
+            ).read_bytes() == b'figure'
+
+
+@installed
 def test_duplicate_window_run_verifies_each_step_and_republishes_identical_record(tmp_path):
     base = tmp_path.resolve()
     corpus = _corpus(base)

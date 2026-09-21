@@ -949,6 +949,24 @@ def _step_window_document_reverse(ctx):
     if attachments:
         _replace_private(root / 'attachments.json', _encoded(attachments))
         command += ['--attachment-bindings', str(root / 'attachments.json')]
+    # Bodies are content-addressed blobs in the migrated home; their relative
+    # in-body references were written against the original payload layout.
+    # Alias each blob to that layout position (under resources/, where the
+    # forward chain stored dependency bytes) so the reverse walk resolves them.
+    request = _json(_read_private(ctx.path('request') / 'request.json'))
+    payload = ctx.path('snapshot') / 'payload'
+    bound_blobs = set(bindings.values())
+    aliases = {}
+    for _doc_id, relative in (request.get('bindings') or {}).items():
+        if not isinstance(relative, str):
+            raise ValueError('Request binding is invalid')
+        _relative(relative)
+        blob = 'blobs/' + _file_digest(payload / relative)[0]
+        if blob in bound_blobs:
+            aliases[blob] = 'resources/' + relative
+    if aliases:
+        _replace_private(root / 'resolution-aliases.json', _encoded(aliases))
+        command += ['--resolution-aliases', str(root / 'resolution-aliases.json')]
     for virtual_root in ctx.virtual_roots:
         prefix, separator, destination = virtual_root.partition('=')
         if not separator:
