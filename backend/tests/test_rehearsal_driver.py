@@ -403,6 +403,31 @@ def test_live_catalog_with_repair_finalizes_and_preserves_source(tmp_path):
         connection.close()
 
 
+@installed
+def test_live_catalog_with_recommit_finalizes_and_preserves_source(tmp_path):
+    base = tmp_path.resolve()
+    corpus = _corpus(base)
+    documents = _documents(corpus)
+    # A body edited after import: the recorded digest and size are stale.
+    documents[0]['content_sha256'] = '0' * 64
+    documents[0]['size_bytes'] = 1
+    home, connection = _legacy_home(base, documents, live=True)
+    try:
+        work = base / 'work'
+        report = _report(_run_driver(work, home, corpus,
+                                     '--recommit-document', 'doc-1',
+                                     '--recommit-reason', 'body edited after import'))
+        assert report['terminal_state'] == 'FINALIZED'
+        steps = _checkpoint_steps(work)
+        assert steps[0]['receipt']['repaired'] is True
+        assert steps[1]['receipt']['counts']['documents'] == 3
+        # The source catalog is untouched; only the payload copy was recommitted.
+        assert connection.execute('SELECT content_sha256 FROM knowledge_documents'
+                                  " WHERE id = 'doc-1'").fetchone()[0] == '0' * 64
+    finally:
+        connection.close()
+
+
 def test_step_table_is_the_ordered_path_a_chain():
     assert STEP_NAMES == ['snapshot', 'request', 'orchestrate', 'discover', 'prepare',
                           'enroll', 'suspend', 'cutover', 'finalize']

@@ -49,7 +49,13 @@ hardlinked), directories are re-created 0700, files 0600 with a single link and
 no symlinks. db/catalog.sqlite3 and any -wal/-shm/-journal sidecars are copied
 as sibling bytes (never opened with sqlite); a two-pass digest proof around an
 fsync barrier refuses a non-quiesced catalog. The optional repair flow operates
-on a private working copy only. Receipts and stdout carry paths, digests and
+on a private working copy only and supports two kinds: --repair-document
+deletes one dangling knowledge_documents row plus allowlisted dependents, and
+--recommit-document rebinds one document's recorded body digest and size to
+the actual source bytes when the body drifted after import (for PDF-converted
+rows the body binding is doc_metadata.markdown_sha256 and only it is
+recommitted; the original-PDF binding is left untouched). A repair that would
+change nothing is refused. Receipts and stdout carry paths, digests and
 counts, never secret bytes.
 """
 from __future__ import annotations
@@ -230,14 +236,70 @@ def _delete_dependents(connection, document_id):
     return deletions
 
 
-def _repair_catalog(db_dir, before_digests, document_id, reason, work):
-    """Delete one knowledge_documents row on a private working copy only.
+def _recommit_document(connection, document_id, reason):
+    """Rebind one document's recorded body digest and size to the actual bytes.
 
-    Rows in allowlisted tables left dangling by the deletion (the real Home's
+    Real Homes drift: a Markdown body edited after import no longer matches
+    the digest the catalog recorded, and the migration chain correctly refuses
+    it. For PDF-converted rows the content digest binds the original PDF and
+    the body digest lives in doc_metadata.markdown_sha256; only that body
+    binding is recommitted, leaving the original binding untouched. A document
+    that is not drifted refuses the recommit. Returns the receipt entry.
+    """
+    try:
+        rows = connection.execute(
+            'SELECT id, title, storage_path, content_sha256, size_bytes, doc_metadata'
+            ' FROM knowledge_documents WHERE id = ?', (document_id,)).fetchall()
+    except sqlite3.Error as error:
+        raise ValueError('Catalog knowledge_documents lookup failed') from error
+    if len(rows) != 1:
+        raise ValueError('Recommit document is not present in the catalog')
+    row_id, title, storage, content_digest, recorded_size, metadata_raw = rows[0]
+    if not isinstance(storage, str) or not storage:
+        raise ValueError('Recommit document has no storage path')
+    digest, size = _hash_source_file(_path(storage), follow=False)
+    updates = {}
+    metadata = None
+    if isinstance(metadata_raw, str) and metadata_raw:
+        try:
+            metadata = json.loads(metadata_raw)
+        except json.JSONDecodeError:
+            metadata = None
+    if isinstance(metadata, dict) and isinstance(metadata.get('markdown_sha256'), str):
+        before = metadata['markdown_sha256'].removeprefix('sha256:')
+        if before != digest:
+            metadata['markdown_sha256'] = digest
+            connection.execute('UPDATE knowledge_documents SET doc_metadata = ? WHERE id = ?',
+                               (json.dumps(metadata, ensure_ascii=False, separators=(',', ':')),
+                                document_id))
+            updates['markdown_sha256'] = {'from': before, 'to': digest}
+    else:
+        before = content_digest.removeprefix('sha256:') if isinstance(content_digest, str) else content_digest
+        if before != digest:
+            connection.execute('UPDATE knowledge_documents SET content_sha256 = ? WHERE id = ?',
+                               (digest, document_id))
+            updates['content_sha256'] = {'from': content_digest, 'to': digest}
+    if recorded_size != size:
+        connection.execute('UPDATE knowledge_documents SET size_bytes = ? WHERE id = ?',
+                           (size, document_id))
+        updates['size_bytes'] = {'from': recorded_size, 'to': size}
+    if not updates:
+        raise ValueError('Recommit document is not drifted')
+    return {'document': {'id': row_id, 'title': title, 'storage_path': storage},
+            'updates': updates, 'reason': reason}
+
+
+def _repair_catalog(db_dir, before_digests, delete, recommit, work):
+    """Adjust a private working copy of the catalog; the source is never opened.
+
+    delete=(document_id, reason) deletes one knowledge_documents row; rows in
+    allowlisted tables left dangling by the deletion (the real Home's
     knowledge_source_items import record of the same content) are deleted as
-    recorded dependents; any other foreign key violation refuses the repair.
-    The real catalog is never opened with sqlite. Returns the repair receipt,
-    the repaired single-file digest and its size.
+    recorded dependents, and any other foreign key violation refuses the
+    repair. recommit=(document_id, reason) rebinds one drifted body digest and
+    size to the actual source bytes. The real catalog is never opened with
+    sqlite. Returns the repair receipt, the repaired single-file digest and
+    its size.
     """
     for name, digest in before_digests.items():
         target = work / name
@@ -247,17 +309,25 @@ def _repair_catalog(db_dir, before_digests, document_id, reason, work):
     catalog = work / 'catalog.sqlite3'
     connection = sqlite3.connect(catalog)
     try:
-        try:
-            rows = connection.execute(
-                'SELECT id, title, storage_path FROM knowledge_documents WHERE id = ?',
-                (document_id,)).fetchall()
-        except sqlite3.Error as error:
-            raise ValueError('Catalog knowledge_documents lookup failed') from error
-        if len(rows) != 1:
-            raise ValueError('Repair document is not present in the catalog')
-        row = rows[0]
-        connection.execute('DELETE FROM knowledge_documents WHERE id = ?', (document_id,))
-        dependent_deletions = _delete_dependents(connection, document_id)
+        delete_entry = None
+        if delete is not None:
+            document_id, reason = delete
+            try:
+                rows = connection.execute(
+                    'SELECT id, title, storage_path FROM knowledge_documents WHERE id = ?',
+                    (document_id,)).fetchall()
+            except sqlite3.Error as error:
+                raise ValueError('Catalog knowledge_documents lookup failed') from error
+            if len(rows) != 1:
+                raise ValueError('Repair document is not present in the catalog')
+            row = rows[0]
+            connection.execute('DELETE FROM knowledge_documents WHERE id = ?', (document_id,))
+            delete_entry = {'document': {'id': row[0], 'title': row[1], 'storage_path': row[2]},
+                            'dependent_deletions': _delete_dependents(connection, document_id),
+                            'reason': reason}
+        recommit_entry = None
+        if recommit is not None:
+            recommit_entry = _recommit_document(connection, recommit[0], recommit[1])
         if connection.execute('PRAGMA foreign_key_check').fetchall():
             raise ValueError('Catalog foreign key check failed after repair')
         if connection.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
@@ -272,14 +342,13 @@ def _repair_catalog(db_dir, before_digests, document_id, reason, work):
         raise ValueError('Repaired catalog still has sidecar files')
     digest, size = _hash_source_file(catalog, follow=False)
     receipt = {'format': REPAIR_FORMAT,
-               'document': {'id': row[0], 'title': row[1], 'storage_path': row[2]},
-               'dependent_deletions': dependent_deletions,
+               'delete': delete_entry,
+               'recommit': recommit_entry,
                'before_digests': dict(sorted(before_digests.items())),
                'after_digest': digest,
                'size_bytes': size,
                'foreign_key_check': 'clean',
-               'integrity_check': 'ok',
-               'reason': reason}
+               'integrity_check': 'ok'}
     return receipt, digest, size
 
 
@@ -374,7 +443,8 @@ def _publish_receipt(path, data, *, root, source, graft_sources):
 
 def produce_rehearsal_snapshot(source_home, output, *, grafts=(), exclusions=(),
                                follow_symlinks=False, repair_document=None,
-                               repair_reason=None, receipt=None, _quiescence_hook=None):
+                               repair_reason=None, recommit_document=None,
+                               recommit_reason=None, receipt=None, _quiescence_hook=None):
     """Assemble and self-verify a puddingclaw-source-home-snapshot/v1 envelope.
 
     Re-running into the same output root with identical inputs is byte-identical
@@ -386,6 +456,13 @@ def produce_rehearsal_snapshot(source_home, output, *, grafts=(), exclusions=(),
         raise ValueError('Repair requires both a document id and a reason')
     if repair_document is not None and (not repair_document or not repair_reason):
         raise ValueError('Repair document and reason must be non-empty')
+    if (recommit_document is None) != (recommit_reason is None):
+        raise ValueError('Recommit requires both a document id and a reason')
+    if recommit_document is not None and (not recommit_document or not recommit_reason):
+        raise ValueError('Recommit document and reason must be non-empty')
+    if repair_document is not None and repair_document == recommit_document:
+        raise ValueError('Repair and recommit must target different documents')
+    adjustments = repair_document is not None or recommit_document is not None
     source, source_info = _owned_directory(source_home, 'Source home')
     root = _path(output)
     if root == source or root in source.parents or source in root.parents:
@@ -403,7 +480,7 @@ def produce_rehearsal_snapshot(source_home, output, *, grafts=(), exclusions=(),
                 raise ValueError('Graft destinations collide')
     extra = [_relative(str(item)) for item in exclusions]
     matches, prefixes = _exclusion_matcher(extra)
-    if repair_document is not None and (matches('db', 'db') or matches(CATALOG, 'catalog.sqlite3')):
+    if adjustments and (matches('db', 'db') or matches(CATALOG, 'catalog.sqlite3')):
         raise ValueError('Repair conflicts with a catalog exclusion')
 
     planned_files = {}
@@ -450,7 +527,7 @@ def produce_rehearsal_snapshot(source_home, output, *, grafts=(), exclusions=(),
             else:
                 raise ValueError('Source contains a non-regular file: ' + relative)
 
-    walk(source, '', skip_catalog=repair_document is not None)
+    walk(source, '', skip_catalog=adjustments)
     graft_summaries = []
     for graft_source, destination in graft_specs:
         paths = set(planned_files) | planned_dirs
@@ -469,16 +546,19 @@ def produce_rehearsal_snapshot(source_home, output, *, grafts=(), exclusions=(),
 
     catalog_digests = None
     source_db = source / 'db'
-    if (repair_document is not None or CATALOG in planned_files) and (source_db / 'catalog.sqlite3').exists():
+    if (adjustments or CATALOG in planned_files) and (source_db / 'catalog.sqlite3').exists():
         catalog_digests = _prove_catalog_quiescent(source_db, _quiescence_hook)
 
     with ExitStack() as stack:
-        if repair_document is not None:
+        if adjustments:
             if catalog_digests is None:
                 raise ValueError('Repair requires the source catalog to be present and not excluded')
             work = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='puddingclaw-rehearsal-')))
-            repair_receipt, digest, size = _repair_catalog(source_db, catalog_digests,
-                                                           repair_document, repair_reason, work)
+            repair_receipt, digest, size = _repair_catalog(
+                source_db, catalog_digests,
+                (repair_document, repair_reason) if repair_document is not None else None,
+                (recommit_document, recommit_reason) if recommit_document is not None else None,
+                work)
             if CATALOG in planned_files or 'db' not in planned_dirs:
                 raise ValueError('Repair catalog placement collides with payload content')
             total += size
@@ -578,6 +658,8 @@ def main(argv=None):
     parser.add_argument('--follow-symlinks', action='store_true')
     parser.add_argument('--repair-document', metavar='DOC_ID')
     parser.add_argument('--repair-reason', metavar='TEXT')
+    parser.add_argument('--recommit-document', metavar='DOC_ID')
+    parser.add_argument('--recommit-reason', metavar='TEXT')
     parser.add_argument('--receipt')
     args = parser.parse_args(argv)
     try:
@@ -585,7 +667,8 @@ def main(argv=None):
         result = produce_rehearsal_snapshot(
             args.source_home, args.output, grafts=grafts, exclusions=args.exclude,
             follow_symlinks=args.follow_symlinks, repair_document=args.repair_document,
-            repair_reason=args.repair_reason, receipt=args.receipt)
+            repair_reason=args.repair_reason, recommit_document=args.recommit_document,
+            recommit_reason=args.recommit_reason, receipt=args.receipt)
     except Exception:
         print(json.dumps({'format': RECEIPT_FORMAT, 'status': 'error',
                           'error_code': 'rehearsal_snapshot_rejected', 'activation_allowed': False},

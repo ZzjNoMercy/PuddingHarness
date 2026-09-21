@@ -450,6 +450,8 @@ class _Context:
         self.mappings = list(args.mappings)
         self.repair_document = args.repair_document
         self.repair_reason = args.repair_reason
+        self.recommit_document = args.recommit_document
+        self.recommit_reason = args.recommit_reason
         self.exclusions = list(args.exclude)
         self.wiki_root = args.wiki_root_relative
         self.timeout = args.timeout_seconds
@@ -486,6 +488,8 @@ def _step_snapshot(ctx):
         command += ['--exclude', exclusion]
     if ctx.repair_document is not None:
         command += ['--repair-document', ctx.repair_document, '--repair-reason', ctx.repair_reason]
+    if ctx.recommit_document is not None:
+        command += ['--recommit-document', ctx.recommit_document, '--recommit-reason', ctx.recommit_reason]
     result = _run_cli(command, ctx.timeout, 'snapshot')
     commitment = result.get('commitment')
     if (result.get('status') != 'verified' or result.get('activation_allowed') is not False
@@ -1382,6 +1386,7 @@ def _parameters_digest(args, work, knowledge_python, window_operation):
              'scenario': args.scenario, 'window_operation': window_operation,
              'grafts': list(args.graft), 'mappings': list(args.mappings),
              'repair_document': args.repair_document, 'repair_reason': args.repair_reason,
+             'recommit_document': args.recommit_document, 'recommit_reason': args.recommit_reason,
              'exclusions': list(args.exclude), 'wiki_root_relative': args.wiki_root_relative,
              'timeout_seconds': args.timeout_seconds}
     return _digest(_encoded(value))
@@ -1408,6 +1413,10 @@ def run_rehearsal(args):
         raise ValueError('Invalid rehearsal step timeout')
     if (args.repair_document is None) != (args.repair_reason is None):
         raise ValueError('Repair requires both a document id and a reason')
+    if (args.recommit_document is None) != (args.recommit_reason is None):
+        raise ValueError('Recommit requires both a document id and a reason')
+    if args.repair_document is not None and args.repair_document == args.recommit_document:
+        raise ValueError('Repair and recommit must target different documents')
     _relative(args.wiki_root_relative)
     for graft in args.graft:
         source, separator, destination = graft.partition('=')
@@ -1513,6 +1522,8 @@ def main(argv=None):
     parser.add_argument('--map', dest='mappings', action='append', default=[], metavar='SRC=DST')
     parser.add_argument('--repair-document', metavar='DOC_ID')
     parser.add_argument('--repair-reason', metavar='TEXT')
+    parser.add_argument('--recommit-document', metavar='DOC_ID')
+    parser.add_argument('--recommit-reason', metavar='TEXT')
     parser.add_argument('--exclude', action='append', default=[], metavar='REL')
     parser.add_argument('--wiki-root-relative', default=DEFAULT_WIKI_ROOT, metavar='REL',
                         help='Wiki root inside the snapshot payload (default: llm-wiki)')

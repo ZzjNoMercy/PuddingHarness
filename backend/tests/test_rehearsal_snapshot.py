@@ -218,12 +218,14 @@ def test_repair_removes_dangling_row_and_receipts_digests(legacy, tmp_path):
     with VerifiedSourceSnapshot(root) as snapshot:
         assert snapshot.commitment == result['commitment']
     repair = json.loads(receipt.read_bytes())['repair']
-    assert repair['document'] == {'id': 'doc_dangling', 'title': 'Dangling document',
-                                  'storage_path': 'data/attachments/missing.md'}
+    assert repair['delete']['document'] == {'id': 'doc_dangling', 'title': 'Dangling document',
+                                            'storage_path': 'data/attachments/missing.md'}
+    assert repair['delete']['dependent_deletions'] == []
+    assert repair['recommit'] is None
     assert repair['before_digests'] == before
     assert repair['after_digest'] == sha(catalog.read_bytes())
     assert repair['foreign_key_check'] == 'clean' and repair['integrity_check'] == 'ok'
-    assert repair['reason'] == 'dangling storage_path target is missing'
+    assert repair['delete']['reason'] == 'dangling storage_path target is missing'
     # The source catalog is untouched; only the payload copy was repaired.
     assert {name: sha((home / 'db' / name).read_bytes()) for name in sidecars} == before
     # The payload copy is a clean single-file catalog without the dangling row.
@@ -281,8 +283,9 @@ def test_repair_deletes_dependent_source_items_and_receipts_them(legacy, tmp_pat
     with VerifiedSourceSnapshot(root) as snapshot:
         assert snapshot.commitment == result['commitment']
     repair = json.loads(receipt.read_bytes())['repair']
-    assert repair['document']['id'] == 'doc_dangling'
-    assert repair['dependent_deletions'] == [{'table': 'knowledge_source_items', 'id': 'sitem_dangling'}]
+    assert repair['delete']['document']['id'] == 'doc_dangling'
+    assert repair['delete']['dependent_deletions'] == [{'table': 'knowledge_source_items', 'id': 'sitem_dangling'}]
+    assert repair['recommit'] is None
     assert repair['before_digests'] == before
     assert repair['foreign_key_check'] == 'clean' and repair['integrity_check'] == 'ok'
     catalog = root / 'payload/db/catalog.sqlite3'
@@ -343,6 +346,173 @@ def test_repair_refuses_unrelated_violations_that_remain(legacy, tmp_path):
                                    repair_document='doc_dangling',
                                    repair_reason='dangling storage_path target is missing')
     assert not (tmp_path.resolve() / 'snapshot').exists()
+
+
+def add_drift_columns(connection):
+    connection.executescript("""
+        ALTER TABLE knowledge_documents ADD COLUMN content_sha256 TEXT;
+        ALTER TABLE knowledge_documents ADD COLUMN size_bytes INTEGER;
+        ALTER TABLE knowledge_documents ADD COLUMN doc_metadata TEXT;
+    """)
+
+
+def add_drifted_document(connection, body, *, metadata=None, content_sha256='1' * 64, size_bytes=3):
+    connection.execute(
+        "INSERT INTO knowledge_documents (id, knowledge_base_id, title, storage_path,"
+        " content_sha256, size_bytes, doc_metadata) VALUES ('doc_drifted', 'kb1', 'Drifted', ?, ?, ?, ?)",
+        (str(body), content_sha256, size_bytes, json.dumps(metadata) if metadata is not None else None))
+    connection.commit()
+
+
+def test_recommit_rebinds_drifted_pdf_body(legacy, tmp_path):
+    # Mirrors the real rehearsal Home: a MinerU-converted PDF document whose
+    # Markdown body was edited after import, so the recorded body digest and
+    # size are stale while the original-PDF binding is intact.
+    home, connection = legacy
+    base = tmp_path.resolve()
+    graft = graft_tree(base)
+    body = graft / 'sub/paper.md'
+    body.write_bytes(b'# Edited after import\n')
+    body.chmod(0o644)
+    original = graft / 'paper.pdf'
+    original.write_bytes(b'%PDF-fixture')
+    original.chmod(0o644)
+    add_drift_columns(connection)
+    metadata = {'mode': 'multimodal_pdf', 'original_path': str(original),
+                'original_sha256': sha(original.read_bytes()), 'markdown_sha256': '0' * 64}
+    add_drifted_document(connection, body, metadata=metadata,
+                         content_sha256=sha(original.read_bytes()), size_bytes=999)
+    root, receipt = base / 'snapshot', base / 'receipt.json'
+    result = produce_rehearsal_snapshot(home, root, grafts=[(graft, 'external/knowledge')],
+                                        recommit_document='doc_drifted',
+                                        recommit_reason='markdown body edited after import',
+                                        receipt=receipt)
+    assert result['status'] == 'verified'
+    with VerifiedSourceSnapshot(root) as snapshot:
+        assert snapshot.commitment == result['commitment']
+    repair = json.loads(receipt.read_bytes())['repair']
+    assert repair['delete'] is None
+    assert repair['recommit']['document']['id'] == 'doc_drifted'
+    assert repair['recommit']['updates'] == {
+        'markdown_sha256': {'from': '0' * 64, 'to': sha(body.read_bytes())},
+        'size_bytes': {'from': 999, 'to': len(body.read_bytes())}}
+    assert repair['recommit']['reason'] == 'markdown body edited after import'
+    assert repair['foreign_key_check'] == 'clean' and repair['integrity_check'] == 'ok'
+    catalog = root / 'payload/db/catalog.sqlite3'
+    check = sqlite3.connect(f'file:{catalog}?mode=ro&immutable=1', uri=True)
+    try:
+        row = check.execute('SELECT content_sha256, size_bytes, doc_metadata FROM knowledge_documents'
+                            " WHERE id = 'doc_drifted'").fetchone()
+        # The original-PDF binding is untouched; only the body was recommitted.
+        assert row[0] == sha(original.read_bytes())
+        assert row[1] == len(body.read_bytes())
+        assert json.loads(row[2])['markdown_sha256'] == sha(body.read_bytes())
+    finally:
+        check.close()
+    # The source catalog is untouched: its row still records the stale digest.
+    assert json.loads(connection.execute(
+        "SELECT doc_metadata FROM knowledge_documents WHERE id = 'doc_drifted'").fetchone()[0]
+        )['markdown_sha256'] == '0' * 64
+    # A re-run with identical inputs is byte-identical and idempotent.
+    plan_raw = (root / 'plan.json').read_bytes()
+    again = produce_rehearsal_snapshot(home, root, grafts=[(graft, 'external/knowledge')],
+                                       recommit_document='doc_drifted',
+                                       recommit_reason='markdown body edited after import',
+                                       receipt=receipt)
+    assert again['idempotent'] and again['commitment'] == result['commitment']
+    assert (root / 'plan.json').read_bytes() == plan_raw
+
+
+def test_recommit_rebinds_drifted_plain_body(legacy, tmp_path):
+    home, connection = legacy
+    base = tmp_path.resolve()
+    graft = graft_tree(base)
+    body = graft / 'sub/plain.md'
+    body.write_bytes(b'# Plain body edited after import\n')
+    body.chmod(0o644)
+    add_drift_columns(connection)
+    add_drifted_document(connection, body, metadata=None, content_sha256='2' * 64, size_bytes=7)
+    root, receipt = base / 'snapshot', base / 'receipt.json'
+    produce_rehearsal_snapshot(home, root, grafts=[(graft, 'external/knowledge')],
+                               recommit_document='doc_drifted',
+                               recommit_reason='body edited after import', receipt=receipt)
+    repair = json.loads(receipt.read_bytes())['repair']
+    assert repair['recommit']['updates'] == {
+        'content_sha256': {'from': '2' * 64, 'to': sha(body.read_bytes())},
+        'size_bytes': {'from': 7, 'to': len(body.read_bytes())}}
+    catalog = root / 'payload/db/catalog.sqlite3'
+    check = sqlite3.connect(f'file:{catalog}?mode=ro&immutable=1', uri=True)
+    try:
+        assert check.execute("SELECT content_sha256, size_bytes FROM knowledge_documents"
+                             " WHERE id = 'doc_drifted'").fetchone() == (sha(body.read_bytes()),
+                                                                         len(body.read_bytes()))
+    finally:
+        check.close()
+
+
+def test_recommit_refuses_a_document_that_is_not_drifted(legacy, tmp_path):
+    home, connection = legacy
+    base = tmp_path.resolve()
+    graft = graft_tree(base)
+    add_drift_columns(connection)
+    add_drifted_document(connection, graft / 'a.md',
+                         content_sha256=sha((graft / 'a.md').read_bytes()),
+                         size_bytes=(graft / 'a.md').stat().st_size)
+    with pytest.raises(ValueError, match='not drifted'):
+        produce_rehearsal_snapshot(home, base / 'snapshot', grafts=[(graft, 'external/knowledge')],
+                                   recommit_document='doc_drifted', recommit_reason='no drift')
+    assert not (base / 'snapshot').exists()
+
+
+def test_recommit_requires_an_existing_document(legacy, tmp_path):
+    home, connection = legacy
+    add_drift_columns(connection)
+    connection.commit()
+    with pytest.raises(ValueError):
+        produce_rehearsal_snapshot(home, tmp_path.resolve() / 'snapshot',
+                                   recommit_document='doc_missing', recommit_reason='no such row')
+    assert not (tmp_path.resolve() / 'snapshot').exists()
+
+
+def test_repair_and_recommit_must_target_different_documents(legacy, tmp_path):
+    home, _ = legacy
+    with pytest.raises(ValueError, match='different documents'):
+        produce_rehearsal_snapshot(home, tmp_path.resolve() / 'snapshot',
+                                   repair_document='doc_dangling', repair_reason='dangling',
+                                   recommit_document='doc_dangling', recommit_reason='drifted')
+    assert not (tmp_path.resolve() / 'snapshot').exists()
+
+
+def test_repair_and_recommit_combine_on_one_working_copy(legacy, tmp_path):
+    home, connection = legacy
+    base = tmp_path.resolve()
+    graft = graft_tree(base)
+    body = graft / 'sub/plain.md'
+    body.write_bytes(b'# Drifted alongside a dangling row\n')
+    body.chmod(0o644)
+    add_drift_columns(connection)
+    add_drifted_document(connection, body, content_sha256='3' * 64, size_bytes=1)
+    root, receipt = base / 'snapshot', base / 'receipt.json'
+    result = produce_rehearsal_snapshot(home, root, grafts=[(graft, 'external/knowledge')],
+                                        repair_document='doc_dangling',
+                                        repair_reason='dangling storage_path target is missing',
+                                        recommit_document='doc_drifted',
+                                        recommit_reason='body edited after import',
+                                        receipt=receipt)
+    assert result['status'] == 'verified'
+    repair = json.loads(receipt.read_bytes())['repair']
+    assert repair['delete']['document']['id'] == 'doc_dangling'
+    assert repair['recommit']['document']['id'] == 'doc_drifted'
+    assert repair['foreign_key_check'] == 'clean' and repair['integrity_check'] == 'ok'
+    catalog = root / 'payload/db/catalog.sqlite3'
+    check = sqlite3.connect(f'file:{catalog}?mode=ro&immutable=1', uri=True)
+    try:
+        ids = [row[0] for row in check.execute('SELECT id FROM knowledge_documents ORDER BY id')]
+        assert ids == ['doc_drifted', 'doc_kept']
+        assert check.execute("SELECT content_sha256 FROM knowledge_documents"
+                             " WHERE id = 'doc_drifted'").fetchone()[0] == sha(body.read_bytes())
+    finally:
+        check.close()
 
 
 def test_rerun_is_byte_identical_and_idempotent(legacy, tmp_path):
