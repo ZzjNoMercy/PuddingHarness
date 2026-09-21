@@ -957,9 +957,9 @@ def _step_window_document_reverse(ctx):
     payload = ctx.path('snapshot') / 'payload'
     bound_blobs = set(bindings.values())
     aliases = {}
-    for _doc_id, relative in (request.get('bindings') or {}).items():
+    for relative in (request.get('bindings') or {}).values():
         if not isinstance(relative, str):
-            raise ValueError('Request binding is invalid')
+            raise TypeError('Request binding is invalid')
         _relative(relative)
         blob = 'blobs/' + _file_digest(payload / relative)[0]
         if blob in bound_blobs:
