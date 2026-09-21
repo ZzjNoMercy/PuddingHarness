@@ -73,7 +73,7 @@ def _executable_identity(python):
     resolved = python.resolve(strict=True)
     with resolved.open('rb') as stream:
         before = os.fstat(stream.fileno())
-        if not stat.S_ISREG(before.st_mode) or before.st_size > 128*1024*1024:
+        if not stat.S_ISREG(before.st_mode) or before.st_size > 256*1024*1024:
             raise ValueError('Knowledge executable must be bounded and regular')
         digest = hashlib.file_digest(stream,'sha256').hexdigest()
         after = os.fstat(stream.fileno())

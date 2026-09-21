@@ -22,7 +22,7 @@ from harness.home_import import prepare_home_import
 
 FORMAT = "puddingknowledge-migrate-from-claw-receipt/v1"
 _MAX_JSON = 1024 * 1024
-_MAX_ARTIFACT = 128 * 1024 * 1024
+_MAX_ARTIFACT = 256 * 1024 * 1024
 _MAX_TOTAL = 2 * 1024**3
 _HEX = "0123456789abcdef"
 

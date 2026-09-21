@@ -8,7 +8,7 @@ from pathlib import Path
 import stat
 
 ROOTS=('sessions','data/attachments','data/large-tool-results','data/harness-scratch','data/harness-rewind')
-MAX_FILE=128*1024*1024
+MAX_FILE=256*1024*1024
 MAX_TOTAL=2*1024**3
 MAX_FILES=10000
 FORMAT='puddingharness-session-import/v1'
