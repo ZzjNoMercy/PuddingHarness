@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 import pytest
-from harness.source_snapshot import VerifiedSourceSnapshot, FORMAT, LOCK_NAME
+from harness.source_snapshot import VerifiedSourceSnapshot, FORMAT, LOCK_NAME, _inventory
 from harness.migration_orchestrator import prepare_migration
 from test_harness_migration_orchestrator import _python_wrapper
 
@@ -69,6 +69,27 @@ def test_snapshot_rejects_untrusted_or_changed_artifacts_before_staging(tmp_path
     with pytest.raises((ValueError,OSError)):
         prepare_migration(root/'payload',b'{}',Path('/unused-python'),tmp_path/'target',source_home_snapshot=root)
     assert not (tmp_path/'target').exists()
+
+
+def test_inventory_directory_order_is_canonical_for_prefix_siblings(tmp_path):
+    # Real Homes carry sibling directories like 'lark-vc' and 'lark-vc-agent':
+    # '-' sorts before '/', so lexicographic order differs from depth-first
+    # traversal order. The inventory must be canonical regardless of names.
+    root=fixture_snapshot(tmp_path);payload=root/'payload'
+    for directory in ['lark-vc','lark-vc/child','lark-vc-agent','lark-vc-agent/child']:
+        (payload/directory).mkdir(mode=0o700)
+    for relative in ['lark-vc/child/data.bin','lark-vc-agent/child/data.bin']:
+        path=payload/relative;path.write_bytes(b'x');path.chmod(0o600)
+    files={p.relative_to(payload).as_posix():{'size':p.stat().st_size,'sha256':sha(p.read_bytes())} for p in payload.rglob('*') if p.is_file()}
+    directories=sorted(p.relative_to(payload).as_posix() for p in payload.rglob('*') if p.is_dir())
+    inventory={'files':files,'directories':directories,'total_bytes':sum(v['size'] for v in files.values())}
+    assert _inventory(payload)==inventory
+    plan={'format':FORMAT,'source_identity':'a'*64,'source_directory_identity':{'device':1,'inode':2},'output_identity':sha(str(root).encode()),'inventory':inventory}
+    manifest=json.loads((root/'manifest.json').read_bytes())
+    manifest['plan_digest']=sha(encoded(plan));manifest['inventory']=inventory
+    (root/'plan.json').write_bytes(encoded(plan));(root/'manifest.json').write_bytes(encoded(manifest))
+    with VerifiedSourceSnapshot(root) as snapshot:
+        assert snapshot.commitment['format']==FORMAT
 
 
 def test_orchestrator_binds_envelope_and_prevents_downgrade(tmp_path):

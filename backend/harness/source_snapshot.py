@@ -126,7 +126,10 @@ def _inventory(root):
     fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
     try: _private(os.fstat(fd),directory=True);walk(fd)
     finally: os.close(fd)
-    return {'files':files,'directories':dirs,'total_bytes':total}
+    # Traversal order is depth-first with sorted siblings, which is not
+    # lexicographic (e.g. 'a-b' sorts before 'a/x' but is visited after it).
+    # Sort so the inventory is canonical regardless of entry names.
+    return {'files':files,'directories':sorted(dirs),'total_bytes':total}
 
 
 class VerifiedSourceSnapshot:
