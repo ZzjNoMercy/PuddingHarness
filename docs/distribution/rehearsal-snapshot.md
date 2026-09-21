@@ -53,7 +53,22 @@ flow first byte-copies the catalog set into a private working copy, opens only
 the working copy, deletes the named `knowledge_documents` row, requires clean
 `PRAGMA foreign_key_check` and `PRAGMA integrity_check`, checkpoints to a
 single file and places it at `payload/db/catalog.sqlite3` without sidecars.
-The repair receipt records before/after digests and the deleted row's
+
+Deleting the document row can leave dependent rows dangling — the real Home
+keeps each imported document's `knowledge_source_items` record
+(`document_id` → `knowledge_documents.id`), the import record of the same
+content. After the document delete the repair therefore runs
+`PRAGMA foreign_key_check` and resolves each violation only by deleting the
+referencing row, and only when all of these hold: the referenced table is
+`knowledge_documents`, the referencing table is in the explicit allowlist
+(currently exactly `knowledge_source_items`), the row still exists, and its
+referencing column points at the deleted document id. At most 16 such
+dependent deletions are allowed. Any other violation — a different referenced
+table, a non-allowlisted referencing table, a row dangling on a different
+document, or anything left when the check is re-run after the dependent
+deletes — refuses the whole repair. The repair receipt records the deletions
+as `dependent_deletions: [{table, id}]` (empty when none were needed) and
+otherwise records before/after digests and the deleted row's
 id/title/storage_path only — never row content or secret bytes, matching the
 receipt discipline for `.vault-keys` material elsewhere in the payload.
 

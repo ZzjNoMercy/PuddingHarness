@@ -80,6 +80,8 @@ CATALOG = 'db/catalog.sqlite3'
 CATALOG_NAMES = ('catalog.sqlite3', 'catalog.sqlite3-wal', 'catalog.sqlite3-shm', 'catalog.sqlite3-journal')
 CATALOG_RELS = frozenset('db/' + name for name in CATALOG_NAMES)
 PART_SUFFIX = '.rehearsal-part'
+DEPENDENT_DELETE_ALLOWLIST = frozenset({'knowledge_source_items'})
+MAX_DEPENDENT_DELETIONS = 16
 
 
 def _owned_directory(value, label):
@@ -192,9 +194,48 @@ def _copy_raw(source, target):
         os.close(fd)
 
 
+def _delete_dependents(connection, document_id):
+    """Resolve foreign key violations left by the document deletion.
+
+    A violation is resolved only by deleting the referencing row, and only when
+    the referenced table is knowledge_documents, the referencing table is in
+    DEPENDENT_DELETE_ALLOWLIST and the row itself still exists and points at
+    the deleted document. Anything else refuses the repair; at most
+    MAX_DEPENDENT_DELETIONS rows may be deleted. Returns the receipt entries.
+    """
+    violations = connection.execute('PRAGMA foreign_key_check').fetchall()
+    deletions = []
+    for table, rowid, referenced, fk_index in violations:
+        if referenced != 'knowledge_documents':
+            raise ValueError('Repair left a foreign key violation outside knowledge_documents')
+        if table not in DEPENDENT_DELETE_ALLOWLIST:
+            raise ValueError('Repair left a foreign key violation outside the dependent allowlist')
+        if len(deletions) >= MAX_DEPENDENT_DELETIONS:
+            raise ValueError('Repair exceeded the dependent deletion limit')
+        if rowid is None:
+            raise ValueError('Repair violation has no addressable row')
+        keys = [key for key in connection.execute(f'PRAGMA foreign_key_list({table})').fetchall()
+                if key[0] == fk_index and key[2] == 'knowledge_documents']
+        columns = sorted({key[3] for key in keys})
+        if len(columns) != 1:
+            raise ValueError('Repair violation has no single referencing column')
+        rows = connection.execute(f'SELECT id, "{columns[0]}" FROM {table} WHERE rowid = ?',
+                                  (rowid,)).fetchall()
+        if len(rows) != 1:
+            raise ValueError('Repair dependent row is missing')
+        if rows[0][1] != document_id:
+            raise ValueError('Repair violation does not reference the deleted document')
+        connection.execute(f'DELETE FROM {table} WHERE rowid = ?', (rowid,))
+        deletions.append({'table': table, 'id': rows[0][0]})
+    return deletions
+
+
 def _repair_catalog(db_dir, before_digests, document_id, reason, work):
     """Delete one knowledge_documents row on a private working copy only.
 
+    Rows in allowlisted tables left dangling by the deletion (the real Home's
+    knowledge_source_items import record of the same content) are deleted as
+    recorded dependents; any other foreign key violation refuses the repair.
     The real catalog is never opened with sqlite. Returns the repair receipt,
     the repaired single-file digest and its size.
     """
@@ -216,6 +257,7 @@ def _repair_catalog(db_dir, before_digests, document_id, reason, work):
             raise ValueError('Repair document is not present in the catalog')
         row = rows[0]
         connection.execute('DELETE FROM knowledge_documents WHERE id = ?', (document_id,))
+        dependent_deletions = _delete_dependents(connection, document_id)
         if connection.execute('PRAGMA foreign_key_check').fetchall():
             raise ValueError('Catalog foreign key check failed after repair')
         if connection.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
@@ -231,6 +273,7 @@ def _repair_catalog(db_dir, before_digests, document_id, reason, work):
     digest, size = _hash_source_file(catalog, follow=False)
     receipt = {'format': REPAIR_FORMAT,
                'document': {'id': row[0], 'title': row[1], 'storage_path': row[2]},
+               'dependent_deletions': dependent_deletions,
                'before_digests': dict(sorted(before_digests.items())),
                'after_digest': digest,
                'size_bytes': size,

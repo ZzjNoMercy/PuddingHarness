@@ -254,6 +254,97 @@ def test_repair_requires_an_existing_document(legacy, tmp_path):
     assert not (tmp_path.resolve() / 'snapshot').exists()
 
 
+def add_source_items(connection):
+    connection.execute('CREATE TABLE knowledge_source_items ('
+                       'id TEXT PRIMARY KEY, knowledge_base_id TEXT NOT NULL,'
+                       ' source_connection_id TEXT NOT NULL, external_id TEXT NOT NULL,'
+                       ' document_id TEXT REFERENCES knowledge_documents(id))')
+
+
+def test_repair_deletes_dependent_source_items_and_receipts_them(legacy, tmp_path):
+    home, connection = legacy
+    base = tmp_path.resolve()
+    sidecars = ('catalog.sqlite3', 'catalog.sqlite3-wal', 'catalog.sqlite3-shm')
+    add_source_items(connection)
+    # Mirrors the real rehearsal Home: the source item is the import record of
+    # the same dangling content; the kept item tracks the surviving document.
+    connection.execute("INSERT INTO knowledge_source_items VALUES"
+                       " ('sitem_dangling', 'kb1', 'conn1', 'document:doc_dangling', 'doc_dangling')")
+    connection.execute("INSERT INTO knowledge_source_items VALUES"
+                       " ('sitem_kept', 'kb1', 'conn1', 'document:doc_kept', 'doc_kept')")
+    connection.commit()
+    before = {name: sha((home / 'db' / name).read_bytes()) for name in sidecars}
+    root, receipt = base / 'snapshot', base / 'receipt.json'
+    result = produce_rehearsal_snapshot(home, root, repair_document='doc_dangling',
+                                        repair_reason='dangling storage_path target is missing',
+                                        receipt=receipt)
+    with VerifiedSourceSnapshot(root) as snapshot:
+        assert snapshot.commitment == result['commitment']
+    repair = json.loads(receipt.read_bytes())['repair']
+    assert repair['document']['id'] == 'doc_dangling'
+    assert repair['dependent_deletions'] == [{'table': 'knowledge_source_items', 'id': 'sitem_dangling'}]
+    assert repair['before_digests'] == before
+    assert repair['foreign_key_check'] == 'clean' and repair['integrity_check'] == 'ok'
+    catalog = root / 'payload/db/catalog.sqlite3'
+    payload_digest = sha(catalog.read_bytes())
+    assert repair['after_digest'] == payload_digest
+    check = sqlite3.connect(catalog)
+    try:
+        assert check.execute('SELECT id FROM knowledge_documents ORDER BY id').fetchall() == [('doc_kept',)]
+        assert check.execute('SELECT id FROM knowledge_source_items ORDER BY id').fetchall() == [('sitem_kept',)]
+        assert check.execute('PRAGMA foreign_key_check').fetchall() == []
+        assert check.execute('PRAGMA integrity_check').fetchall() == [('ok',)]
+    finally:
+        check.close()
+    assert sha(catalog.read_bytes()) == payload_digest
+    # The source catalog is untouched: both rows are still present there.
+    assert {name: sha((home / 'db' / name).read_bytes()) for name in sidecars} == before
+    assert connection.execute('SELECT COUNT(*) FROM knowledge_documents').fetchall() == [(2,)]
+    assert connection.execute('SELECT COUNT(*) FROM knowledge_source_items').fetchall() == [(2,)]
+
+
+def test_repair_refuses_non_allowlisted_dependent_violations(legacy, tmp_path):
+    home, connection = legacy
+    connection.execute('CREATE TABLE knowledge_attachments (id TEXT PRIMARY KEY,'
+                       ' document_id TEXT REFERENCES knowledge_documents(id))')
+    connection.execute("INSERT INTO knowledge_attachments VALUES ('att_1', 'doc_dangling')")
+    connection.commit()
+    with pytest.raises(ValueError):
+        produce_rehearsal_snapshot(home, tmp_path.resolve() / 'snapshot',
+                                   repair_document='doc_dangling',
+                                   repair_reason='dangling storage_path target is missing')
+    assert not (tmp_path.resolve() / 'snapshot').exists()
+
+
+def test_repair_refuses_beyond_the_dependent_deletion_limit(legacy, tmp_path):
+    home, connection = legacy
+    add_source_items(connection)
+    for index in range(17):
+        connection.execute("INSERT INTO knowledge_source_items VALUES (?, 'kb1', 'conn1', ?, 'doc_dangling')",
+                           (f'sitem_{index:02d}', f'document:doc_dangling:{index}'))
+    connection.commit()
+    with pytest.raises(ValueError):
+        produce_rehearsal_snapshot(home, tmp_path.resolve() / 'snapshot',
+                                   repair_document='doc_dangling',
+                                   repair_reason='dangling storage_path target is missing')
+    assert not (tmp_path.resolve() / 'snapshot').exists()
+
+
+def test_repair_refuses_unrelated_violations_that_remain(legacy, tmp_path):
+    home, connection = legacy
+    add_source_items(connection)
+    # An allowlisted row dangling on a DIFFERENT document is a pre-existing
+    # violation the repair must not clear or mask: it remains and refuses.
+    connection.execute("INSERT INTO knowledge_source_items VALUES"
+                       " ('sitem_other', 'kb1', 'conn1', 'document:doc_other', 'doc_other')")
+    connection.commit()
+    with pytest.raises(ValueError):
+        produce_rehearsal_snapshot(home, tmp_path.resolve() / 'snapshot',
+                                   repair_document='doc_dangling',
+                                   repair_reason='dangling storage_path target is missing')
+    assert not (tmp_path.resolve() / 'snapshot').exists()
+
+
 def test_rerun_is_byte_identical_and_idempotent(legacy, tmp_path):
     home, _ = legacy
     base = tmp_path.resolve()
