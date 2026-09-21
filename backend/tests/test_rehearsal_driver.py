@@ -428,6 +428,36 @@ def test_live_catalog_with_recommit_finalizes_and_preserves_source(tmp_path):
         connection.close()
 
 
+@installed
+def test_virtual_root_run_finalizes_and_requires_the_flag(tmp_path):
+    base = tmp_path.resolve()
+    corpus = _corpus(base)
+    body = b'# Note\n\n![figure](/knowledge/assets/figure.png)\n'
+    (corpus / 'imported/note.md').write_bytes(body)
+    (corpus / 'assets/figure.png').write_bytes(b'figure')
+    documents = _documents(corpus) + [
+        {'id': 'doc-4', 'source_path': str(corpus) + '/imported/note.md',
+         'storage_path': str(corpus) + '/imported/note.md',
+         'content_sha256': hashlib.sha256(body).hexdigest()},
+    ]
+    home, connection = _legacy_home(base, documents)
+    assert connection is None
+    # Without a rebinding rule the absolute in-body reference refuses.
+    refused = _run_driver(base / 'work-refused', home, corpus)
+    assert refused.returncode == 1
+    error = json.loads(refused.stdout)
+    assert error['step'] == 'request' and error['step_error_code'] == 'claw_migration_request_rejected'
+    work = base / 'work'
+    report = _report(_run_driver(work, home, corpus, '--virtual-root', '/knowledge=external/knowledge'))
+    assert report['terminal_state'] == 'FINALIZED'
+    request = _checkpoint_steps(work)[1]['receipt']
+    assert request['counts']['documents'] == 4
+    # The rebound dependency bytes landed in the migrated home resources tree.
+    assert (work / 'knowledge-home/resources/external/knowledge/assets/figure.png').read_bytes() == b'figure'
+    again = _report(_run_driver(work, home, corpus, '--virtual-root', '/knowledge=external/knowledge'))
+    assert again['run_record_digest'] == report['run_record_digest']
+
+
 def test_step_table_is_the_ordered_path_a_chain():
     assert STEP_NAMES == ['snapshot', 'request', 'orchestrate', 'discover', 'prepare',
                           'enroll', 'suspend', 'cutover', 'finalize']

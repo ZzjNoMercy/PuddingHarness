@@ -448,6 +448,7 @@ class _Context:
         self.window_operation = window_operation
         self.grafts = list(args.graft)
         self.mappings = list(args.mappings)
+        self.virtual_roots = list(args.virtual_roots)
         self.repair_document = args.repair_document
         self.repair_reason = args.repair_reason
         self.recommit_document = args.recommit_document
@@ -532,6 +533,8 @@ def _step_request(ctx):
                '--receipt', str(request / 'receipt.json')]
     for mapping in ctx.mappings:
         command += ['--map', mapping]
+    for virtual_root in ctx.virtual_roots:
+        command += ['--virtual-root', virtual_root]
     result = _run_cli(command, ctx.timeout, 'request')
     counts = result.get('counts')
     if (result.get('format') != REQUEST_FORMAT or result.get('state') != 'verified_inactive_request'
@@ -946,6 +949,13 @@ def _step_window_document_reverse(ctx):
     if attachments:
         _replace_private(root / 'attachments.json', _encoded(attachments))
         command += ['--attachment-bindings', str(root / 'attachments.json')]
+    for virtual_root in ctx.virtual_roots:
+        prefix, separator, destination = virtual_root.partition('=')
+        if not separator:
+            raise ValueError('Virtual roots must be VIRTUAL_PREFIX=DST_RELATIVE')
+        # Reverse collection runs against the migrated home layout, where the
+        # forward chain stored dependency bytes under resources/<payload path>.
+        command += ['--virtual-root', prefix + '=resources/' + destination]
     result = _run_cli(command, ctx.timeout, 'window-document-reverse')
     if (result.get('format') != DOCUMENT_REVERSE_FORMAT
             or result.get('state') != 'verified_inactive_documents'
@@ -1385,6 +1395,7 @@ def _parameters_digest(args, work, knowledge_python, window_operation):
              'operation': args.operation,
              'scenario': args.scenario, 'window_operation': window_operation,
              'grafts': list(args.graft), 'mappings': list(args.mappings),
+             'virtual_roots': list(args.virtual_roots),
              'repair_document': args.repair_document, 'repair_reason': args.repair_reason,
              'recommit_document': args.recommit_document, 'recommit_reason': args.recommit_reason,
              'exclusions': list(args.exclude), 'wiki_root_relative': args.wiki_root_relative,
@@ -1427,6 +1438,11 @@ def run_rehearsal(args):
         source, separator, destination = mapping.partition('=')
         if not separator or not source or not destination:
             raise ValueError('Mappings must be SRC=DST')
+        _relative(destination)
+    for virtual_root in args.virtual_roots:
+        prefix, separator, destination = virtual_root.partition('=')
+        if not separator or not prefix.startswith('/') or not destination:
+            raise ValueError('Virtual roots must be VIRTUAL_PREFIX=DST_RELATIVE')
         _relative(destination)
     if not args.mappings:
         raise ValueError('At least one --map SRC=DST is required')
@@ -1520,6 +1536,9 @@ def main(argv=None):
                              'default: OPERATION-window)')
     parser.add_argument('--graft', action='append', default=[], metavar='SRC_DIR=DST_RELATIVE')
     parser.add_argument('--map', dest='mappings', action='append', default=[], metavar='SRC=DST')
+    parser.add_argument('--virtual-root', dest='virtual_roots', action='append', default=[],
+                        metavar='VIRTUAL_PREFIX=DST_RELATIVE',
+                        help='Rebind absolute in-body references under VIRTUAL_PREFIX onto a snapshot-relative root')
     parser.add_argument('--repair-document', metavar='DOC_ID')
     parser.add_argument('--repair-reason', metavar='TEXT')
     parser.add_argument('--recommit-document', metavar='DOC_ID')
