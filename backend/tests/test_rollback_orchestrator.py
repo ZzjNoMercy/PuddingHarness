@@ -14,6 +14,7 @@ from harness import rollback_orchestrator as orchestrator
 from harness import writer_barrier as barrier
 from harness.installation_guard import AdmissionUnavailable, InstallationGuard
 from harness.installation_manifest import validate_manifest
+from test_cutover_orchestrator import _prepared_manifest as _strict_prepared_manifest
 from test_writer_barrier import SETUP
 
 KNOWLEDGE = os.environ.get('KNOWLEDGE_TEST_PYTHON')
@@ -21,26 +22,7 @@ pytestmark = pytest.mark.skipif(not KNOWLEDGE, reason='Explicit independent Know
 
 
 def _prepared_manifest(directory, suffix=''):
-    directory.mkdir(mode=0o700)
-    value = {'format': 'agent-knowledge-platform-installation-migration/v1',
-             'source': {'installation_id': 'inst-1' + suffix, 'schema_revision': 'rev-1',
-                        'catalog_revision': 'rev-1'},
-             'targets': {'puddingharness': 'puddingharness-backend@0.1.0',
-                         'puddingknowledge': 'puddingknowledge-local@0.1.0'},
-             'object_summaries': [{'domain': 'session_harness', 'object_count': 1,
-                                   'source_digest': 'sha256:' + 'a' * 64}],
-             'id_resource_mappings': [], 'credential_rebinds': [],
-             'active_writers': {'session_harness': 'puddingclaw', 'knowledge_catalog': 'puddingclaw',
-                                'connector_jobs': 'puddingclaw'},
-             'checkpoint': {'stage': 'prepared'}, 'rollback_strategy': 'no_write_until_finalized',
-             'state': 'PREPARED', 'rollback_window_open': True,
-             'snapshot_digest': 'sha256:' + 'b' * 64, 'staging_namespace': 'sha256:' + 'c' * 64,
-             'active_installation_revision': None, 'completed_at': None,
-             'started_at': '2026-09-16T00:00:00Z'}
-    path = directory / 'manifest.json'
-    path.write_bytes(json.dumps(value, sort_keys=True, separators=(',', ':')).encode())
-    path.chmod(0o600)
-    return path
+    return _strict_prepared_manifest(directory, suffix)
 
 
 def _evidence(directory, payload=b'{"format":"rollback-evidence/v1","chain":"out-of-band"}\n'):

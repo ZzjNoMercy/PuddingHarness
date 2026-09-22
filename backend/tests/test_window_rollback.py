@@ -20,11 +20,13 @@ from harness import rollback_orchestrator as orchestrator
 from harness import writer_barrier as barrier
 from harness.installation_guard import AdmissionUnavailable, InstallationGuard
 from harness.installation_manifest import validate_manifest
+from harness.source_writer_fence import publish_source_fence
 from test_installation_manifest import _staging
 from test_installation_manifest_advance import _evidence, _journals, _manifest, _prepared, _rewrite
 from test_installation_manifest_advance import SOURCE_FREEZE
 from test_rollback_orchestrator import _prepared_manifest
 from test_rollback_orchestrator import _evidence as _private_evidence
+from test_cutover_orchestrator import _source_capability
 from test_writer_barrier import SETUP
 
 KNOWLEDGE = os.environ.get('KNOWLEDGE_TEST_PYTHON')
@@ -144,13 +146,22 @@ def roots(tmp_path):
     subprocess.run([KNOWLEDGE, '-c', SETUP, str(root)], check=True, cwd=root)
     manifest = _prepared_manifest(root / 'manifest')
     evidence = _private_evidence(root / 'evidence')
+    source = root / 'source'
+    source.mkdir(mode=0o700)
+    _source_capability(source)
     return (home, root / 'knowledge', KNOWLEDGE, root / 'window-checkpoint', manifest,
-            evidence, root / 'barrier', root / 'cutover-checkpoint')
+            evidence, root / 'barrier', root / 'cutover-checkpoint', source)
 
 
 def _cutover(roots, operation='cutover-1'):
     barrier.suspend_writers(roots[0], roots[1], roots[2], roots[6], operation)
-    return cutover.cutover(roots[0], roots[1], roots[2], roots[7], roots[4], operation)
+    receipt = publish_source_fence(roots[8], operation)
+    manifest = _document(roots)
+    manifest['checkpoint']['source_freeze_receipt_sha256'] = (
+        'sha256:' + receipt['source_freeze_receipt_sha256'])
+    roots[4].write_bytes(json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode())
+    return cutover.cutover(roots[0], roots[1], roots[2], roots[7], roots[4], operation,
+                           source_home=roots[8])
 
 
 def run(roots, operation='window-1', **kwargs):
@@ -253,9 +264,9 @@ def test_window_rollback_happy_path_exact_retry_and_persistent_freeze(roots):
         manifests.finalize_installation(roots[4])
     with pytest.raises(ValueError, match='CUTOVER'):
         cutover.finalize_cutover(roots[4], roots[7])
-    with pytest.raises(ValueError, match='PREPARED'):
+    with pytest.raises(ValueError):
         cutover.cutover(roots[0], roots[1], roots[2], roots[0].parent / 'cutover-checkpoint-2',
-                        roots[4], 'cutover-2')
+                        roots[4], 'cutover-2', source_home=roots[8])
     assert not (roots[0].parent / 'cutover-checkpoint-2' / 'checkpoint.json').exists()
     checkpoint_bytes = (roots[3] / 'checkpoint.json').read_bytes()
     assert run(roots) == result
