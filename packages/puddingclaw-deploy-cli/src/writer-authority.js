@@ -11,6 +11,8 @@ import { CliError } from './errors.js';
 const BINDING='.installation-authority-v1.json';
 const FORMAT='puddingharness-writer-authority/v1';
 const SELF='puddingharness';
+const POINTER='active-installation.json';
+const POINTER_FORMAT='puddingharness-active-installation/v1';
 const OPERATION_RE=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
 const HEX64_RE=/^[0-9a-f]{64}$/;
 const DIGEST_RE=/^sha256:[0-9a-f]{64}$/;
@@ -85,6 +87,23 @@ export async function assertWriterAuthority(home){
     }
     const head=document.events[document.events.length-1];
     if(head.state==='suspended' || (head.state==='assigned' && head.writer!==SELF))fail();
+    if(head.state==='assigned'){
+      const pointer=await read(path.join(home,POINTER));
+      const pointerKeys=['format','operation_id','cutover_manifest_sha256','prepared_manifest_sha256',
+        'source_home_identity','source_freeze_receipt_sha256','active_installation_revision',
+        'harness_assigned_event_sha256','knowledge_assigned_event_sha256','active_writers'];
+      const writers={session_harness:'puddingharness',knowledge_catalog:'puddingknowledge',connector_jobs:'puddingknowledge'};
+      if(!keys(pointer,pointerKeys) || pointer.format!==POINTER_FORMAT
+        || pointer.operation_id!==head.operation_id
+        || pointer.prepared_manifest_sha256!==head.migration_manifest_sha256
+        || pointer.active_installation_revision!==head.active_installation_revision
+        || pointer.harness_assigned_event_sha256!==head.sha256
+        || !same(pointer.active_writers,writers)
+        || !HEX64_RE.test(pointer.cutover_manifest_sha256||'')
+        || !HEX64_RE.test(pointer.source_home_identity||'')
+        || !DIGEST_RE.test(pointer.source_freeze_receipt_sha256||'')
+        || !HEX64_RE.test(pointer.knowledge_assigned_event_sha256||''))fail();
+    }
     return {binding_sha256:document.binding_sha256,revision:head.revision,revision_sha256:head.sha256};
   }catch(error){if(error instanceof CliError)throw error;fail();}
 }

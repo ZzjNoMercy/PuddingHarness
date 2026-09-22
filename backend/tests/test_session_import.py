@@ -68,7 +68,7 @@ def test_cli_is_independent_and_report_does_not_include_content(tmp_path):
     if os.environ.get('HARNESS_TEST_INSTALLED')=='1':env.pop('PYTHONPATH',None)
     else:env['PYTHONPATH']=str(Path(__file__).parents[1])
     value=subprocess.run([sys.executable,'-m','harness.session_import','--source-snapshot',str(source),
-        '--staging',str(tmp_path/'stage')],env=env,cwd='/private/tmp',capture_output=True,text=True,timeout=20)
+        '--staging',str(tmp_path/'stage')],env=env,cwd=tmp_path,capture_output=True,text=True,timeout=20)
     assert value.returncode==0,value.stderr+value.stdout
     report=json.loads(value.stdout);assert report['state']=='verified_inactive'
     assert report['settings_migrated'] is False
@@ -100,7 +100,7 @@ def pause(_):
 prepare_session_import(Path(sys.argv[1]),Path(sys.argv[2]),_after_copy=pause)
 '''
     process=subprocess.Popen([sys.executable,'-c',program,str(source),str(stage),str(marker)],
-        env=env,cwd='/private/tmp',stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        env=env,cwd=tmp_path,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
         deadline=time.monotonic()+10
         while not marker.exists() and process.poll() is None and time.monotonic()<deadline:time.sleep(.03)

@@ -24,11 +24,13 @@ This module carries two rollback commands:
 A crash anywhere leaves both products frozen and fail-closed; exact retry
 resumes from the last committed checkpoint and completed checkpoints never
 downgrade.  Knowledge commands execute through an explicitly selected
-independent interpreter.  These commands never thaw: both new products' freeze
-markers must remain, the legacy source Home's thaw is the source product's own
-responsibility, and ROLLED_BACK to FINALIZED stays fail-closed in the manifest
-layer.  Re-cutover after a window rollback is a new migration operation and is
-out of scope here.  Neither command activates production.
+independent interpreter.  These commands stop at ``both_reassigned`` and keep
+``rollback_completed`` false: both new products remain frozen until the
+separate legacy activation transaction has installed and probed the reverse
+candidate, retired both active pointers, and thawed the source Home.
+ROLLED_BACK to FINALIZED stays fail-closed in the manifest layer.  Re-cutover
+after a window rollback is a new migration operation and is out of scope here.
+Neither command activates production.
 """
 from __future__ import annotations
 import argparse
@@ -81,6 +83,13 @@ def _rolled_back_event(journal, side):
     events = journal.get('events') if isinstance(journal, dict) else None
     if not isinstance(events, list) or len(events) not in (3, 5):
         raise ValueError('Rollback journal does not contain an abort or window chain')
+    previous = None
+    for revision_number, event in enumerate(events):
+        if (not isinstance(event, dict) or event.get('revision') != revision_number
+                or event.get('previous') != previous):
+            raise ValueError('Rollback journal chain is invalid')
+        _self_digest(event)
+        previous = event['sha256']
     revision = len(events) - 1
     suspended, head = events[-2], events[-1]
     if not isinstance(suspended, dict) or not isinstance(head, dict):
@@ -106,11 +115,101 @@ def _rolled_back_event(journal, side):
         raise ValueError('Rollback assignment manifest commitment is invalid')
     if head.get('active_installation_revision') != 'sha256:' + commitment:
         raise ValueError('Rollback assignment does not bind the active installation revision')
-    # Journals normally arrive fully chain-validated from the writer authority
-    # layer; the self-digest is re-verified so bare journal files also fail closed.
-    for event in (suspended, head):
-        _self_digest(event)
     return head
+
+
+def validate_completed_checkpoint(value, operation_id):
+    """Validate an immutable ``both_reassigned`` authority checkpoint.
+
+    Rollback activation consumes the checkpoint out of band, so it must not
+    rely on the live orchestrator having validated the embedded journals.
+    This verifier keeps that trust decision in the authority module that owns
+    both rollback protocols.
+    """
+    authority._operation(operation_id)
+    if not isinstance(value, dict):
+        raise ValueError('Rollback checkpoint is invalid')
+    format_value = value.get('format')
+    if format_value == FORMAT:
+        mode = 'pre_cutover_abort'
+        revision_key = 'prepared_manifest_sha256'
+        expected_events = 3
+    elif format_value == WINDOW_FORMAT:
+        mode = 'window_rollback'
+        revision_key = 'cutover_manifest_sha256'
+        expected_events = 5
+    else:
+        raise ValueError('Rollback checkpoint format is invalid')
+    expected = {
+        'format', 'operation_id', 'plan_sha256', revision_key,
+        'rollback_evidence_sha256', 'activation_allowed',
+        'installation_cutover_performed', 'rollback_completed',
+        'production_activated', 'state', 'journals',
+        'rolled_back_manifest_sha256',
+    }
+    if (set(value) != expected or value['operation_id'] != operation_id
+            or value['state'] != 'both_reassigned'
+            or value['activation_allowed'] is not False
+            or value['installation_cutover_performed'] is not False
+            or value['rollback_completed'] is not False
+            or value['production_activated'] is not False):
+        raise ValueError('Rollback authority checkpoint is not awaiting legacy activation')
+    for key in ('plan_sha256', revision_key, 'rollback_evidence_sha256',
+                'rolled_back_manifest_sha256'):
+        if not isinstance(value[key], str) or _HEX64.fullmatch(value[key]) is None:
+            raise ValueError('Rollback checkpoint digest is invalid')
+    journals = value['journals']
+    if not isinstance(journals, dict) or set(journals) != {'harness', 'knowledge'}:
+        raise ValueError('Rollback checkpoint journals are invalid')
+    for side, journal in journals.items():
+        if (not isinstance(journal, dict)
+                or set(journal) != {'format', 'binding_sha256', 'events'}
+                or not isinstance(journal['format'], str)
+                or not isinstance(journal['binding_sha256'], str)
+                or _HEX64.fullmatch(journal['binding_sha256']) is None
+                or not isinstance(journal['events'], list)
+                or len(journal['events']) != expected_events):
+            raise ValueError('Rollback checkpoint journal schema is invalid')
+        for event in journal['events']:
+            if side == 'harness':
+                if 'writer' not in event or 'writers' in event:
+                    raise ValueError('Harness rollback journal has wrong product schema')
+            elif 'writers' not in event or 'writer' in event:
+                raise ValueError('Knowledge rollback journal has wrong product schema')
+    harness_head = _rolled_back_event(journals['harness'], 'harness')
+    knowledge_head = _rolled_back_event(journals['knowledge'], 'knowledge')
+    for head in (harness_head, knowledge_head):
+        if (head['operation_id'] != operation_id
+                or head['migration_manifest_sha256'] != value['rolled_back_manifest_sha256']
+                or head['rollback_evidence_sha256'] != value['rollback_evidence_sha256']):
+            raise ValueError('Rollback journal does not bind the checkpoint commitments')
+    source_operation_id = None
+    if mode == 'window_rollback':
+        harness_cutover = journals['harness']['events'][2]
+        knowledge_cutover = journals['knowledge']['events'][2]
+        if (harness_cutover.get('writer') != 'puddingharness'
+                or knowledge_cutover.get('writers') != {
+                    'knowledge_catalog': 'puddingknowledge',
+                    'connector_jobs': 'puddingknowledge',
+                }
+                or harness_cutover.get('operation_id') != knowledge_cutover.get('operation_id')
+                or harness_cutover.get('migration_manifest_sha256')
+                    != knowledge_cutover.get('migration_manifest_sha256')
+                or harness_cutover.get('active_installation_revision')
+                    != knowledge_cutover.get('active_installation_revision')
+                or harness_cutover.get('rollback_evidence_sha256') is not None
+                or knowledge_cutover.get('rollback_evidence_sha256') is not None):
+            raise ValueError('Window rollback journals do not share one CUTOVER assignment')
+        source_operation_id = harness_cutover['operation_id']
+    return {
+        'mode': mode,
+        'revision_key': revision_key,
+        'source_operation_id': source_operation_id,
+        'harness_head': harness_head,
+        'knowledge_head': knowledge_head,
+        'harness_cutover': journals['harness']['events'][2] if mode == 'window_rollback' else None,
+        'knowledge_cutover': journals['knowledge']['events'][2] if mode == 'window_rollback' else None,
+    }
 
 
 def _follows_cutover_assignment(events):
@@ -285,7 +384,7 @@ def rollback(harness_home, knowledge_state, knowledge_python, checkpoint_dir, ma
                 raise ValueError('Invalid rollback checkpoint')
             if not isinstance(old['journals'], dict) or set(old['journals']) != _JOURNALS[old['state']]:
                 raise ValueError('Invalid rollback checkpoint journals')
-            if old['rollback_completed'] is not (old['state'] == 'both_reassigned'):
+            if old['rollback_completed'] is not False:
                 raise ValueError('Invalid rollback checkpoint flags')
             for key in ('prepared_manifest_sha256', 'rollback_evidence_sha256',
                         'rolled_back_manifest_sha256'):
@@ -411,7 +510,7 @@ def rollback(harness_home, knowledge_state, knowledge_python, checkpoint_dir, ma
         # both new products' freeze markers must still be in place.
         freeze_markers_held(harness_head, knowledge_head)
         result = dict(base, state='both_reassigned', journals=journals,
-                      rolled_back_manifest_sha256=rolled_back, rollback_completed=True)
+                      rolled_back_manifest_sha256=rolled_back)
         if reached('both_reassigned') and old != result:
             raise ValueError('Completed rollback changed')
         verify_control()
@@ -585,7 +684,7 @@ def window_rollback(harness_home, knowledge_state, knowledge_python, checkpoint_
                 raise ValueError('Invalid window rollback checkpoint')
             if not isinstance(old['journals'], dict) or set(old['journals']) != _WINDOW_JOURNALS[old['state']]:
                 raise ValueError('Invalid window rollback checkpoint journals')
-            if old['rollback_completed'] is not (old['state'] == 'both_reassigned'):
+            if old['rollback_completed'] is not False:
                 raise ValueError('Invalid window rollback checkpoint flags')
             for key in {'cutover_manifest_sha256', 'rollback_evidence_sha256'} | (
                     {'rolled_back_manifest_sha256'} if 'rolled_back_manifest_sha256' in extras else set()):
@@ -770,7 +869,7 @@ def window_rollback(harness_home, knowledge_state, knowledge_python, checkpoint_
         # both new products' freeze markers must still be in place.
         freeze_markers_held(harness_head, knowledge_head)
         result = dict(base, state='both_reassigned', journals=journals,
-                      rolled_back_manifest_sha256=rolled_back, rollback_completed=True)
+                      rolled_back_manifest_sha256=rolled_back)
         if reached('both_reassigned') and old != result:
             raise ValueError('Completed window rollback changed')
         verify_control()

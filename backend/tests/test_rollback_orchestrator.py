@@ -84,7 +84,7 @@ def test_rollback_happy_path_exact_retry_and_persistent_freeze(roots):
     _suspend(roots)
     result = run(roots)
     assert result['state'] == 'both_reassigned'
-    assert result['rollback_completed'] is True
+    assert result['rollback_completed'] is False
     assert result['activation_allowed'] is False and result['installation_cutover_performed'] is False
     assert result['production_activated'] is False
     prepared = result['prepared_manifest_sha256']
@@ -164,7 +164,7 @@ def test_crash_at_every_checkpoint_resumes_identically(roots, crash_at):
     if crash_at == 'harness_reassigned':
         assert len(harness_events) == 3 and len(knowledge_events) == 2
     result = run(roots)
-    assert result['state'] == 'both_reassigned' and result['rollback_completed'] is True
+    assert result['state'] == 'both_reassigned' and result['rollback_completed'] is False
     assert _manifest(roots)['state'] == 'ROLLED_BACK'
     assert (roots[0] / '.installation-freeze-v1.json').exists()
     assert (roots[1] / '.workspace-freeze-v1.json').exists()
@@ -363,7 +363,7 @@ def test_cli_rollback_and_fail_closed_error(roots):
                 '--operation-id', 'rollback-1')
     assert value.returncode == 0, value.stderr + value.stdout
     report = json.loads(value.stdout)
-    assert report['state'] == 'both_reassigned' and report['rollback_completed'] is True
+    assert report['state'] == 'both_reassigned' and report['rollback_completed'] is False
     assert report['activation_allowed'] is False and report['installation_cutover_performed'] is False
     assert report['production_activated'] is False
     retry = cli('rollback', '--harness-home', str(roots[0]), '--knowledge-state', str(roots[1]),

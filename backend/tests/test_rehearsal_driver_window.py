@@ -65,11 +65,11 @@ def _kill_mid_chain(work, home, corpus, committed, *extra):
 
 
 def test_window_step_table_extends_the_forward_chain_through_cutover():
-    assert WINDOW_STEP_NAMES[:8] == [name for name, _, _ in driver.STEPS[:8]]
-    assert WINDOW_STEP_NAMES[8:] == ['window-delta', 'window-suspend', 'window-export',
+    assert WINDOW_STEP_NAMES[:10] == [name for name, _, _ in driver.STEPS[:10]]
+    assert WINDOW_STEP_NAMES[10:] == ['window-delta', 'window-suspend', 'window-export',
                                      'window-disposition', 'window-document-reverse',
                                      'window-wiki-absent', 'window-evidence',
-                                     'window-rollback']
+                                     'window-rollback', 'window-activate']
     assert len(set(WINDOW_STEP_NAMES)) == len(WINDOW_STEP_NAMES)
     for name, roots, body in driver.WINDOW_STEPS:
         assert roots and callable(body)
@@ -120,10 +120,11 @@ def test_full_window_rollback_run_rolls_back_with_real_chain_output(tmp_path):
     steps = _checkpoint_steps(work)
     # The window operation binds the suspension plans, the evidence and both
     # rollback journals; the cutover operation stays in rev1/rev2 only.
-    delta = steps[8]['receipt']
+    by_name = {step['name']: step['receipt'] for step in steps}
+    delta = by_name['window-delta']
     assert delta['title'] == driver._WINDOW_DELTA_TITLE
-    assert steps[14]['receipt']['operation_id'] == 'rehearsal-1-window'
-    assert steps[14]['receipt']['evidence_sha256'] == evidence_sha
+    assert by_name['window-evidence']['operation_id'] == 'rehearsal-1-window'
+    assert by_name['window-evidence']['evidence_sha256'] == evidence_sha
     # The Knowledge-era edit survived the whole reverse chain: the reversed
     # legacy candidate carries exactly the edited title and the untouched ones.
     reversed_catalog = work / 'document-reverse/reverse/catalog.sqlite3'
@@ -139,11 +140,15 @@ def test_full_window_rollback_run_rolls_back_with_real_chain_output(tmp_path):
     assert hashlib.sha256((work / 'lineage/target-after.sqlite3').read_bytes()).hexdigest() == \
         hashlib.sha256((work / 'knowledge-home/catalog.sqlite3').read_bytes()).hexdigest() == \
         delta['catalog_sha256_after']
-    # Terminal writer state on disk: rolled back, both products fenced, the
-    # retired cutover artifacts and the active pointer preserved as history.
+    # Terminal writer state on disk: rolled back, both replacement products
+    # fenced, and the CUTOVER pointers retired into audited activation history.
     assert (work / 'harness-home/.installation-freeze-v1.json').exists()
     assert (work / 'knowledge-home/.workspace-freeze-v1.json').exists()
-    assert (work / 'harness-home/active-installation.json').exists()
+    assert not (work / 'harness-home/active-installation.json').exists()
+    assert not (work / 'knowledge-home/active-installation.json').exists()
+    for side in ('harness', 'knowledge'):
+        assert (work / 'rollback-activation' /
+                f'retired-{side}-active-installation.json').exists()
     journals = {}
     for side in ('harness-authority', 'knowledge-authority'):
         assert (work / side / 'freeze-marker-rev2.json').exists()
@@ -175,8 +180,12 @@ def test_full_window_rollback_run_rolls_back_with_real_chain_output(tmp_path):
     # symlink-free, files private, directories sealed to the owner.
     assert {entry.name for entry in work.iterdir()} == driver._WINDOW_TOP_LEVEL
     _assert_sealed_tree(work)
-    # The source home is strictly read-only across the whole rehearsal.
-    assert _tree_digest(home) == before
+    # Audited rollback activation intentionally restores the reversed Catalog
+    # into the legacy Home and thaws only that writer after health verification.
+    assert _tree_digest(home) != before
+    assert not (home / '.installation-freeze-v1.json').exists()
+    assert hashlib.sha256((home / 'db/catalog.sqlite3').read_bytes()).hexdigest() == \
+        by_name['window-activate']['catalog_sha256']
 
 
 @installed
@@ -253,8 +262,9 @@ def test_tampered_window_evidence_refuses_before_any_step(tmp_path):
     corpus = _corpus(base)
     home, _ = _legacy_home(base, _documents(corpus))
     work = base / 'work'
-    killed = _kill_mid_chain(work, home, corpus, 15)
-    assert 15 <= len(killed) < len(WINDOW_STEP_NAMES)
+    evidence_committed = WINDOW_STEP_NAMES.index('window-evidence') + 1
+    killed = _kill_mid_chain(work, home, corpus, evidence_committed)
+    assert evidence_committed <= len(killed) < len(WINDOW_STEP_NAMES)
     checkpoint_raw = (work / 'driver-checkpoint.json').read_bytes()
     target = work / 'evidence/evidence.json'
     data = target.read_bytes()

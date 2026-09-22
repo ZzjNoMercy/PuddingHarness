@@ -21,11 +21,26 @@ test("accepts independent source stage evidence only", async () => {
   assert.deepEqual(await verifyBuildEvidence(root, manifest), evidence);
 });
 
+test("publication requires an explicit releaseable decision", async () => {
+  const { root, evidence, manifest } = await fixture();
+  await assert.rejects(
+    () => verifyBuildEvidence(root, manifest, { requireReleaseable: true }),
+    /releaseable must be true for publication/,
+  );
+
+  evidence.releaseable = true;
+  await fs.writeFile(path.join(root, "build-evidence.json"), JSON.stringify(evidence));
+  const verified = await verifyBuildEvidence(root, manifest, { requireReleaseable: true });
+  assert.equal(verified.releaseable, true);
+});
+
 for (const [name, mutate] of [
   ["unverified prebuilt", (e) => { e.mode = "unverified_prebuilt"; }],
   ["unknown mode", (e) => { e.mode = "unknown"; }],
   ["short revision", (e) => { e.source_revision = "abc"; }],
   ["dirty source", (e) => { e.source_clean = false; }],
+  ["missing releaseability decision", (e) => { delete e.releaseable; }],
+  ["invalid releaseability decision", (e) => { e.releaseable = "false"; }],
   ["blocking finding", (e) => { e.backend.blocking_findings = ["x"]; }],
   ["unreviewed audit", (e) => { e.backend.audit_status = "unknown"; }],
   ["empty inventory", (e) => { e.backend.files = []; }],

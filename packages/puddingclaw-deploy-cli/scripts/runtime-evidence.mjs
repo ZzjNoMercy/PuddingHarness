@@ -35,7 +35,7 @@ function passedChecks(checks) {
   }
 }
 
-export async function verifyBuildEvidence(runtimeRoot, manifest) {
+export async function verifyBuildEvidence(runtimeRoot, manifest, { requireReleaseable = false } = {}) {
   if (!manifest?.files || !Object.hasOwn(manifest.files, "build-evidence.json")) {
     fail("build-evidence.json must be covered by manifest.files");
   }
@@ -52,6 +52,10 @@ export async function verifyBuildEvidence(runtimeRoot, manifest) {
   object(evidence, "evidence");
   allowedKeys(evidence, TOP_LEVEL, "evidence");
   if (evidence.mode !== "independent_source_stages") fail("mode must be independent_source_stages");
+  if (typeof evidence.releaseable !== "boolean") fail("releaseable must be a boolean");
+  if (requireReleaseable && evidence.releaseable !== true) {
+    fail("releaseable must be true for publication");
+  }
   if (typeof evidence.source_revision !== "string" || !SOURCE_REVISION.test(evidence.source_revision)) {
     fail("source_revision must be a complete 40-hex revision");
   }

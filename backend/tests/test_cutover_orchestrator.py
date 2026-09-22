@@ -13,6 +13,7 @@ from harness import installation_authority as authority
 from harness import writer_barrier as barrier
 from harness.installation_guard import InstallationGuard
 from harness.installation_manifest import validate_manifest
+from harness.source_writer_fence import CAPABILITY_FORMAT, CAPABILITY_NAME, LOCK_NAME, publish_source_fence
 from test_writer_barrier import SETUP
 
 KNOWLEDGE = os.environ.get('KNOWLEDGE_TEST_PYTHON')
@@ -22,19 +23,83 @@ CUTOVER_WRITERS = {'session_harness': 'puddingharness', 'knowledge_catalog': 'pu
                    'connector_jobs': 'puddingknowledge'}
 
 
+def _source_capability(home):
+    lock = home / LOCK_NAME
+    lock.touch(mode=0o600)
+    lock.chmod(0o600)
+    directory, lock_info = home.stat(), lock.stat()
+    value = {
+        'format': CAPABILITY_FORMAT,
+        'home_identity': hashlib.sha256(str(home).encode()).hexdigest(),
+        'directory_identity': {'device': directory.st_dev, 'inode': directory.st_ino},
+        'lock_identity': {'device': lock_info.st_dev, 'inode': lock_info.st_ino},
+        'participating_process_admission': True,
+        'persistent_source_freeze': True,
+    }
+    path = home / CAPABILITY_NAME
+    path.write_bytes((json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n').encode())
+    path.chmod(0o600)
+
+
 def _prepared_manifest(directory, suffix=''):
     directory.mkdir(mode=0o700)
+    resource_mappings = [
+        {'domain': 'session_harness', 'source_id': 'session-1',
+         'resource_uri': 'harness://sessions/session-1'},
+    ]
+    mapping_coverage = []
+    for index, domain in enumerate(('session_harness', 'knowledge_catalog', 'connector_jobs')):
+        mappings = [
+            {'source_id': item['source_id'], 'resource_uri': item['resource_uri']}
+            for item in resource_mappings if item['domain'] == domain
+        ]
+        count = len(mappings)
+        mapping_coverage.append({
+            'domain': domain, 'source_count': count, 'target_count': count,
+            'mapped_count': count,
+            'source_ids_sha256': 'sha256:' + str(index + 3) * 64,
+            'target_ids_sha256': 'sha256:' + str(index + 6) * 64,
+            'mapping_sha256': 'sha256:' + hashlib.sha256(json.dumps(
+                mappings, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
+            'mapping_coverage_bps': 10000, 'zero_object_attested': count == 0,
+            'source_producer_format': 'puddingclaw-cutover-domain-inventory/v1',
+            'target_producer_format': (
+                'puddingharness-cutover-domain-inventory/v1'
+                if domain == 'session_harness'
+                else 'puddingknowledge-cutover-domain-inventory/v1'),
+            'source_inventory_receipt_sha256': 'sha256:' + '5' * 64,
+            'target_inventory_receipt_sha256': 'sha256:' + '6' * 64,
+            'target_artifact_sha256': 'sha256:' + '7' * 64,
+            'source_producer': 'puddingclaw',
+            'target_producer': (
+                'puddingharness' if domain == 'session_harness'
+                else 'puddingknowledge'),
+        })
     value = {'format': 'agent-knowledge-platform-installation-migration/v1',
              'source': {'installation_id': 'inst-1' + suffix, 'schema_revision': 'rev-1',
                         'catalog_revision': 'rev-1'},
              'targets': {'puddingharness': 'puddingharness-backend@0.1.0',
                          'puddingknowledge': 'puddingknowledge-local@0.1.0'},
-             'object_summaries': [{'domain': 'session_harness', 'object_count': 1,
-                                   'source_digest': 'sha256:' + 'a' * 64}],
-             'id_resource_mappings': [], 'credential_rebinds': [],
+             'object_summaries': [
+                 {'domain': 'session_harness', 'object_count': 1,
+                  'source_digest': 'sha256:' + '3' * 64},
+                 {'domain': 'knowledge_catalog', 'object_count': 0,
+                  'source_digest': 'sha256:' + '4' * 64},
+                 {'domain': 'connector_jobs', 'object_count': 0,
+                  'source_digest': 'sha256:' + '5' * 64},
+             ],
+             'id_resource_mappings': resource_mappings,
+             'mapping_coverage': mapping_coverage, 'credential_rebinds': [],
              'active_writers': {'session_harness': 'puddingclaw', 'knowledge_catalog': 'puddingclaw',
                                 'connector_jobs': 'puddingclaw'},
-             'checkpoint': {'stage': 'prepared'}, 'rollback_strategy': 'no_write_until_finalized',
+             'checkpoint': {'stage': 'prepared',
+                            'knowledge_readiness_receipt_digest': 'sha256:' + '9' * 64,
+                            'source_freeze_receipt_sha256': 'sha256:' + '8' * 64,
+                            'source_freeze_evidence_sha256': 'sha256:' + 'a' * 64,
+                            'source_admission_capability_sha256': 'sha256:' + 'b' * 64,
+                            'source_freeze_operation_id': 'cutover-1',
+                            'source_home_identity': 'c' * 64},
+             'rollback_strategy': 'no_write_until_finalized',
              'state': 'PREPARED', 'rollback_window_open': True,
              'snapshot_digest': 'sha256:' + 'b' * 64, 'staging_namespace': 'sha256:' + 'c' * 64,
              'active_installation_revision': None, 'completed_at': None,
@@ -53,15 +118,25 @@ def roots(tmp_path):
     authority.enroll(home, root / 'harness-authority', 'enroll-harness')
     subprocess.run([KNOWLEDGE, '-c', SETUP, str(root)], check=True, cwd=root)
     manifest = _prepared_manifest(root / 'manifest')
-    return home, root / 'knowledge', KNOWLEDGE, root / 'checkpoint', manifest, root / 'barrier'
+    source = root / 'source'
+    source.mkdir(mode=0o700)
+    _source_capability(source)
+    return (home, root / 'knowledge', KNOWLEDGE, root / 'checkpoint', manifest,
+            root / 'barrier', source)
 
 
 def _suspend(roots, operation='cutover-1'):
     barrier.suspend_writers(roots[0], roots[1], roots[2], roots[5], operation)
+    receipt = publish_source_fence(roots[6], operation)
+    manifest = _manifest(roots)
+    manifest['checkpoint']['source_freeze_receipt_sha256'] = (
+        'sha256:' + receipt['source_freeze_receipt_sha256'])
+    roots[4].write_bytes(json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode())
 
 
 def run(roots, operation='cutover-1', **kwargs):
-    return orchestrator.cutover(roots[0], roots[1], roots[2], roots[3], roots[4], operation, **kwargs)
+    return orchestrator.cutover(roots[0], roots[1], roots[2], roots[3], roots[4], operation,
+                                source_home=roots[6], **kwargs)
 
 
 def _manifest(roots):
@@ -97,12 +172,14 @@ def test_cutover_happy_path_exact_retry_and_runtime_admission(roots):
     validate_manifest(manifest)
     assert hashlib.sha256(roots[4].read_bytes()).hexdigest() == result['cutover_manifest_sha256']
     pointer = json.loads((roots[0] / 'active-installation.json').read_bytes())
+    assert (roots[1] / 'active-installation.json').read_bytes() == (roots[0] / 'active-installation.json').read_bytes()
     assert pointer['format'] == 'puddingharness-active-installation/v1'
     assert pointer['cutover_manifest_sha256'] == result['cutover_manifest_sha256']
     assert pointer['prepared_manifest_sha256'] == prepared
     assert pointer['active_installation_revision'] == 'sha256:' + prepared
     assert pointer['harness_assigned_event_sha256'] == harness_head['sha256']
     assert pointer['knowledge_assigned_event_sha256'] == knowledge_head['sha256']
+    assert pointer['source_freeze_receipt_sha256'] == manifest['checkpoint']['source_freeze_receipt_sha256']
     assert pointer['active_writers'] == CUTOVER_WRITERS
     assert hashlib.sha256((roots[0] / 'active-installation.json').read_bytes()).hexdigest() == result['active_pointer_sha256']
     assert not (roots[0] / '.installation-freeze-v1.json').exists()
@@ -206,6 +283,7 @@ def test_successful_child_with_invalid_receipt_cannot_complete_cutover(roots, mo
 
 
 def test_unsuspended_writers_fail_closed(roots):
+    publish_source_fence(roots[6], 'cutover-1')
     manifest_bytes = roots[4].read_bytes()
     with pytest.raises(ValueError, match='not suspended'):
         run(roots)
@@ -220,7 +298,8 @@ def test_unsuspended_writers_fail_closed(roots):
 
 
 def test_wrong_operation_id_fails_closed(roots):
-    _suspend(roots, 'other-operation')
+    barrier.suspend_writers(roots[0], roots[1], roots[2], roots[5], 'other-operation')
+    publish_source_fence(roots[6], 'cutover-1')
     manifest_bytes = roots[4].read_bytes()
     with pytest.raises(ValueError, match='another operation'):
         run(roots)
@@ -307,19 +386,18 @@ def test_cli_cutover_finalize_and_fail_closed_error(roots):
     bad_dir = roots[0].parent / 'checkpoint-bad'
     bad = cli('cutover', '--harness-home', str(roots[0]), '--knowledge-state', str(roots[1]),
               '--knowledge-python', str(roots[2]), '--checkpoint-dir', str(bad_dir),
+              '--source-home', str(roots[6]),
               '--manifest', str(roots[4]), '--operation-id', 'wrong-operation')
     assert bad.returncode == 1
     report = json.loads(bad.stdout)
     assert report['error_code'] == 'installation_cutover_rejected'
     assert report['activation_allowed'] is False and report['installation_cutover_performed'] is False
     assert report['rollback_completed'] is False and report['production_activated'] is False
-    # A checkpoint directory binds its operation; a changed operation rejects.
-    changed = cli('cutover', '--harness-home', str(roots[0]), '--knowledge-state', str(roots[1]),
-                  '--knowledge-python', str(roots[2]), '--checkpoint-dir', str(bad_dir),
-                  '--manifest', str(roots[4]), '--operation-id', 'cutover-1')
-    assert changed.returncode == 1
+    # A wrong operation is rejected before any checkpoint publication.
+    assert not bad_dir.exists()
     value = cli('cutover', '--harness-home', str(roots[0]), '--knowledge-state', str(roots[1]),
                 '--knowledge-python', str(roots[2]), '--checkpoint-dir', str(roots[3]),
+                '--source-home', str(roots[6]),
                 '--manifest', str(roots[4]), '--operation-id', 'cutover-1')
     assert value.returncode == 0, value.stderr + value.stdout
     report = json.loads(value.stdout)
@@ -327,6 +405,7 @@ def test_cli_cutover_finalize_and_fail_closed_error(roots):
     assert report['production_activated'] is False
     retry = cli('cutover', '--harness-home', str(roots[0]), '--knowledge-state', str(roots[1]),
                 '--knowledge-python', str(roots[2]), '--checkpoint-dir', str(roots[3]),
+                '--source-home', str(roots[6]),
                 '--manifest', str(roots[4]), '--operation-id', 'cutover-1')
     assert retry.returncode == 0 and json.loads(retry.stdout) == report
     done = cli('finalize', '--manifest', str(roots[4]), '--checkpoint-dir', str(roots[3]))

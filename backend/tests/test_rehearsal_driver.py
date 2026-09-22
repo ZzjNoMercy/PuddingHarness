@@ -5,6 +5,7 @@ legacy Home and require an explicit independent Knowledge interpreter
 (KNOWLEDGE_TEST_PYTHON); the checkpoint and hygiene unit tests are
 Harness-only and never touch a Knowledge installation.
 """
+import base64
 import hashlib
 import json
 import os
@@ -15,14 +16,20 @@ import stat
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 
 import pytest
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from harness import rehearsal_driver as driver
 
 KNOWLEDGE = os.environ.get('KNOWLEDGE_TEST_PYTHON')
-installed = pytest.mark.skipif(not KNOWLEDGE,
-                               reason='Explicit independent Knowledge installation required')
+CLAW = os.environ.get('CLAW_TEST_PYTHON')
+OWNER = 'rehearsal-owner'
+installed = pytest.mark.skipif(
+    not KNOWLEDGE or not CLAW,
+    reason='Explicit independent Knowledge and PuddingClaw installations required',
+)
 
 BACKEND = Path(__file__).resolve().parents[1]
 STEP_NAMES = [name for name, _, _ in driver.STEPS]
@@ -146,9 +153,61 @@ def _catalog(path, documents, *, live):
     return connection
 
 
+def _source_capability(home):
+    lock = home / '.installation-gate-v1.lock'
+    lock.touch(mode=0o600)
+    lock.chmod(0o600)
+    root_info, lock_info = home.stat(), lock.stat()
+    value = {
+        'format': 'puddingclaw-installation-admission/v1',
+        'home_identity': hashlib.sha256(str(home).encode()).hexdigest(),
+        'directory_identity': {'device': root_info.st_dev, 'inode': root_info.st_ino},
+        'lock_identity': {'device': lock_info.st_dev, 'inode': lock_info.st_ino},
+        'participating_process_admission': True,
+        'persistent_source_freeze': True,
+    }
+    path = home / '.installation-admission-capability-v1.json'
+    path.write_text(json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n')
+    path.chmod(0o600)
+
+
+def _empty_credential_authority(home):
+    key = b'\x19' * 32
+    key_id = 'sha256:' + hashlib.sha256(key).hexdigest()[:32]
+    authority = home / '.vault-keys'
+    authority.mkdir(mode=0o700)
+    key_path = authority / f'{OWNER}.key'
+    key_path.write_bytes(key)
+    key_path.chmod(0o600)
+    manifest = authority / f'{OWNER}.provider.json'
+    manifest.write_text(json.dumps({
+        'schema_version': 1, 'owner_user_id': OWNER, 'provider': 'file',
+        'key_id': key_id, 'created_at': 1757000000,
+    }, sort_keys=True) + '\n')
+    manifest.chmod(0o600)
+    credentials = home / 'users' / OWNER / 'credentials'
+    credentials.mkdir(parents=True, mode=0o700)
+    os.chmod(credentials.parent, 0o700)
+    nonce = hashlib.sha256(OWNER.encode()).digest()[:12]
+    payload = json.dumps({'version': 1, 'credentials': {}},
+                         sort_keys=True, separators=(',', ':')).encode()
+    aad = f'puddingclaw:v1:{OWNER}:provider-registry:default'.encode()
+    envelope = {
+        'version': 2, 'algorithm': 'AES-256-GCM', 'key_id': key_id,
+        'nonce': base64.b64encode(nonce).decode('ascii'),
+        'ciphertext': base64.b64encode(AESGCM(key).encrypt(nonce, payload, aad)).decode('ascii'),
+    }
+    registry = credentials / 'provider-registry.enc'
+    registry.write_text(json.dumps(envelope, sort_keys=True, separators=(',', ':')))
+    registry.chmod(0o600)
+
+
 def _legacy_home(root, documents, *, live=False):
     home = root / 'legacy-home'
     (home / 'db').mkdir(parents=True)
+    os.chmod(home, 0o700)
+    _source_capability(home)
+    _empty_credential_authority(home)
     (home / 'sessions').mkdir()
     (home / 'llm-wiki').mkdir()
     (home / 'config.json').write_text(json.dumps({'cache': {'enabled': False}, 'theme': 'dark'}))
@@ -162,6 +221,8 @@ def _tree_digest(root):
     for current, directories, names in os.walk(root):
         directories.sort()
         for name in sorted(names):
+            if name in {'.installation-gate-v1.lock', '.installation-freeze-v1.json'}:
+                continue
             path = Path(current) / name
             digest.update(path.relative_to(root).as_posix().encode() + b'\0')
             digest.update(path.read_bytes() + b'\0')
@@ -189,6 +250,7 @@ def _driver_command(work, home, corpus, *extra):
     return [sys.executable, '-m', 'harness.rehearsal_driver',
             '--work-root', str(work), '--source-home', str(home),
             '--knowledge-python', KNOWLEDGE,
+            '--claw-python', CLAW, '--credential-owner', OWNER,
             '--installation-id', 'install-rehearsal',
             '--source-revision', 'legacy-1', '--source-schema-revision', 'claw-schema-v1',
             '--operation', 'rehearsal-1',
@@ -246,7 +308,7 @@ def test_full_path_a_run_finalizes_with_real_chain_output(tmp_path):
     assert isinstance(manifest['completed_at'], str) and manifest['completed_at']
     assert 'sha256:' + hashlib.sha256(manifest_raw).hexdigest() == terminal['manifest_digest']
     # The Knowledge request counted the full document fixture.
-    request = _checkpoint_steps(work)[1]['receipt']
+    request = _checkpoint_steps(work)[2]['receipt']
     assert request['counts']['documents'] == 3
     assert request['counts']['originals'] == 1 and request['counts']['attachments'] == 3
     assert request['counts']['bytes'] > 0
@@ -261,7 +323,8 @@ def test_full_path_a_run_finalizes_with_real_chain_output(tmp_path):
     # files private, directories sealed to the owner.
     assert {entry.name for entry in work.iterdir()} == driver._KNOWN_TOP_LEVEL
     _assert_sealed_tree(work)
-    # The source home is strictly read-only across the whole rehearsal.
+    # Business data in the source Home stays byte-identical; only the shared
+    # admission lock and persistent freeze marker are added.
     assert _tree_digest(home) == before
 
 
@@ -366,7 +429,7 @@ def test_live_catalog_sidecars_fail_at_the_request_step(tmp_path):
         assert error['step'] == 'request'
         assert error['step_error_code'] == 'claw_migration_request_rejected'
         # The snapshot committed before the refusal; no run record survives.
-        assert [step['name'] for step in _checkpoint_steps(work)] == ['snapshot']
+        assert [step['name'] for step in _checkpoint_steps(work)] == ['source-freeze', 'snapshot']
         assert not (work / 'run-record.json').exists()
     finally:
         connection.close()
@@ -392,8 +455,8 @@ def test_live_catalog_with_repair_finalizes_and_preserves_source(tmp_path):
                                      '--repair-reason', 'dangling storage_path target is missing'))
         assert report['terminal_state'] == 'FINALIZED'
         steps = _checkpoint_steps(work)
-        assert steps[0]['receipt']['repaired'] is True
-        counts = steps[1]['receipt']['counts']
+        assert steps[1]['receipt']['repaired'] is True
+        counts = steps[2]['receipt']['counts']
         assert counts['documents'] == 1 and counts['originals'] == 0
         assert counts['attachments'] == 0 and counts['bytes'] > 0
         # The source catalog is untouched; only the payload copy was repaired.
@@ -419,8 +482,8 @@ def test_live_catalog_with_recommit_finalizes_and_preserves_source(tmp_path):
                                      '--recommit-reason', 'body edited after import'))
         assert report['terminal_state'] == 'FINALIZED'
         steps = _checkpoint_steps(work)
-        assert steps[0]['receipt']['repaired'] is True
-        assert steps[1]['receipt']['counts']['documents'] == 3
+        assert steps[1]['receipt']['repaired'] is True
+        assert steps[2]['receipt']['counts']['documents'] == 3
         # The source catalog is untouched; only the payload copy was recommitted.
         assert connection.execute('SELECT content_sha256 FROM knowledge_documents'
                                   " WHERE id = 'doc-1'").fetchone()[0] == '0' * 64
@@ -450,7 +513,7 @@ def test_virtual_root_run_finalizes_and_requires_the_flag(tmp_path):
     work = base / 'work'
     report = _report(_run_driver(work, home, corpus, '--virtual-root', '/knowledge=external/knowledge'))
     assert report['terminal_state'] == 'FINALIZED'
-    request = _checkpoint_steps(work)[1]['receipt']
+    request = _checkpoint_steps(work)[2]['receipt']
     assert request['counts']['documents'] == 4
     # The rebound dependency bytes landed in the migrated home resources tree.
     assert (work / 'knowledge-home/resources/external/knowledge/assets/figure.png').read_bytes() == b'figure'
@@ -459,11 +522,128 @@ def test_virtual_root_run_finalizes_and_requires_the_flag(tmp_path):
 
 
 def test_step_table_is_the_ordered_path_a_chain():
-    assert STEP_NAMES == ['snapshot', 'request', 'orchestrate', 'discover', 'prepare',
-                          'enroll', 'suspend', 'cutover', 'finalize']
+    assert STEP_NAMES == ['source-freeze', 'snapshot', 'request', 'orchestrate', 'readiness',
+                          'discover', 'prepare', 'enroll', 'suspend', 'cutover', 'finalize']
     assert len(set(STEP_NAMES)) == len(STEP_NAMES)
     for name, roots, body in driver.STEPS:
         assert roots and callable(body)
+
+
+def test_readiness_step_runs_real_producer_chain_in_order(tmp_path, monkeypatch):
+    work = tmp_path.resolve() / 'work'
+    work.mkdir(mode=0o700)
+    commands = []
+
+    def publish(path, value):
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path.write_bytes(driver._encoded(value))
+        path.chmod(0o600)
+
+    def fake_run(command, _timeout, step, **_kwargs):
+        assert step == 'readiness'
+        commands.append(command)
+        if '-c' in command:
+            return {'format': driver._CLAW_IDENTITY_FORMAT, 'package': 'puddingclaw-backend',
+                    'version': '0.1.19', 'module': 'cutover_domain_inventory.py',
+                    'module_sha256': 'sha256:' + '1' * 64}
+        module = command[command.index('-m') + 1]
+        if module == 'knowledge_platform.distribution.credential_rebind':
+            target = Path(command[command.index('--target-root') + 1])
+            target.mkdir(mode=0o700)
+            publish(target / 'empty-vault.json', {})
+            publish(Path(command[command.index('--receipt') + 1]), {})
+            return {'format': 'puddingknowledge-credential-rebind/v1', 'state': 'completed',
+                    'credential_continuity_verified': True, 'counts': {'failed': 0}}
+        output = Path(command[command.index('--output') + 1])
+        if module == 'cutover_domain_inventory':
+            domain = command[command.index('--domain') + 1]
+            publish(output, {})
+            return {'format': 'puddingclaw-cutover-domain-inventory/v1',
+                    'domain': domain, 'inventory_sha256': 'sha256:' + '2' * 64}
+        if module == 'harness.cutover_domain_inventory':
+            publish(output, {})
+            return {'format': 'puddingharness-cutover-domain-inventory/v1',
+                    'inventory_sha256': 'sha256:' + '3' * 64}
+        if module == 'knowledge_platform.distribution.cutover_domain_inventory':
+            domain = command[command.index('--domain') + 1]
+            publish(output, {})
+            return {'format': 'puddingknowledge-cutover-domain-inventory/v1',
+                    'domain': domain, 'inventory_sha256': 'sha256:' + '4' * 64}
+        if module == 'knowledge_platform.distribution.cutover_domain_coverage':
+            publish(output, {})
+            return {'format': 'puddingknowledge-cutover-domain-coverage/v1', 'domain_count': 3}
+        if module == 'knowledge_platform.distribution.cutover_index_readiness':
+            publish(output, {})
+            return {'format': 'puddingknowledge-cutover-index-readiness/v1',
+                    'state': 'ready', 'ready_count': 1}
+        assert module == 'knowledge_platform.distribution.cutover_readiness'
+        complete = {'format': 'puddingknowledge-cutover-readiness/v1',
+                    'state': 'verified_inactive_complete',
+                    'covered_domains': ['session_harness', 'knowledge_catalog', 'connector_jobs'],
+                    'pending_domains': [], 'cutover_readiness_verified': True,
+                    'complete_migration_evidence': True, 'writer_fence_verified': False,
+                    'activation_allowed': False}
+        publish(output, complete)
+        return complete
+
+    monkeypatch.setattr(driver, '_run_cli', fake_run)
+    ctx = SimpleNamespace(
+        work=work, claw_python='/claw/python', knowledge_python='/knowledge/python',
+        timeout=30, source_home='/legacy/home', credential_owner=OWNER,
+        path=lambda name: work / name,
+    )
+    receipt, idempotent = driver._step_readiness(ctx)
+    assert idempotent is False and receipt['credential_owner'] == OWNER
+    modules = [command[command.index('-m') + 1] for command in commands if '-m' in command]
+    assert modules == [
+        'cutover_domain_inventory', 'cutover_domain_inventory', 'cutover_domain_inventory',
+        'harness.cutover_domain_inventory',
+        'knowledge_platform.distribution.cutover_domain_inventory',
+        'knowledge_platform.distribution.cutover_domain_inventory',
+        'knowledge_platform.distribution.cutover_domain_coverage',
+        'knowledge_platform.distribution.cutover_index_readiness',
+        'knowledge_platform.distribution.credential_rebind',
+        'knowledge_platform.distribution.cutover_readiness',
+    ]
+    assert driver._root_digest(work / 'readiness').startswith('sha256:')
+
+
+def test_prepare_consumes_complete_readiness_and_source_freeze(tmp_path, monkeypatch):
+    work = tmp_path.resolve() / 'work'
+    work.mkdir(mode=0o700)
+    captured = []
+
+    def fake_run(command, _timeout, _step):
+        captured.extend(command)
+        return {'format': driver.manifests.FORMAT, 'state': 'PREPARED',
+                'idempotent': False, 'manifest_digest': 'sha256:' + 'a' * 64}
+
+    monkeypatch.setattr(driver, '_run_cli', fake_run)
+    ctx = SimpleNamespace(work=work, timeout=30, path=lambda name: work / name)
+    driver._step_prepare(ctx)
+    assert captured[captured.index('--knowledge-readiness') + 1] == str(
+        work / 'readiness/cutover-readiness.json')
+    assert captured[captured.index('--source-freeze-receipt') + 1] == str(
+        work / 'source-freeze-receipt.json')
+
+
+def test_source_freeze_file_is_the_canonical_manifest_consumer_contract(tmp_path):
+    base = tmp_path.resolve()
+    home = _minimal_home(base)
+    work = base / 'work'
+    work.mkdir(mode=0o700)
+    ctx = SimpleNamespace(
+        work=work, source_home=str(home), operation='rehearsal-1',
+        path=lambda name: work / name,
+    )
+    receipt, idempotent = driver._step_source_freeze(ctx)
+    assert idempotent is False and len(receipt['credential_baseline_sha256']) == 64
+    persisted = json.loads((work / 'source-freeze-receipt.json').read_bytes())
+    assert set(persisted) == {
+        'format', 'operation_id', 'source_home_identity', 'source_freeze_receipt_sha256',
+        'legacy_writer_fenced', 'admission_capability_sha256',
+    }
+    assert driver.manifests.encoded(persisted) == (work / 'source-freeze-receipt.json').read_bytes()
 
 
 def test_root_digest_commits_bytes_and_private_modes(tmp_path):
@@ -544,6 +724,7 @@ def test_verify_committed_roots_folds_latest_record_and_detects_divergence(tmp_p
 def _main_argv(work, home, *extra):
     return ['--work-root', str(work), '--source-home', str(home),
             '--knowledge-python', sys.executable,
+            '--claw-python', sys.executable, '--credential-owner', OWNER,
             '--installation-id', 'install-rehearsal',
             '--source-revision', 'legacy-1', '--source-schema-revision', 'claw-schema-v1',
             '--operation', 'rehearsal-1', '--map', '/nonexistent=payload', *extra]
@@ -559,6 +740,8 @@ def test_work_root_hygiene_refuses_unknown_entries_and_cleans_transients(tmp_pat
     base = tmp_path.resolve()
     home = base / 'home'
     home.mkdir()
+    os.chmod(home, 0o700)
+    _source_capability(home)
     work = base / 'work'
     work.mkdir(mode=0o700)
     (work / 'stray.txt').write_bytes(b'x')
@@ -588,6 +771,8 @@ def test_work_root_hygiene_refuses_unknown_entries_and_cleans_transients(tmp_pat
 def _minimal_home(base):
     home = base / 'home'
     (home / 'db').mkdir(parents=True)
+    os.chmod(home, 0o700)
+    _source_capability(home)
     (home / 'sessions').mkdir()
     (home / 'llm-wiki').mkdir()
     (home / 'config.json').write_bytes(b'{"cache": {"enabled": false}}')
@@ -603,17 +788,16 @@ def test_parameter_change_refuses_with_committed_steps(tmp_path, capsys):
     base = tmp_path.resolve()
     home = _minimal_home(base)
     work = base / 'work'
-    snapshot = work / 'snapshot'
-    (snapshot / 'payload').mkdir(parents=True, mode=0o700)
-    os.chmod(snapshot, 0o700)
-    (snapshot / 'payload/f.json').write_bytes(b'{}')
-    os.chmod(snapshot / 'payload/f.json', 0o600)
-    receipt = work / 'snapshot-receipt.json'
+    receipt = work / 'source-freeze-receipt.json'
+    baseline = work / 'credential-baseline.json'
+    work.mkdir(mode=0o700)
     receipt.write_bytes(b'{}\n')
     os.chmod(receipt, 0o600)
-    record = {'name': 'snapshot', 'idempotent': False, 'receipt': {'commitment': {}},
-              'outputs': {'snapshot': driver._root_digest(snapshot),
-                          'snapshot-receipt.json': driver._root_digest(receipt)}}
+    baseline.write_bytes(b'{}\n')
+    os.chmod(baseline, 0o600)
+    record = {'name': 'source-freeze', 'idempotent': False, 'receipt': {},
+              'outputs': {'credential-baseline.json': driver._root_digest(baseline),
+                          'source-freeze-receipt.json': driver._root_digest(receipt)}}
     checkpoint = {'format': driver.CHECKPOINT_FORMAT, 'work_root': str(work),
                   'operation': 'rehearsal-1', 'installation_id': 'install-rehearsal',
                   'parameters_digest': 'sha256:' + 'a' * 64, 'steps': [record]}
@@ -647,7 +831,24 @@ def test_parameter_change_reinitializes_an_uncommitted_checkpoint(tmp_path, caps
     committed = driver._load_checkpoint(work)
     assert committed['operation'] == 'rehearsal-1'
     assert committed['parameters_digest'] != 'sha256:' + 'a' * 64
-    assert [step['name'] for step in committed['steps']] == ['snapshot']
+    assert [step['name'] for step in committed['steps']] == ['source-freeze', 'snapshot']
+
+
+def test_interrupted_next_step_may_resume_its_owned_mutated_root(tmp_path):
+    work = tmp_path.resolve() / 'work'
+    work.mkdir(mode=0o700)
+    stable = work / 'stable'
+    mutable = work / 'mutable'
+    stable.write_bytes(b'stable')
+    mutable.write_bytes(b'before')
+    for path in (stable, mutable):
+        path.chmod(0o600)
+    steps = [{'outputs': {'stable': driver._root_digest(stable),
+                          'mutable': driver._root_digest(mutable)}}]
+    mutable.write_bytes(b'interrupted next-step state')
+    driver._verify_committed_roots(work, steps, ('mutable',))
+    with pytest.raises(ValueError, match='mutable'):
+        driver._verify_committed_roots(work, steps)
 
 
 def test_run_record_surviving_an_incomplete_checkpoint_refuses(tmp_path, capsys):

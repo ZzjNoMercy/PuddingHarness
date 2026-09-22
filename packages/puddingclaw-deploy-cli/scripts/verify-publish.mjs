@@ -56,7 +56,7 @@ async function main() {
   try {
     manifest = JSON.parse(await fs.readFile(path.join(runtimeRoot, "manifest.json"), "utf8"));
     await verifyRuntimeBundle(runtimeRoot, manifest);
-    buildEvidence = await verifyBuildEvidence(runtimeRoot, manifest);
+    buildEvidence = await verifyBuildEvidence(runtimeRoot, manifest, { requireReleaseable: !candidate });
     verifyReleaseContracts(manifest);
     await verifyCurrentSourceEvidence(path.resolve(packageRoot, "../.."), buildEvidence);
   } catch (error) {

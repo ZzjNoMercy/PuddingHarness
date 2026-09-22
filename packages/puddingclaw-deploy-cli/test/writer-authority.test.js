@@ -48,6 +48,19 @@ async function enrolled(events) {
   const journal = { format: FORMAT, binding_sha256: digest(binding), events };
   await writeFile(path.join(home, BINDING), encoded(binding)); await chmod(path.join(home, BINDING), 0o600);
   await writeFile(path.join(authority, 'journal.json'), encoded(journal)); await chmod(path.join(authority, 'journal.json'), 0o600);
+  const head = events.at(-1);
+  if (head?.state === 'assigned' && head.writer === 'puddingharness') {
+    const pointer = {
+      format: 'puddingharness-active-installation/v1', operation_id: head.operation_id,
+      cutover_manifest_sha256: hex('a'), prepared_manifest_sha256: head.migration_manifest_sha256,
+      source_home_identity: hex('b'), source_freeze_receipt_sha256: 'sha256:' + hex('c'),
+      active_installation_revision: head.active_installation_revision,
+      harness_assigned_event_sha256: head.sha256, knowledge_assigned_event_sha256: hex('d'),
+      active_writers: { session_harness: 'puddingharness', knowledge_catalog: 'puddingknowledge', connector_jobs: 'puddingknowledge' },
+    };
+    await writeFile(path.join(home, 'active-installation.json'), encoded(pointer));
+    await chmod(path.join(home, 'active-installation.json'), 0o600);
+  }
   return { root, home, journal, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
@@ -89,6 +102,8 @@ test('assigned-to-self head is admitted and the ticket binds revision 2', async 
   try {
     const ticket = await admittedTicket(home);
     assert.deepEqual(ticket.writer_authority, { binding_sha256: journal.binding_sha256, revision: 2, revision_sha256: rev2.sha256 });
+    await rm(path.join(home, 'active-installation.json'));
+    await assert.rejects(admittedTicket(home), (error) => error.code === 'installation_authority_rejected');
   } finally { await cleanup(); }
 });
 

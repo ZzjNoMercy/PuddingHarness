@@ -23,6 +23,8 @@ FORMAT = 'puddingharness-writer-authority/v1'
 MAX_BYTES = 65536
 SELF = 'puddingharness'
 WRITERS = ('puddingclaw', 'puddingharness')
+POINTER = 'active-installation.json'
+POINTER_FORMAT = 'puddingharness-active-installation/v1'
 
 
 def encoded(value):
@@ -159,9 +161,33 @@ def acquire_writer(home):
         current=journal(binding)['events'][-1]
         if current['state']=='assigned':
             if current['writer']!=SELF:raise ValueError('Installation writer authority is assigned to another product')
+            _active_pointer(home,current)
         elif current['state']!='existing_writer':raise ValueError('Installation has no active Harness writer authority')
         if load_binding(home)!=binding:raise ValueError('Authority binding changed')
         return os.dup(fd)
+
+
+def _active_pointer(home, event):
+    """Require the runtime pointer to agree with the assigned authority head."""
+    value=read(home/POINTER)
+    expected={'format','operation_id','cutover_manifest_sha256','prepared_manifest_sha256',
+              'source_home_identity','source_freeze_receipt_sha256',
+              'active_installation_revision','harness_assigned_event_sha256',
+              'knowledge_assigned_event_sha256','active_writers'}
+    writers={'session_harness':'puddingharness','knowledge_catalog':'puddingknowledge',
+             'connector_jobs':'puddingknowledge'}
+    if (set(value)!=expected or value['format']!=POINTER_FORMAT
+            or value['operation_id']!=event['operation_id']
+            or value['prepared_manifest_sha256']!=event['migration_manifest_sha256']
+            or value['active_installation_revision']!=event['active_installation_revision']
+            or value['harness_assigned_event_sha256']!=event['sha256']
+            or value['active_writers']!=writers
+            or not _hex64(value['cutover_manifest_sha256'])
+            or not _hex64(value['source_home_identity'])
+            or not re.fullmatch(r'sha256:[0-9a-f]{64}',value['source_freeze_receipt_sha256'])
+            or not _hex64(value['knowledge_assigned_event_sha256'])):
+        raise ValueError('Active installation pointer does not match writer authority')
+    return value
 
 
 def enroll(home,authority,enrollment_id):

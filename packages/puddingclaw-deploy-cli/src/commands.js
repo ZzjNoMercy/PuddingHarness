@@ -56,7 +56,8 @@ export async function doctorCommand(paths) {
   }
   probes.push(instance);
   const blocking = probes.filter((probe) => probe.required && ["failed", "needs_action", "occupied"].includes(probe.status));
-  return { schema_version: 1, status: blocking.length ? "needs_action" : "ok", initialized: Boolean(config?.initialized), home: paths.home, probes };
+  const initialized = Boolean(config?.initialized);
+  return { schema_version: 1, status: !initialized || blocking.length ? "needs_action" : "ok", initialized, home: paths.home, probes };
 }
 
 export function formatDoctor(result) {

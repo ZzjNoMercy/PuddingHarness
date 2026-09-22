@@ -43,10 +43,9 @@ directories are admitted with the modes their producers create):
 
 The window-rollback scenario adds:
 
-    lineage/                document-lineage stand-in workspace (state,
-                            authority, frozen export, target-before/after
-                            catalog copies) used because a frozen export
-                            requires an exactly-two-event journal
+    lineage/                target-before/after Catalog copies and frozen
+                            export from the actual four-event post-cutover
+                            Knowledge workspace
     window-disposition/     other-catalog reverse disposition receipt
     document-reverse/       reverse bindings, attachment bindings and the
                             reversed legacy candidate (manifest + catalog)
@@ -54,6 +53,7 @@ The window-rollback scenario adds:
                             export, attestation) for the absent-wiki proof
     evidence/               assembled rollback evidence (own disjoint root)
     window-checkpoint/      window rollback orchestrator checkpoint
+    rollback-activation/    legacy install, probe, pointer retirement and thaw
 
 Checkpoint contract: driver-checkpoint.json is canonical JSON published
 atomically after each committed step, recording {name, idempotent,
@@ -95,6 +95,7 @@ import sys
 from harness import cutover_orchestrator
 from harness import installation_authority as authority
 from harness import installation_manifest as manifests
+from harness import rollback_activation
 from harness import session_import
 from harness.home_freeze import _sync_directory
 from harness.installation_guard import (
@@ -115,6 +116,7 @@ from harness.rehearsal_snapshot import _mkdir
 from harness.source_snapshot import (
     MAX_ENTRIES, MAX_FILE, MAX_TOTAL, VerifiedSourceSnapshot, _encoded, _relative,
 )
+from harness.source_writer_fence import publish_source_fence
 
 FORMAT = 'puddingharness-rehearsal-driver/v1'
 RUN_FORMAT = 'puddingharness-rehearsal-driver-run/v1'
@@ -133,11 +135,37 @@ DEFAULT_WIKI_ROOT = 'llm-wiki'
 DEFAULT_TIMEOUT_SECONDS = 1800
 ENROLL_HARNESS = 'enroll-harness'
 ENROLL_KNOWLEDGE = 'enroll-knowledge'
-ENROLL_KNOWLEDGE_LINEAGE = 'enroll-knowledge-lineage'
 ENROLL_KNOWLEDGE_WIKI = 'enroll-knowledge-wiki'
 _WINDOW_DELTA_TITLE = 'Knowledge-era rehearsal edit'
 _MAX_STEP_OUTPUT = 8 * 1024 * 1024
 _TOKEN = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,79}')
+_OWNER = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}')
+_CLAW_IDENTITY_FORMAT = 'puddingclaw-rehearsal-interpreter-identity/v1'
+
+_CLAW_IDENTITY_PROBE = r'''
+import hashlib
+import importlib.metadata
+import importlib.util
+import json
+from pathlib import Path
+distribution = importlib.metadata.distribution('puddingclaw-backend')
+spec = importlib.util.find_spec('cutover_domain_inventory')
+if spec is None or spec.origin is None:
+    raise SystemExit(2)
+root = Path(distribution.locate_file('')).resolve()
+module = Path(spec.origin).resolve()
+if not module.is_file() or not module.is_relative_to(root):
+    raise SystemExit(3)
+relative = module.relative_to(root).as_posix()
+if relative not in {str(item) for item in (distribution.files or ())}:
+    raise SystemExit(4)
+print(json.dumps({'format': 'puddingclaw-rehearsal-interpreter-identity/v1',
+                  'package': 'puddingclaw-backend',
+                  'version': distribution.version,
+                  'module': relative,
+                  'module_sha256': 'sha256:' + hashlib.sha256(module.read_bytes()).hexdigest()},
+                 sort_keys=True))
+'''
 
 # The Knowledge workspace bootstrap is library-only upstream; this runs the
 # documented persistent-workspace open against the staged document-migration
@@ -152,10 +180,7 @@ with open_persistent_workspace(Path(sys.argv[1]), document_migration=Path(sys.ar
 '''
 
 # The window scenario's Knowledge-era edit: one deterministic title change on
-# the first migrated document asset.  The same snippet runs against the real
-# post-cutover workspace (window-delta step) and against the byte-identical
-# document-lineage stand-in (window-export step); the two receipts must be
-# equal, which pins the stand-in to the real workspace.
+# the first migrated document asset in the real post-cutover workspace.
 _KNOWLEDGE_WINDOW_DELTA = '''
 import hashlib
 import json
@@ -332,8 +357,18 @@ def _fold_outputs(steps):
     return folded
 
 
-def _verify_committed_roots(work, steps):
+def _verify_committed_roots(work, steps, mutable_roots=()):
+    """Verify prior outputs except roots owned by the interrupted next step.
+
+    A checkpointed step may atomically mutate a root produced by its
+    predecessor before it publishes the driver's next checkpoint.  Its own
+    protocol must recover that root; requiring the predecessor's digest first
+    would make the documented crash-resume path unreachable.
+    """
+    mutable = set(mutable_roots)
     for relative, expected in _fold_outputs(steps).items():
+        if relative in mutable:
+            continue
         if _root_digest(work / relative) != expected:
             raise ValueError('Committed rehearsal output diverged: ' + relative)
 
@@ -342,13 +377,14 @@ _CLEANABLE = re.compile(
     r'\.(?:driver-checkpoint\.json|run-record\.json|knowledge-receipt\.json)\.tmp-[0-9a-f]{16}\Z'
     r'|\.snapshot-receipt\.json\.rehearsal-part\Z')
 _KNOWN_TOP_LEVEL = {
-    'snapshot', 'snapshot-receipt.json', 'request', 'staging', 'knowledge-receipt.json',
+    'credential-baseline.json', 'source-freeze-receipt.json', 'snapshot', 'snapshot-receipt.json',
+    'request', 'staging', 'knowledge-receipt.json', 'readiness',
     'manifest', 'harness-home', 'harness-authority', 'knowledge-home', 'knowledge-authority',
     'barrier', 'checkpoint', CHECKPOINT_NAME, RUN_RECORD_NAME,
 }
 _WINDOW_TOP_LEVEL = _KNOWN_TOP_LEVEL | {
     'lineage', 'window-disposition', 'document-reverse', 'wiki-side',
-    'evidence', 'window-checkpoint',
+    'evidence', 'window-checkpoint', 'rollback-activation',
 }
 
 
@@ -436,14 +472,16 @@ def _run_cli(command, timeout, step, *, expect_json=True):
 
 
 class _Context:
-    def __init__(self, args, work, knowledge_python, window_operation=None):
+    def __init__(self, args, work, knowledge_python, claw_python, window_operation=None):
         self.work = work
         self.knowledge_python = str(knowledge_python)
+        self.claw_python = str(claw_python)
         self.source_home = str(_path(args.source_home))
         self.installation_id = args.installation_id
         self.source_revision = args.source_revision
         self.source_schema_revision = args.source_schema_revision
         self.operation = args.operation
+        self.credential_owner = args.credential_owner
         self.scenario = args.scenario
         self.window_operation = window_operation
         self.grafts = list(args.graft)
@@ -463,6 +501,42 @@ class _Context:
 
     def path(self, name):
         return self.work / name
+
+
+def _step_source_freeze(ctx):
+    baseline = rollback_activation.capture_credential_baseline(
+        ctx.source_home, ctx.path('credential-baseline.json'), operation_id=ctx.operation)
+    result = publish_source_fence(ctx.source_home, ctx.operation)
+    if (result.get('format') != 'puddingclaw-source-freeze/v1'
+            or result.get('state') != 'source_frozen'
+            or result.get('operation_id') != ctx.operation
+            or result.get('legacy_writer_fenced') is not True
+            or not _is_hex64(result.get('source_home_identity'))
+            or not _is_hex64(result.get('admission_capability_sha256'))
+            or not _is_hex64(result.get('source_freeze_receipt_sha256'))):
+        raise _StepFailure('source-freeze', 'step_receipt_invalid')
+    source_receipt = {
+        'format': result['format'],
+        'operation_id': result['operation_id'],
+        'source_home_identity': result['source_home_identity'],
+        'admission_capability_sha256': result['admission_capability_sha256'],
+        'source_freeze_receipt_sha256': result['source_freeze_receipt_sha256'],
+        'legacy_writer_fenced': True,
+    }
+    path = ctx.path('source-freeze-receipt.json')
+    # installation_manifest owns this consumer contract and defines canonical
+    # JSON without a trailing newline.
+    raw = manifests.encoded(source_receipt)
+    if path.exists() or path.is_symlink():
+        if _read_private(path) != raw:
+            raise ValueError('Source freeze receipt changed')
+        idempotent = True
+    else:
+        _replace_private(path, raw)
+        idempotent = False
+    return ({**source_receipt,
+             'credential_baseline_sha256': baseline['credential_baseline_sha256']},
+            idempotent)
 
 
 def _step_snapshot(ctx):
@@ -575,9 +649,151 @@ def _step_orchestrate(ctx):
     checkpoint = _json(_read_private(ctx.path('staging') / 'checkpoint.json'))
     if checkpoint.get('receipt_digest') != receipt_digest:
         raise _StepFailure('orchestrate', 'step_receipt_invalid')
-    _replace_private(ctx.path('knowledge-receipt.json'), canonical + b'\n')
+    # Preserve the exact canonical bytes committed by the orchestrator.  Every
+    # downstream readiness receipt binds this byte digest, so adding a newline
+    # here would create a second identity for the same semantic receipt.
+    _replace_private(ctx.path('knowledge-receipt.json'), canonical)
     return ({'plan_digest': result['plan_digest'], 'harness_plan_digest': result['harness_plan_digest'],
              'knowledge_receipt_digest': receipt_digest}, False)
+
+
+def _step_readiness(ctx):
+    root = ctx.path('readiness')
+    if root.is_symlink():
+        raise ValueError('Rehearsal readiness path is a symlink')
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(mode=0o700)
+    _sync_directory(ctx.work)
+
+    identity = _run_cli([ctx.claw_python, '-I', '-c', _CLAW_IDENTITY_PROBE],
+                        ctx.timeout, 'readiness')
+    if (set(identity) != {'format', 'package', 'version', 'module', 'module_sha256'}
+            or identity.get('format') != _CLAW_IDENTITY_FORMAT
+            or identity.get('package') != 'puddingclaw-backend'
+            or not _TOKEN.fullmatch(str(identity.get('version', '')))
+            or identity.get('module') != 'cutover_domain_inventory.py'
+            or not _is_digest(identity.get('module_sha256'))):
+        raise _StepFailure('readiness', 'step_receipt_invalid')
+
+    domains = ('session_harness', 'knowledge_catalog', 'connector_jobs')
+    source_outputs = {
+        'session_harness': root / 'source-session-inventory.json',
+        'knowledge_catalog': root / 'source-knowledge-inventory.json',
+        'connector_jobs': root / 'source-connector-inventory.json',
+    }
+    source_digests = {}
+    for domain in domains:
+        result = _run_cli([
+            ctx.claw_python, '-I', '-m', 'cutover_domain_inventory',
+            '--source-home-snapshot', str(ctx.path('snapshot')),
+            '--domain', domain, '--output', str(source_outputs[domain]),
+        ], ctx.timeout, 'readiness')
+        if (result.get('format') != 'puddingclaw-cutover-domain-inventory/v1'
+                or result.get('domain') != domain
+                or not _is_digest(result.get('inventory_sha256'))):
+            raise _StepFailure('readiness', 'step_receipt_invalid')
+        source_digests[domain] = result['inventory_sha256']
+
+    target_outputs = {
+        'session_harness': root / 'target-session-inventory.json',
+        'knowledge_catalog': root / 'target-knowledge-inventory.json',
+        'connector_jobs': root / 'target-connector-inventory.json',
+    }
+    session = _run_cli([
+        sys.executable, '-m', 'harness.cutover_domain_inventory',
+        '--staging', str(ctx.path('staging') / 'harness'),
+        '--output', str(target_outputs['session_harness']),
+    ], ctx.timeout, 'readiness')
+    if (session.get('format') != 'puddingharness-cutover-domain-inventory/v1'
+            or not _is_digest(session.get('inventory_sha256'))):
+        raise _StepFailure('readiness', 'step_receipt_invalid')
+    target_digests = {'session_harness': session['inventory_sha256']}
+    for domain in ('knowledge_catalog', 'connector_jobs'):
+        result = _run_cli([
+            ctx.knowledge_python, '-m', 'knowledge_platform.distribution.cutover_domain_inventory',
+            '--migration-receipt', str(ctx.path('knowledge-receipt.json')),
+            '--candidate', str(ctx.path('staging') / 'knowledge' / 'candidate'),
+            '--domain', domain, '--output', str(target_outputs[domain]),
+        ], ctx.timeout, 'readiness')
+        if (result.get('format') != 'puddingknowledge-cutover-domain-inventory/v1'
+                or result.get('domain') != domain
+                or not _is_digest(result.get('inventory_sha256'))):
+            raise _StepFailure('readiness', 'step_receipt_invalid')
+        target_digests[domain] = result['inventory_sha256']
+
+    coverage_path = root / 'domain-coverage.json'
+    coverage = _run_cli([
+        ctx.knowledge_python, '-m', 'knowledge_platform.distribution.cutover_domain_coverage',
+        '--migration-receipt', str(ctx.path('knowledge-receipt.json')),
+        '--candidate', str(ctx.path('staging') / 'knowledge' / 'candidate'),
+        '--source-session-inventory', str(source_outputs['session_harness']),
+        '--target-session-inventory', str(target_outputs['session_harness']),
+        '--source-knowledge-inventory', str(source_outputs['knowledge_catalog']),
+        '--target-knowledge-inventory', str(target_outputs['knowledge_catalog']),
+        '--source-connector-inventory', str(source_outputs['connector_jobs']),
+        '--target-connector-inventory', str(target_outputs['connector_jobs']),
+        '--output', str(coverage_path),
+    ], ctx.timeout, 'readiness')
+    if (coverage.get('format') != 'puddingknowledge-cutover-domain-coverage/v1'
+            or coverage.get('domain_count') != 3):
+        raise _StepFailure('readiness', 'step_receipt_invalid')
+
+    index_path = root / 'index-readiness.json'
+    indexes = _run_cli([
+        ctx.knowledge_python, '-m', 'knowledge_platform.distribution.cutover_index_readiness',
+        '--migration-receipt', str(ctx.path('knowledge-receipt.json')),
+        '--candidate', str(ctx.path('staging') / 'knowledge' / 'candidate'),
+        '--domain-coverage', str(coverage_path), '--output', str(index_path),
+    ], ctx.timeout, 'readiness')
+    if (indexes.get('format') != 'puddingknowledge-cutover-index-readiness/v1'
+            or indexes.get('state') not in {'ready', 'explicit_absent'}
+            or type(indexes.get('ready_count')) is not int or indexes['ready_count'] < 0):
+        raise _StepFailure('readiness', 'step_receipt_invalid')
+
+    credential_path = root / 'credential-rebind.json'
+    credentials = _run_cli([
+        ctx.knowledge_python, '-m', 'knowledge_platform.distribution.credential_rebind',
+        '--source-home', ctx.source_home, '--owner', ctx.credential_owner,
+        '--target-root', str(root / 'credential-target'),
+        '--receipt', str(credential_path),
+    ], ctx.timeout, 'readiness')
+    counts = credentials.get('counts')
+    if (credentials.get('format') != 'puddingknowledge-credential-rebind/v1'
+            or credentials.get('state') != 'completed'
+            or credentials.get('credential_continuity_verified') is not True
+            or not isinstance(counts, dict) or counts.get('failed') != 0):
+        raise _StepFailure('readiness', 'step_receipt_invalid')
+
+    readiness_path = root / 'cutover-readiness.json'
+    complete = _run_cli([
+        ctx.knowledge_python, '-m', 'knowledge_platform.distribution.cutover_readiness',
+        '--migration-receipt', str(ctx.path('knowledge-receipt.json')),
+        '--candidate', str(ctx.path('staging') / 'knowledge' / 'candidate'),
+        '--credential-rebind-receipt', str(credential_path),
+        '--domain-coverage', str(coverage_path), '--index-readiness', str(index_path),
+        '--output', str(readiness_path),
+    ], ctx.timeout, 'readiness')
+    if (complete.get('format') != 'puddingknowledge-cutover-readiness/v1'
+            or complete.get('state') != 'verified_inactive_complete'
+            or complete.get('covered_domains') != list(domains)
+            or complete.get('pending_domains') != []
+            or complete.get('cutover_readiness_verified') is not True
+            or complete.get('complete_migration_evidence') is not True
+            or complete.get('writer_fence_verified') is not False
+            or complete.get('activation_allowed') is not False
+            or _json(_read_private(readiness_path)) != complete):
+        raise _StepFailure('readiness', 'step_receipt_invalid')
+    return ({
+        'claw_interpreter_identity_sha256': _digest(_encoded(identity)),
+        'source_inventory_sha256': source_digests,
+        'target_inventory_sha256': target_digests,
+        'domain_coverage_sha256': _digest(_read_private(coverage_path)),
+        'index_readiness_sha256': _digest(_read_private(index_path)),
+        'credential_rebind_sha256': _digest(_read_private(credential_path)),
+        'cutover_readiness_sha256': _digest(_read_private(readiness_path)),
+        'credential_owner': ctx.credential_owner,
+    }, False)
 
 
 def _step_discover(ctx):
@@ -602,6 +818,8 @@ def _step_prepare(ctx):
                '--source-snapshot', str(ctx.path('snapshot')),
                '--orchestrator-staging', str(ctx.path('staging')),
                '--knowledge-receipt', str(ctx.path('knowledge-receipt.json')),
+               '--knowledge-readiness', str(ctx.path('readiness') / 'cutover-readiness.json'),
+               '--source-freeze-receipt', str(ctx.path('source-freeze-receipt.json')),
                '--output', str(ctx.path('manifest') / 'manifest.json')]
     result = _run_cli(command, ctx.timeout, 'prepare')
     if (result.get('format') != manifests.FORMAT or result.get('state') != 'PREPARED'
@@ -687,6 +905,7 @@ def _step_cutover(ctx):
                        '--knowledge-state', str(ctx.path('knowledge-home')),
                        '--knowledge-python', ctx.knowledge_python,
                        '--checkpoint-dir', str(ctx.path('checkpoint')),
+                       '--source-home', ctx.source_home,
                        '--manifest', str(ctx.path('manifest') / 'manifest.json'),
                        '--operation-id', ctx.operation,
                        '--timeout-seconds', str(ctx.timeout)], ctx.timeout, 'cutover')
@@ -710,6 +929,7 @@ def _step_cutover(ctx):
             or 'sha256:' + prepared != ctx.receipt('prepare')['manifest_digest']
             or not _is_hex64(result.get('cutover_manifest_sha256'))
             or not _is_hex64(result.get('active_pointer_sha256'))
+            or not _is_digest(result.get('source_freeze_receipt_sha256'))
             or not _is_hex64(result.get('harness_thaw_receipt_sha256'))
             or not _is_hex64(result.get('knowledge_thaw_receipt_sha256'))):
         raise _StepFailure('cutover', 'step_receipt_invalid')
@@ -727,6 +947,7 @@ def _step_cutover(ctx):
     return ({'prepared_manifest_sha256': prepared,
              'cutover_manifest_sha256': result['cutover_manifest_sha256'],
              'active_pointer_sha256': result['active_pointer_sha256'],
+             'source_freeze_receipt_sha256': result['source_freeze_receipt_sha256'],
              'harness_thaw_receipt_sha256': result['harness_thaw_receipt_sha256'],
              'knowledge_thaw_receipt_sha256': result['knowledge_thaw_receipt_sha256'],
              'harness_assigned_event_sha256': heads['harness']['sha256'],
@@ -751,6 +972,16 @@ def _step_finalize(ctx):
 
 
 def _step_window_delta(ctx):
+    root = ctx.path('lineage')
+    if root.is_symlink():
+        raise ValueError('Rehearsal lineage path is a symlink')
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(mode=0o700)
+    _sync_directory(ctx.work)
+    before = root / 'target-before.sqlite3'
+    shutil.copyfile(ctx.path('knowledge-home') / 'catalog.sqlite3', before)
+    os.chmod(before, 0o600)
     result = _run_cli([ctx.knowledge_python, '-c', _KNOWLEDGE_WINDOW_DELTA,
                        str(ctx.path('knowledge-home')), _WINDOW_DELTA_TITLE],
                       ctx.timeout, 'window-delta')
@@ -763,6 +994,12 @@ def _step_window_delta(ctx):
             or not _is_hex64(result['catalog_sha256_after'])
             or result['catalog_sha256_before'] == result['catalog_sha256_after']):
         raise _StepFailure('window-delta', 'step_receipt_invalid')
+    after = root / 'target-after.sqlite3'
+    shutil.copyfile(ctx.path('knowledge-home') / 'catalog.sqlite3', after)
+    os.chmod(after, 0o600)
+    if (_file_digest(before)[0] != result['catalog_sha256_before']
+            or _file_digest(after)[0] != result['catalog_sha256_after']):
+        raise ValueError('Real post-cutover Catalog delta diverged')
     return (result, False)
 
 
@@ -804,60 +1041,27 @@ def _validate_frozen_export(result, step):
         raise _StepFailure(step, 'step_receipt_invalid')
 
 
-def _lineage_authority(ctx, state, root, step):
-    enroll = _run_cli([ctx.knowledge_python, '-m', 'knowledge_platform.local.writer_authority',
-                       'enroll', '--state-dir', str(state), '--authority', str(root / 'authority'),
-                       '--operation-id', ENROLL_KNOWLEDGE_LINEAGE], ctx.timeout, step)
-    _writer_journal(enroll, KNOWLEDGE_WRITER_FORMAT, ENROLL_KNOWLEDGE_LINEAGE, 1,
-                    step, 'existing_writer')
-    suspended = _run_cli([ctx.knowledge_python, '-m', 'knowledge_platform.local.writer_authority',
-                          'suspend', '--state-dir', str(state),
-                          '--operation-id', ctx.window_operation], ctx.timeout, step)
-    _writer_journal(suspended, KNOWLEDGE_WRITER_FORMAT, ctx.window_operation, 2,
-                    step, 'suspended')
-
-
 def _step_window_export(ctx):
-    # A frozen export requires an exactly-two-event journal (enrollment plus
-    # this operation's suspension), which a post-cutover workspace can never
-    # present.  The export therefore runs against a document-lineage stand-in
-    # bootstrapped from the same staged candidate; the bootstrap is
-    # byte-deterministic, and the equal delta receipts below pin the stand-in
-    # to the real post-cutover workspace.
+    # Export the actual post-cutover workspace.  Its journal is the real four
+    # event chain: enrollment, cutover suspension/assignment, then the window
+    # suspension.  frozen_export validates that exact lineage.
     root = ctx.path('lineage')
     if root.is_symlink():
         raise ValueError('Rehearsal lineage path is a symlink')
-    if root.exists():
-        shutil.rmtree(root)
-    root.mkdir(mode=0o700)
-    _sync_directory(ctx.work)
-    state = root / 'state'
-    _run_cli([ctx.knowledge_python, '-c', _KNOWLEDGE_WORKSPACE_BOOTSTRAP,
-              str(state), str(ctx.path('staging') / 'knowledge' / 'candidate')],
-             ctx.timeout, 'window-export', expect_json=False)
-    before = root / 'target-before.sqlite3'
-    shutil.copyfile(state / 'catalog.sqlite3', before)
-    os.chmod(before, 0o600)
-    delta = _run_cli([ctx.knowledge_python, '-c', _KNOWLEDGE_WINDOW_DELTA,
-                      str(state), _WINDOW_DELTA_TITLE], ctx.timeout, 'window-export')
-    if delta != ctx.receipt('window-delta'):
-        raise _StepFailure('window-export', 'step_rejected')
-    if _file_digest(before)[0] != delta['catalog_sha256_before']:
-        raise ValueError('Lineage target-before catalog diverged')
-    if _file_digest(state / 'catalog.sqlite3')[0] != delta['catalog_sha256_after']:
-        raise ValueError('Lineage edited catalog diverged')
-    if _file_digest(ctx.path('knowledge-home') / 'catalog.sqlite3')[0] != \
-            delta['catalog_sha256_after']:
+    if not root.is_dir():
+        raise ValueError('Real Catalog lineage evidence is missing')
+    delta = ctx.receipt('window-delta')
+    if (_file_digest(root / 'target-before.sqlite3')[0] != delta['catalog_sha256_before']
+            or _file_digest(root / 'target-after.sqlite3')[0] != delta['catalog_sha256_after']
+            or _file_digest(ctx.path('knowledge-home') / 'catalog.sqlite3')[0]
+            != delta['catalog_sha256_after']):
         raise ValueError('Post-cutover workspace catalog diverged')
-    _lineage_authority(ctx, state, root, 'window-export')
     export = _run_cli([ctx.knowledge_python, '-m', 'knowledge_platform.local.frozen_export',
-                       '--state-dir', str(state), '--output', str(root / 'export'),
+                       '--state-dir', str(ctx.path('knowledge-home')),
+                       '--output', str(root / 'export'),
                        '--operation-id', ctx.window_operation],
                       ctx.timeout, 'window-export')
     _validate_frozen_export(export, 'window-export')
-    after = root / 'target-after.sqlite3'
-    shutil.copyfile(state / 'catalog.sqlite3', after)
-    os.chmod(after, 0o600)
     return ({'state': export['state'], 'plan_sha256': export['plan_sha256'],
              'file_count': export['file_count']}, False)
 
@@ -1092,7 +1296,7 @@ def _step_window_rollback(ctx):
     rolled_back = result.get('rolled_back_manifest_sha256')
     if (result.get('format') != WINDOW_FORMAT
             or result.get('state') != 'both_reassigned'
-            or result.get('rollback_completed') is not True
+            or result.get('rollback_completed') is not False
             or result.get('activation_allowed') is not False
             or result.get('installation_cutover_performed') is not False
             or result.get('production_activated') is not False
@@ -1125,6 +1329,50 @@ def _step_window_rollback(ctx):
              'knowledge_window_event_sha256': heads['knowledge']['sha256']}, False)
 
 
+def _step_window_activate(ctx):
+    stage = ctx.path('rollback-activation')
+    if stage.is_symlink():
+        raise ValueError('Rollback activation checkpoint is a symlink')
+    if not stage.exists():
+        stage.mkdir(mode=0o700)
+        _sync_directory(ctx.work)
+    result = _run_cli([
+        sys.executable, '-m', 'harness.rollback_activation', 'activate',
+        '--source-home', ctx.source_home,
+        '--harness-home', str(ctx.path('harness-home')),
+        '--knowledge-home', str(ctx.path('knowledge-home')),
+        '--candidate', str(ctx.path('document-reverse') / 'reverse'),
+        '--knowledge-python', ctx.knowledge_python,
+        '--checkpoint-dir', str(stage),
+        '--rollback-checkpoint', str(ctx.path('window-checkpoint') / 'checkpoint.json'),
+        '--rollback-evidence', str(ctx.path('evidence') / 'evidence.json'),
+        '--credential-baseline', str(ctx.path('credential-baseline.json')),
+        '--source-operation-id', ctx.operation,
+        '--rollback-operation-id', ctx.window_operation,
+    ], ctx.timeout, 'window-activate')
+    receipt_path = stage / rollback_activation.ACTIVATION_NAME
+    digest, _size = _file_digest(receipt_path)
+    if (result.get('format') != rollback_activation.ACTIVATION_FORMAT
+            or result.get('state') != 'rollback_completed'
+            or result.get('source_operation_id') != ctx.operation
+            or result.get('rollback_operation_id') != ctx.window_operation
+            or result.get('legacy_writer_thawed') is not True
+            or result.get('installation_path_rebound') is not True
+            or result.get('indexes_rebuilt') is not True
+            or result.get('credential_continuity_verified') is not True
+            or result.get('activation_allowed') is not True
+            or result.get('rollback_completed') is not True
+            or result.get('production_activated') is not False
+            or result.get('activation_receipt_sha256') != digest):
+        raise _StepFailure('window-activate', 'step_receipt_invalid')
+    return ({'state': result['state'], 'activation_receipt_sha256': digest,
+             'catalog_sha256': result['catalog_sha256'],
+             'active_pointer_retirement_sha256':
+                 result['active_pointer_retirement_sha256'],
+             'legacy_writer_thawed': True, 'rollback_completed': True},
+            result.get('idempotent') is True)
+
+
 # Ordered path-A steps: (name, owned work-root-relative output roots, body).
 # 'reset' steps (snapshot, request, enroll) own their outputs outright and
 # rebuild them inside the body whenever the step is uncommitted; every other
@@ -1132,9 +1380,12 @@ def _step_window_rollback(ctx):
 # scenario shares the forward chain through cutover and appends its own
 # steps; each appended step writes only roots no earlier step pins.
 STEPS = (
+    ('source-freeze', ('credential-baseline.json', 'source-freeze-receipt.json'),
+     _step_source_freeze),
     ('snapshot', ('snapshot', 'snapshot-receipt.json'), _step_snapshot),
     ('request', ('request',), _step_request),
     ('orchestrate', ('staging', 'knowledge-receipt.json'), _step_orchestrate),
+    ('readiness', ('readiness',), _step_readiness),
     ('discover', ('manifest',), _step_discover),
     ('prepare', ('manifest',), _step_prepare),
     ('enroll', ('harness-home', 'harness-authority', 'knowledge-home',
@@ -1150,8 +1401,8 @@ STEPS = (
 # Ordered window-rollback steps: the forward chain through cutover (no
 # finalize), then the Knowledge-era delta, the window fence, the reverse-chain
 # production and the window rollback itself.
-WINDOW_STEPS = STEPS[:8] + (
-    ('window-delta', ('knowledge-home',), _step_window_delta),
+WINDOW_STEPS = STEPS[:10] + (
+    ('window-delta', ('knowledge-home', 'lineage'), _step_window_delta),
     ('window-suspend', ('harness-home', 'harness-authority', 'knowledge-home',
                         'knowledge-authority'), _step_window_suspend),
     ('window-export', ('lineage',), _step_window_export),
@@ -1162,6 +1413,8 @@ WINDOW_STEPS = STEPS[:8] + (
     ('window-rollback', ('window-checkpoint', 'manifest', 'harness-home',
                          'harness-authority', 'knowledge-home',
                          'knowledge-authority'), _step_window_rollback),
+    ('window-activate', ('rollback-activation', 'harness-home', 'knowledge-home'),
+     _step_window_activate),
 )
 
 
@@ -1218,6 +1471,8 @@ def _verify_terminal(ctx):
     pointer_raw = _read_private(ctx.path('harness-home') / 'active-installation.json')
     if _sha256(pointer_raw) != cutover['active_pointer_sha256']:
         raise ValueError('Active installation pointer changed')
+    if _read_private(ctx.path('knowledge-home') / 'active-installation.json') != pointer_raw:
+        raise ValueError('Product active installation pointers diverged')
     pointer = _json(pointer_raw)
     if (pointer.get('format') != 'puddingharness-active-installation/v1'
             or pointer.get('cutover_manifest_sha256') != cutover['cutover_manifest_sha256']
@@ -1225,6 +1480,7 @@ def _verify_terminal(ctx):
             or pointer.get('active_installation_revision') != 'sha256:' + prepared
             or pointer.get('harness_assigned_event_sha256') != cutover['harness_assigned_event_sha256']
             or pointer.get('knowledge_assigned_event_sha256') != cutover['knowledge_assigned_event_sha256']
+            or pointer.get('source_freeze_receipt_sha256') != cutover['source_freeze_receipt_sha256']
             or pointer.get('active_writers') != manifests._CUTOVER_WRITERS):
         raise ValueError('Active installation pointer is invalid')
     with InstallationGuard(ctx.path('harness-home')):
@@ -1242,6 +1498,7 @@ def _verify_terminal_window(ctx):
     """Mirror the window-rollback orchestrator test assertions on the real run."""
     cutover = ctx.receipt('cutover')
     rolled = ctx.receipt('window-rollback')
+    activated = ctx.receipt('window-activate')
     rolled_back = rolled['rolled_back_manifest_sha256']
     evidence_sha = rolled['rollback_evidence_sha256']
     manifest_path = ctx.path('manifest') / 'manifest.json'
@@ -1302,8 +1559,8 @@ def _verify_terminal_window(ctx):
             or journals['knowledge']['events'][4]['writers'] != {
                 'knowledge_catalog': 'puddingclaw', 'connector_jobs': 'puddingclaw'}):
         raise ValueError('Window rollback writers changed')
-    # No thaw: both freeze markers hold the rev3 receipts, the retired rev2
-    # artifacts and the active pointer stay as history.
+    # The replacement products remain assigned away and fenced.  Legacy Home
+    # activation is a separate transaction and must not thaw either new writer.
     for home, marker, journal in (
             (ctx.path('harness-home'), HARNESS_FREEZE_NAME, journals['harness']),
             (ctx.path('knowledge-home'), KNOWLEDGE_FREEZE_NAME, journals['knowledge'])):
@@ -1316,9 +1573,28 @@ def _verify_terminal_window(ctx):
         for name in ('freeze-marker-rev4.json', 'thaw-receipt-rev4.json'):
             if (root / name).exists() or (root / name).is_symlink():
                 raise ValueError('A retired window artifact appeared')
-    pointer_raw = _read_private(ctx.path('harness-home') / 'active-installation.json')
-    if _sha256(pointer_raw) != cutover['active_pointer_sha256']:
-        raise ValueError('Active installation pointer changed')
+    for home in (ctx.path('harness-home'), ctx.path('knowledge-home')):
+        pointer = home / 'active-installation.json'
+        if pointer.exists() or pointer.is_symlink():
+            raise ValueError('A CUTOVER active installation pointer survived rollback activation')
+    activation = rollback_activation.activate_rollback(
+        ctx.source_home, ctx.path('harness-home'), ctx.path('knowledge-home'),
+        ctx.path('document-reverse') / 'reverse', ctx.knowledge_python,
+        ctx.path('rollback-activation'), ctx.path('window-checkpoint') / 'checkpoint.json',
+        ctx.path('evidence') / 'evidence.json', ctx.path('credential-baseline.json'),
+        source_operation_id=ctx.operation,
+        rollback_operation_id=ctx.window_operation)
+    if (activation.get('idempotent') is not True
+            or activation.get('rollback_completed') is not True
+            or activation.get('activation_receipt_sha256')
+            != activated['activation_receipt_sha256']):
+        raise ValueError('Legacy rollback activation receipt changed')
+    source = Path(ctx.source_home)
+    for marker in ('.installation-freeze-v1.json', '.installation-freeze-v1.json.part'):
+        if (source / marker).exists() or (source / marker).is_symlink():
+            raise ValueError('Legacy writer remained frozen after rollback activation')
+    if _file_digest(source / 'db/catalog.sqlite3')[0] != activated['catalog_sha256']:
+        raise ValueError('Activated legacy Catalog changed')
     # The rolled back installation stays fenced out for both products.
     guard = InstallationGuard(ctx.path('harness-home'))
     try:
@@ -1364,9 +1640,11 @@ def _verify_terminal_window(ctx):
         try:
             cutover_orchestrator.cutover(ctx.path('harness-home'), ctx.path('knowledge-home'),
                                          ctx.knowledge_python, probe, manifest_path,
-                                         'terminal-probe')
+                                         'terminal-probe', source_home=ctx.source_home)
         except ValueError as error:
-            if 'PREPARED' not in str(error):
+            if ('PREPARED' not in str(error)
+                    and 'does not bind this operation and Home' not in str(error)
+                    and 'not persistently frozen' not in str(error)):
                 raise
         else:
             raise ValueError('Re-cutover admitted a rolled back manifest')
@@ -1390,6 +1668,7 @@ def _verify_terminal_window(ctx):
             'active_pointer_digest': 'sha256:' + cutover['active_pointer_sha256'],
             'harness_window_event_digest': 'sha256:' + rolled['harness_window_event_sha256'],
             'knowledge_window_event_digest': 'sha256:' + rolled['knowledge_window_event_sha256'],
+            'rollback_activation_digest': 'sha256:' + activated['activation_receipt_sha256'],
             'rollback_window_open': True}
 
 
@@ -1404,9 +1683,10 @@ def _run_record(checkpoint, terminal):
             'terminal': terminal}
 
 
-def _parameters_digest(args, work, knowledge_python, window_operation):
+def _parameters_digest(args, work, knowledge_python, claw_python, window_operation):
     value = {'work_root': str(work), 'source_home': str(_path(args.source_home)),
              'knowledge_python': str(knowledge_python),
+             'claw_python': str(claw_python), 'credential_owner': args.credential_owner,
              'installation_id': args.installation_id,
              'source_revision': args.source_revision,
              'source_schema_revision': args.source_schema_revision,
@@ -1427,6 +1707,8 @@ def run_rehearsal(args):
     for value in (args.source_revision, args.source_schema_revision):
         if not _TOKEN.fullmatch(value):
             raise ValueError('Invalid rehearsal source identity')
+    if not _OWNER.fullmatch(args.credential_owner):
+        raise ValueError('Invalid rehearsal credential owner')
     authority._operation(args.operation)
     if args.scenario == 'path-a':
         if args.window_operation is not None:
@@ -1465,11 +1747,12 @@ def run_rehearsal(args):
     if not args.mappings:
         raise ValueError('At least one --map SRC=DST is required')
     knowledge_python = _validate_executable(args.knowledge_python)
+    claw_python = _validate_executable(args.claw_python)
     work = _path(args.work_root)
     _mkdir(work)
     _clean_transients(work)
     _check_top_level(work, allowed)
-    parameters = _parameters_digest(args, work, knowledge_python, window_operation)
+    parameters = _parameters_digest(args, work, knowledge_python, claw_python, window_operation)
     checkpoint = _load_checkpoint(work, table)
     if checkpoint is not None and checkpoint['parameters_digest'] != parameters:
         if checkpoint['steps']:
@@ -1480,11 +1763,12 @@ def run_rehearsal(args):
                       'operation': args.operation, 'installation_id': args.installation_id,
                       'parameters_digest': parameters, 'steps': []}
     else:
-        _verify_committed_roots(work, checkpoint['steps'])
+        next_roots = table[len(checkpoint['steps'])][1] if len(checkpoint['steps']) < len(table) else ()
+        _verify_committed_roots(work, checkpoint['steps'], next_roots)
     if (work / RUN_RECORD_NAME).exists() and len(checkpoint['steps']) != len(table):
         raise ValueError('Rehearsal run record survives an incomplete checkpoint')
 
-    ctx = _Context(args, work, knowledge_python, window_operation)
+    ctx = _Context(args, work, knowledge_python, claw_python, window_operation)
     ctx.committed = {step['name']: step for step in checkpoint['steps']}
     report = []
     for name, roots, body in table:
@@ -1536,11 +1820,18 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--work-root', required=True,
                         help='Private rehearsal work root (created 0700 when missing)')
-    parser.add_argument('--source-home', required=True, help='Live legacy PuddingClaw Home (read-only)')
+    parser.add_argument('--source-home', required=True,
+                        help='Offline legacy PuddingClaw Home to persistently freeze and snapshot')
     parser.add_argument('--knowledge-python',
                         default=os.environ.get('KNOWLEDGE_TEST_PYTHON'),
                         help='Explicit independent Knowledge interpreter '
                              '(default: KNOWLEDGE_TEST_PYTHON)')
+    parser.add_argument('--claw-python',
+                        default=os.environ.get('CLAW_TEST_PYTHON'),
+                        help='Explicit installed PuddingClaw interpreter '
+                             '(default: CLAW_TEST_PYTHON)')
+    parser.add_argument('--credential-owner', required=True,
+                        help='Legacy PuddingClaw credential owner to rebind')
     parser.add_argument('--installation-id', required=True)
     parser.add_argument('--source-revision', required=True)
     parser.add_argument('--source-schema-revision', required=True)
@@ -1571,6 +1862,8 @@ def main(argv=None):
     try:
         if not args.knowledge_python:
             raise ValueError('An explicit Knowledge interpreter is required')
+        if not args.claw_python:
+            raise ValueError('An explicit PuddingClaw interpreter is required')
         result = run_rehearsal(args)
     except _StepFailure as failure:
         step, code = failure.step, failure.error_code

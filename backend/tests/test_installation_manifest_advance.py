@@ -9,7 +9,8 @@ import pytest
 
 from harness.installation_authority import assign, digest, enroll, suspend
 from harness.installation_manifest import (
-    cutover_installation, discover_installation, finalize_installation, prepare_installation,
+    cutover_installation as _cutover_installation,
+    discover_installation, finalize_installation, prepare_installation as _prepare_installation,
     rollback_installation, validate_manifest,
 )
 from test_installation_manifest import _staging
@@ -17,6 +18,18 @@ from test_installation_manifest import _staging
 DOMAINS = ('session_harness', 'knowledge_catalog', 'connector_jobs')
 CUTOVER_WRITERS = {'session_harness': 'puddingharness', 'knowledge_catalog': 'puddingknowledge',
                    'connector_jobs': 'puddingknowledge'}
+SOURCE_FREEZE = 'sha256:' + 'f' * 64
+
+
+def cutover_installation(output, **kwargs):
+    kwargs.setdefault('source_freeze_receipt_sha256', SOURCE_FREEZE)
+    return _cutover_installation(output, **kwargs)
+
+
+def prepare_installation(root, stage, receipt, output, **kwargs):
+    kwargs.setdefault('knowledge_readiness', root.parent / 'cutover-readiness.json')
+    kwargs.setdefault('source_freeze_receipt', root.parent / 'source-freeze-receipt.json')
+    return _prepare_installation(root, stage, receipt, output, **kwargs)
 
 
 @pytest.fixture(scope='module')
@@ -94,6 +107,7 @@ def test_cutover_advance_registers_both_assignments_and_replays(staged, tmp_path
     assert manifest['active_installation_revision'] == 'sha256:' + commitment
     assert manifest['checkpoint']['harness_assigned_event_sha256'] == 'sha256:' + harness_journal['events'][2]['sha256']
     assert manifest['checkpoint']['knowledge_assigned_event_sha256'] == 'sha256:' + knowledge_journal['events'][2]['sha256']
+    assert manifest['checkpoint']['source_freeze_receipt_sha256'] == SOURCE_FREEZE
     assert manifest['rollback_window_open'] is True and manifest['completed_at'] is None
     assert manifest['started_at'] and manifest['staging_namespace']
     validate_manifest(manifest)
@@ -102,6 +116,17 @@ def test_cutover_advance_registers_both_assignments_and_replays(staged, tmp_path
     again = cutover_installation(output, harness_journal=harness_journal,
                                  knowledge_journal=knowledge_journal)
     assert again['idempotent'] is True and again['manifest_digest'] == result['manifest_digest']
+    assert output.read_bytes() == before
+
+
+def test_cutover_rejects_source_freeze_different_from_prepared_readiness(staged, tmp_path):
+    _, output = _prepared(staged, tmp_path)
+    before = output.read_bytes()
+    harness_journal, knowledge_journal = _journals(tmp_path, output)
+    with pytest.raises(ValueError, match='does not match readiness evidence'):
+        cutover_installation(
+            output, harness_journal=harness_journal, knowledge_journal=knowledge_journal,
+            source_freeze_receipt_sha256='sha256:' + 'e' * 64)
     assert output.read_bytes() == before
 
 
@@ -336,7 +361,7 @@ def test_cli_advance_commands_and_fail_closed_error(staged, tmp_path):
 
     def run(*arguments):
         return subprocess.run([sys.executable, '-m', 'harness.installation_manifest', *arguments],
-                              env=env, cwd='/private/tmp', capture_output=True, text=True, timeout=30)
+                              env=env, cwd=tmp_path, capture_output=True, text=True, timeout=30)
 
     def journal_file(name, journal):
         path = tmp_path / name
@@ -352,13 +377,15 @@ def test_cli_advance_commands_and_fail_closed_error(staged, tmp_path):
     assert report['error_code'] == 'installation_manifest_rejected'
     assert report['activation_allowed'] is False and report['installation_cutover_performed'] is False
     value = run('cutover', '--output', str(output), '--harness-journal', str(harness_file),
-                '--knowledge-journal', str(knowledge_file))
+                '--knowledge-journal', str(knowledge_file),
+                '--source-freeze-receipt-sha256', SOURCE_FREEZE)
     assert value.returncode == 0, value.stderr + value.stdout
     report = json.loads(value.stdout)
     assert report['state'] == 'CUTOVER' and report['idempotent'] is False
     assert report['installation_cutover_performed'] is False
     retry = run('cutover', '--output', str(output), '--harness-journal', str(harness_file),
-                '--knowledge-journal', str(knowledge_file))
+                '--knowledge-journal', str(knowledge_file),
+                '--source-freeze-receipt-sha256', SOURCE_FREEZE)
     assert retry.returncode == 0 and json.loads(retry.stdout)['idempotent'] is True
     done = run('finalize', '--output', str(output))
     assert done.returncode == 0 and json.loads(done.stdout)['state'] == 'FINALIZED'

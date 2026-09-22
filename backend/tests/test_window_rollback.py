@@ -22,6 +22,7 @@ from harness.installation_guard import AdmissionUnavailable, InstallationGuard
 from harness.installation_manifest import validate_manifest
 from test_installation_manifest import _staging
 from test_installation_manifest_advance import _evidence, _journals, _manifest, _prepared, _rewrite
+from test_installation_manifest_advance import SOURCE_FREEZE
 from test_rollback_orchestrator import _prepared_manifest
 from test_rollback_orchestrator import _evidence as _private_evidence
 from test_writer_barrier import SETUP
@@ -41,7 +42,8 @@ def _cutover_manifest(staged, tmp_path, name='m'):
     _, output = _prepared(staged, tmp_path, name)
     harness_journal, knowledge_journal = _journals(tmp_path, output)
     manifests.cutover_installation(output, harness_journal=harness_journal,
-                                   knowledge_journal=knowledge_journal)
+                                   knowledge_journal=knowledge_journal,
+                                   source_freeze_receipt_sha256=SOURCE_FREEZE)
     return output
 
 
@@ -180,7 +182,7 @@ def test_window_rollback_happy_path_exact_retry_and_persistent_freeze(roots):
     assert not (roots[0] / '.installation-freeze-v1.json').exists()
     result = run(roots)
     assert result['state'] == 'both_reassigned'
-    assert result['rollback_completed'] is True
+    assert result['rollback_completed'] is False
     assert result['activation_allowed'] is False and result['installation_cutover_performed'] is False
     assert result['production_activated'] is False
     cutover_hex = result['cutover_manifest_sha256']
@@ -294,7 +296,7 @@ def test_crash_at_every_checkpoint_resumes_identically(roots, crash_at):
         assert len(harness_events) == 5 and len(knowledge_events) == 5
         assert _document(roots)['state'] == 'ROLLED_BACK'
     result = run(roots)
-    assert result['state'] == 'both_reassigned' and result['rollback_completed'] is True
+    assert result['state'] == 'both_reassigned' and result['rollback_completed'] is False
     assert _document(roots)['state'] == 'ROLLED_BACK'
     assert (roots[0] / '.installation-freeze-v1.json').exists()
     assert (roots[1] / '.workspace-freeze-v1.json').exists()
@@ -542,7 +544,7 @@ def test_cli_window_rollback_and_fail_closed_error(roots):
     assert value.returncode == 0, value.stderr + value.stdout
     report = json.loads(value.stdout)
     assert report['format'] == 'puddingharness-window-rollback-orchestrator/v1'
-    assert report['state'] == 'both_reassigned' and report['rollback_completed'] is True
+    assert report['state'] == 'both_reassigned' and report['rollback_completed'] is False
     assert report['activation_allowed'] is False and report['installation_cutover_performed'] is False
     assert report['production_activated'] is False
     retry = cli('window-rollback', '--harness-home', str(roots[0]), '--knowledge-state', str(roots[1]),

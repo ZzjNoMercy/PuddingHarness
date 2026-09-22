@@ -158,12 +158,22 @@ def _evidence(root,name='reverse-evidence.json'):
  path=root/name;path.write_bytes(('{"reverse":"candidate","name":'+json.dumps(name)+'}\n').encode());path.chmod(0o600)
  return path,hashlib.sha256(path.read_bytes()).hexdigest()
 
+def _pointer(home,head):
+ value={'format':'puddingharness-active-installation/v1','operation_id':head['operation_id'],
+  'cutover_manifest_sha256':'a'*64,'prepared_manifest_sha256':head['migration_manifest_sha256'],
+  'source_home_identity':'b'*64,'source_freeze_receipt_sha256':'sha256:'+'c'*64,
+  'active_installation_revision':head['active_installation_revision'],
+  'harness_assigned_event_sha256':head['sha256'],'knowledge_assigned_event_sha256':'d'*64,
+  'active_writers':{'session_harness':'puddingharness','knowledge_catalog':'puddingknowledge','connector_jobs':'puddingknowledge'}}
+ path=home/'active-installation.json';path.write_bytes(encoded(value));path.chmod(0o600);return path
+
 def test_assign_and_thaw_restores_self_writes(roots):
  home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
  manifest=_manifest(home.parent,'PREPARED')
  result=assign(home,manifest,'op-1','puddingharness')
  assert result==assign(home,manifest,'op-1','puddingharness')
  head=result['events'][-1]
+ _pointer(home,head)
  assert head['revision']==2 and head['state']=='assigned' and head['writer']=='puddingharness'
  assert head['freeze_receipt_sha256']==result['events'][1]['freeze_receipt_sha256']
  assert head['rollback_evidence_sha256'] is None
@@ -178,6 +188,9 @@ def test_assign_and_thaw_restores_self_writes(roots):
  with InstallationGuard(home) as guard:assert guard.authority_fd is not None
  result=node(home,'console.log("accepted")');assert result.returncode==0,result.stderr
  assert result.stdout.strip()=='accepted'
+ (home/'active-installation.json').unlink()
+ with pytest.raises((ValueError,FileNotFoundError)):InstallationGuard(home).acquire()
+ denied=node(home,'console.log("BAD")');assert denied.returncode!=0 and 'BAD' not in denied.stdout
 
 def test_assign_requires_suspended_authority(roots):
  home,authority=roots;enroll(home,authority,'op-1')
@@ -216,7 +229,7 @@ def test_rollback_assign_requires_rolled_back_manifest_and_matching_evidence(roo
 def test_rollback_assignment_denies_self_runtime_and_offers_no_thaw(roots):
  home,authority=roots;enroll(home,authority,'op-1');suspend(home,'op-1')
  forward=_manifest(home.parent,'PREPARED')
- assign(home,forward,'op-1','puddingharness');thaw(home,forward,'op-1')
+ forward_result=assign(home,forward,'op-1','puddingharness');_pointer(home,forward_result['events'][-1]);thaw(home,forward,'op-1')
  with InstallationGuard(home):pass
  suspend(home,'op-2')
  evidence,commitment=_evidence(home.parent)

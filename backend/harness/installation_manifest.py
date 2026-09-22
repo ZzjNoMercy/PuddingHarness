@@ -73,13 +73,14 @@ _DIGEST_FIELDS = {
 _TEXT_FIELDS = {'staging_namespace', 'active_installation_revision', 'completed_at'}
 _OPTIONAL = _DIGEST_FIELDS | _TEXT_FIELDS | {
     'post_cutover_delta_count', 'rollback_delta_reconciled', 'failure_checkpoint',
-    'recovery_count', 'started_at',
+    'recovery_count', 'started_at', 'mapping_coverage',
 }
 _MANIFEST_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,159}')
 _CUTOVER_WRITERS = {'session_harness': 'puddingharness',
                     'knowledge_catalog': 'puddingknowledge',
                     'connector_jobs': 'puddingknowledge'}
-_ASSIGNED_KEYS = ('harness_assigned_event_sha256', 'knowledge_assigned_event_sha256')
+_ASSIGNED_KEYS = ('harness_assigned_event_sha256', 'knowledge_assigned_event_sha256',
+                  'source_freeze_receipt_sha256')
 _HEX64 = re.compile(r'[0-9a-f]{64}')
 
 
@@ -103,7 +104,174 @@ def _credential_uri(value):
 def _rebind_shape(item):
     return (isinstance(item, dict) and set(item) == {'slot', 'source_ref_digest', 'target_ref', 'status'}
             and _text(item['slot']) and _sha(item['source_ref_digest']) and _credential_uri(item['target_ref'])
-            and item['status'] in ('pending', 'rebound', 'failed'))
+            and item['status'] in ('pending', 'rebound', 'absent', 'not-applicable', 'failed'))
+
+
+def _knowledge_cutover_readiness(raw, plan, checkpoint, session_summary, declared_rebinds):
+    """Validate the authoritative PuddingKnowledge cutover-readiness receipt."""
+    value = _json(raw)
+    required = {
+        'format', 'state', 'installation_id', 'source_revision',
+        'source_snapshot_identity', 'inputs', 'domains', 'id_resource_mappings',
+        'credentials', 'credential_rebinds', 'indexes', 'covered_domains',
+        'pending_domains', 'cutover_readiness_verified',
+        'complete_migration_evidence', 'writer_fence_verified',
+        'activation_allowed',
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        state = value.get('state') if isinstance(value, dict) else None
+        if state == 'verified_inactive_partial':
+            raise ValueError('Partial Knowledge receipt cannot prepare an installation; complete readiness receipt required')
+        raise ValueError('Complete PuddingKnowledge cutover readiness receipt is required')
+    if value['format'] != 'puddingknowledge-cutover-readiness/v1':
+        raise ValueError('Knowledge cutover readiness format is unsupported')
+    if (value['state'] != 'verified_inactive_complete'
+            or value['source_snapshot_identity'] != plan['source_identity']
+            or not _text(value['installation_id']) or not _text(value['source_revision'])):
+        raise ValueError('Knowledge cutover readiness identity is invalid')
+    if (value['covered_domains'] != list(_DOMAINS) or value['pending_domains'] != []
+            or value['cutover_readiness_verified'] is not True
+            or value['complete_migration_evidence'] is not True
+            or value['writer_fence_verified'] is not False
+            or value['activation_allowed'] is not False):
+        raise ValueError('Knowledge cutover readiness safety flags are invalid')
+
+    inputs = value['inputs']
+    input_keys = {
+        'migration_receipt_sha256', 'candidate_manifest_sha256',
+        'candidate_tree_sha256', 'credential_rebind_receipt_sha256',
+        'domain_coverage_sha256', 'index_readiness_sha256',
+    }
+    if (not isinstance(inputs, dict) or set(inputs) != input_keys
+            or any(not _sha(item) for item in inputs.values())
+            or inputs['migration_receipt_sha256'] != checkpoint['receipt_digest']):
+        raise ValueError('Knowledge cutover readiness inputs do not bind the staged migration')
+
+    domains = value['domains']
+    domain_keys = {
+        'domain', 'source_count', 'target_count', 'mapped_count',
+        'source_ids_sha256', 'target_ids_sha256', 'mapping_sha256',
+        'mapping_coverage_bps', 'zero_object_attested',
+        'source_producer_format', 'target_producer_format',
+        'source_inventory_receipt_sha256', 'target_inventory_receipt_sha256',
+        'target_artifact_sha256', 'source_producer', 'target_producer',
+    }
+    if (not isinstance(domains, list) or len(domains) != len(_DOMAINS)
+            or [item.get('domain') for item in domains if isinstance(item, dict)] != list(_DOMAINS)):
+        raise ValueError('Knowledge cutover readiness must cover every writer domain in order')
+    domain_by_name = {}
+    for item in domains:
+        if (not isinstance(item, dict) or set(item) != domain_keys
+                or any(type(item[key]) is not int or item[key] < 0
+                       for key in ('source_count', 'target_count', 'mapped_count'))
+                or len({item['source_count'], item['target_count'], item['mapped_count']}) != 1
+                or item['mapping_coverage_bps'] != 10000
+                or type(item['zero_object_attested']) is not bool
+                or item['zero_object_attested'] is not (item['source_count'] == 0)
+                or any(not _sha(item[key]) for key in (
+                    'source_ids_sha256', 'target_ids_sha256', 'mapping_sha256',
+                    'source_inventory_receipt_sha256',
+                    'target_inventory_receipt_sha256', 'target_artifact_sha256'))
+                or not _text(item['source_producer_format'])
+                or not _text(item['target_producer_format'])
+                or item['source_producer'] != 'puddingclaw'
+                or item['target_producer'] != (
+                    'puddingharness' if item['domain'] == 'session_harness'
+                    else 'puddingknowledge')):
+            raise ValueError('Knowledge cutover domain coverage is invalid')
+        domain_by_name[item['domain']] = item
+    if domain_by_name['session_harness']['source_count'] != session_summary['object_count']:
+        raise ValueError('Knowledge session coverage count does not match the Harness import')
+
+    mappings = value['id_resource_mappings']
+    if not isinstance(mappings, list):
+        raise ValueError('Knowledge cutover resource mappings are invalid')
+    mapped_by_domain = {domain: [] for domain in _DOMAINS}
+    source_ids, resource_uris = set(), set()
+    for item in mappings:
+        if (not isinstance(item, dict) or set(item) != {'domain', 'source_id', 'resource_uri'}
+                or item['domain'] not in _DOMAINS or not _text(item['source_id'])
+                or not _resource_uri(item['resource_uri'])):
+            raise ValueError('Knowledge cutover resource mapping is invalid')
+        expected_scheme = 'harness://' if item['domain'] == 'session_harness' else 'knowledge://'
+        if (not item['resource_uri'].startswith(expected_scheme)
+                or item['source_id'] in source_ids or item['resource_uri'] in resource_uris):
+            raise ValueError('Knowledge cutover resource mappings are not a product-correct bijection')
+        source_ids.add(item['source_id'])
+        resource_uris.add(item['resource_uri'])
+        mapped_by_domain[item['domain']].append(
+            {'source_id': item['source_id'], 'resource_uri': item['resource_uri']})
+    for domain, items in mapped_by_domain.items():
+        if len(items) != domain_by_name[domain]['mapped_count']:
+            raise ValueError('Knowledge cutover resource mapping count is incomplete')
+        canonical = json.dumps(items, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+        if digest(canonical) != domain_by_name[domain]['mapping_sha256']:
+            raise ValueError('Knowledge cutover resource mapping digest changed')
+
+    rebinds = value['credential_rebinds']
+    terminal = {'rebound', 'absent', 'not-applicable'}
+    if (not isinstance(rebinds, list) or any(
+            not isinstance(item, dict) or set(item) != {'slot', 'source_ref_digest', 'target_ref', 'status'}
+            or not _text(item['slot']) or not _sha(item['source_ref_digest'])
+            or not _credential_uri(item['target_ref']) or item['status'] not in terminal
+            for item in rebinds)):
+        raise ValueError('Knowledge credential readiness is not terminal')
+    slots = [item['slot'] for item in rebinds]
+    if len(set(slots)) != len(slots):
+        raise ValueError('Knowledge credential readiness repeats a slot')
+    explicit = {item['slot']: item for item in declared_rebinds}
+    actual = {item['slot']: item for item in rebinds}
+    for slot, declaration in explicit.items():
+        ready = actual.get(slot)
+        if (ready is None or ready['source_ref_digest'] != declaration['source_ref_digest']
+                or ready['target_ref'] != declaration['target_ref']):
+            raise ValueError('Knowledge credential readiness changed a declared slot')
+    credentials = value['credentials']
+    if (not isinstance(credentials, dict)
+            or set(credentials) != {'selected_count', 'rebound_count', 'absent_count', 'covered_reference_count'}
+            or any(type(item) is not int or item < 0 for item in credentials.values())
+            or credentials['selected_count'] != len(rebinds)
+            or credentials['rebound_count'] != sum(item['status'] == 'rebound' for item in rebinds)
+            or credentials['absent_count'] != sum(item['status'] == 'absent' for item in rebinds)
+            or credentials['covered_reference_count'] != sum(
+                item['status'] == 'not-applicable' for item in rebinds)):
+        raise ValueError('Knowledge credential readiness counts changed')
+    indexes = value['indexes']
+    if (not isinstance(indexes, dict)
+            or set(indexes) != {'state', 'ready_count', 'explicit_absence'}
+            or indexes['state'] not in {'ready', 'explicit_absent'}
+            or type(indexes['ready_count']) is not int or indexes['ready_count'] < 0
+            or type(indexes['explicit_absence']) is not bool
+            or (indexes['state'] == 'ready'
+                and (indexes['ready_count'] < 1 or indexes['explicit_absence'] is not False))
+            or (indexes['state'] == 'explicit_absent'
+                and (indexes['ready_count'] != 0 or indexes['explicit_absence'] is not True))):
+        raise ValueError('Knowledge index readiness is invalid')
+    return value
+
+
+def _source_freeze_readiness(raw):
+    """Validate the independent, path-free receipt for the live legacy fence."""
+    value = _json(raw)
+    required = {
+        'format', 'operation_id', 'source_home_identity',
+        'source_freeze_receipt_sha256', 'legacy_writer_fenced',
+        'admission_capability_sha256',
+    }
+    if (not isinstance(value, dict) or set(value) != required
+            or value.get('format') != 'puddingclaw-source-freeze/v1'
+            or not _text(value.get('operation_id'))
+            or not isinstance(value.get('source_home_identity'), str)
+            or _HEX64.fullmatch(value['source_home_identity']) is None
+            or not isinstance(value.get('source_freeze_receipt_sha256'), str)
+            or _HEX64.fullmatch(value['source_freeze_receipt_sha256']) is None
+            or value.get('legacy_writer_fenced') is not True
+            or not isinstance(value.get('admission_capability_sha256'), str)
+            or _HEX64.fullmatch(value['admission_capability_sha256']) is None):
+        raise ValueError('Legacy source freeze readiness receipt is invalid')
+    if encoded(value) != raw:
+        raise ValueError('Legacy source freeze readiness receipt is not canonical')
+    return value
 
 
 def validate_manifest(value):
@@ -133,8 +301,9 @@ def validate_manifest(value):
         raise ValueError('Installation manifest repeats an object summary domain')
     mappings = value['id_resource_mappings']
     if not isinstance(mappings, list) or any(
-            not isinstance(item, dict) or set(item) != {'source_id', 'resource_uri'}
-            or not _text(item['source_id']) or not _resource_uri(item['resource_uri']) for item in mappings):
+            not isinstance(item, dict) or set(item) != {'domain', 'source_id', 'resource_uri'}
+            or item['domain'] not in _DOMAINS or not _text(item['source_id'])
+            or not _resource_uri(item['resource_uri']) for item in mappings):
         raise ValueError('Installation manifest resource mapping is invalid')
     rebinds = value['credential_rebinds']
     if not isinstance(rebinds, list) or any(not _rebind_shape(item) for item in rebinds):
@@ -142,6 +311,38 @@ def validate_manifest(value):
     slots = [item['slot'] for item in rebinds]
     if len(set(slots)) != len(slots):
         raise ValueError('Installation manifest repeats a credential slot')
+    if 'mapping_coverage' in value:
+        coverage = value['mapping_coverage']
+        coverage_keys = {
+            'domain', 'source_count', 'target_count', 'mapped_count',
+            'source_ids_sha256', 'target_ids_sha256', 'mapping_sha256',
+            'mapping_coverage_bps', 'zero_object_attested',
+            'source_producer_format', 'target_producer_format',
+            'source_inventory_receipt_sha256', 'target_inventory_receipt_sha256',
+            'target_artifact_sha256', 'source_producer', 'target_producer',
+        }
+        if (not isinstance(coverage, list) or len(coverage) != len(_DOMAINS)
+                or [item.get('domain') for item in coverage if isinstance(item, dict)] != list(_DOMAINS)):
+            raise ValueError('Installation manifest mapping coverage is invalid')
+        for item in coverage:
+            if (not isinstance(item, dict) or set(item) != coverage_keys
+                    or any(type(item[key]) is not int or item[key] < 0
+                           for key in ('source_count', 'target_count', 'mapped_count'))
+                    or len({item['source_count'], item['target_count'], item['mapped_count']}) != 1
+                    or item['mapping_coverage_bps'] != 10000
+                    or type(item['zero_object_attested']) is not bool
+                    or item['zero_object_attested'] is not (item['source_count'] == 0)
+                    or any(not _sha(item[key]) for key in (
+                        'source_ids_sha256', 'target_ids_sha256', 'mapping_sha256',
+                        'source_inventory_receipt_sha256',
+                        'target_inventory_receipt_sha256', 'target_artifact_sha256'))
+                    or not _text(item['source_producer_format'])
+                    or not _text(item['target_producer_format'])
+                    or item['source_producer'] != 'puddingclaw'
+                    or item['target_producer'] != (
+                        'puddingharness' if item['domain'] == 'session_harness'
+                        else 'puddingknowledge')):
+                raise ValueError('Installation manifest mapping coverage is invalid')
     writers = value['active_writers']
     if (not isinstance(writers, dict) or set(writers) != set(_DOMAINS)
             or any(writers[domain] not in _WRITERS for domain in _DOMAINS)):
@@ -199,17 +400,35 @@ def _skeleton(commitment, files, credential_rebinds):
     }
 
 
-def _prepared(discovered, orchestrator_checkpoint, staging_namespace, knowledge_target, started_at):
+def _prepared(discovered, orchestrator_checkpoint, staging_namespace, knowledge_target,
+              readiness, readiness_digest, source_fence, source_fence_digest, started_at):
     if not _text(started_at):
         raise ValueError('Prepared installation manifest start time is invalid')
     prepared = dict(discovered)
     prepared['state'] = 'PREPARED'
     prepared['targets'] = {**discovered['targets'], 'puddingknowledge': knowledge_target}
+    prepared['object_summaries'] = [
+        {'domain': item['domain'], 'object_count': item['source_count'],
+         'source_digest': item['source_ids_sha256']}
+        for item in readiness['domains']
+    ]
+    prepared['mapping_coverage'] = [dict(item) for item in readiness['domains']]
+    prepared['id_resource_mappings'] = [dict(item) for item in readiness['id_resource_mappings']]
+    prepared['credential_rebinds'] = [dict(item) for item in readiness['credential_rebinds']]
     prepared['checkpoint'] = {
         **discovered['checkpoint'],
         'orchestrator_plan_digest': orchestrator_checkpoint['plan_digest'],
         'orchestrator_harness_plan_digest': orchestrator_checkpoint['harness_plan_digest'],
         'orchestrator_knowledge_receipt_digest': orchestrator_checkpoint['receipt_digest'],
+        'knowledge_readiness_receipt_digest': readiness_digest,
+        'knowledge_domain_coverage_sha256': readiness['inputs']['domain_coverage_sha256'],
+        'knowledge_credential_rebind_receipt_sha256': readiness['inputs']['credential_rebind_receipt_sha256'],
+        'knowledge_index_readiness_sha256': readiness['inputs']['index_readiness_sha256'],
+        'source_freeze_receipt_sha256': 'sha256:' + source_fence['source_freeze_receipt_sha256'],
+        'source_freeze_evidence_sha256': source_fence_digest,
+        'source_admission_capability_sha256': 'sha256:' + source_fence['admission_capability_sha256'],
+        'source_freeze_operation_id': source_fence['operation_id'],
+        'source_home_identity': source_fence['source_home_identity'],
     }
     prepared['staging_namespace'] = staging_namespace
     prepared['started_at'] = started_at
@@ -223,10 +442,53 @@ def _pre_cutover_invariants(value):
         raise ValueError('Active writer drift before CUTOVER')
     if value['rollback_strategy'] != 'no_write_until_finalized' or value['rollback_window_open'] is not True:
         raise ValueError('Rollback policy drift before CUTOVER')
-    if value['id_resource_mappings']:
-        raise ValueError('Resource URI mappings are not minted before CUTOVER')
-    if any(item['status'] != 'pending' for item in value['credential_rebinds']):
-        raise ValueError('Credential rebind drift before CUTOVER')
+    if value['state'] == 'DISCOVERED':
+        if value['id_resource_mappings']:
+            raise ValueError('Resource URI mappings cannot exist before readiness')
+        if any(item['status'] != 'pending' for item in value['credential_rebinds']):
+            raise ValueError('Credential rebind drift before readiness')
+        return
+    if value['state'] not in ('PREPARED', 'ROLLED_BACK'):
+        raise ValueError('Pre-cutover readiness requires DISCOVERED or PREPARED evidence')
+    if {item['domain'] for item in value['object_summaries']} != set(_DOMAINS):
+        raise ValueError('Prepared manifest does not summarize every writer domain')
+    if len(value['id_resource_mappings']) != sum(
+            item['object_count'] for item in value['object_summaries']):
+        raise ValueError('Prepared manifest resource mappings are incomplete')
+    source_ids = [item['source_id'] for item in value['id_resource_mappings']]
+    resource_uris = [item['resource_uri'] for item in value['id_resource_mappings']]
+    if len(set(source_ids)) != len(source_ids) or len(set(resource_uris)) != len(resource_uris):
+        raise ValueError('Prepared manifest resource mappings are not one-to-one')
+    if any(item['status'] in {'pending', 'failed'} for item in value['credential_rebinds']):
+        raise ValueError('Prepared manifest contains a non-terminal credential rebind')
+    coverage = value.get('mapping_coverage')
+    if not isinstance(coverage, list):
+        raise ValueError('Prepared manifest does not retain mapping coverage')
+    coverage_by_domain = {item['domain']: item for item in coverage}
+    for domain in _DOMAINS:
+        mappings = [
+            {'source_id': item['source_id'], 'resource_uri': item['resource_uri']}
+            for item in value['id_resource_mappings'] if item['domain'] == domain
+        ]
+        if len(mappings) != coverage_by_domain[domain]['mapped_count']:
+            raise ValueError('Prepared manifest mapping coverage changed')
+        canonical = json.dumps(mappings, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+        if digest(canonical) != coverage_by_domain[domain]['mapping_sha256']:
+            raise ValueError('Prepared manifest mapping digest changed')
+    checkpoint = value['checkpoint']
+    if not _sha(checkpoint.get('knowledge_readiness_receipt_digest')):
+        raise ValueError('Prepared manifest does not bind complete readiness evidence')
+    if not _sha(checkpoint.get('source_freeze_receipt_sha256')):
+        raise ValueError('Prepared manifest does not bind the legacy source freeze')
+    if not _sha(checkpoint.get('source_freeze_evidence_sha256')):
+        raise ValueError('Prepared manifest does not bind the source freeze evidence file')
+    if not _sha(checkpoint.get('source_admission_capability_sha256')):
+        raise ValueError('Prepared manifest does not bind the source admission capability')
+    if not _text(checkpoint.get('source_freeze_operation_id')):
+        raise ValueError('Prepared manifest does not bind the source freeze operation')
+    if (not isinstance(checkpoint.get('source_home_identity'), str)
+            or _HEX64.fullmatch(checkpoint['source_home_identity']) is None):
+        raise ValueError('Prepared manifest does not bind the source Home identity')
 
 
 def _cutover_invariants(value):
@@ -294,7 +556,8 @@ def _assigned_event(journal, writer):
     return head
 
 
-def cutover_installation(output, *, harness_journal, knowledge_journal, _after_checkpoint=None):
+def cutover_installation(output, *, harness_journal, knowledge_journal,
+                         source_freeze_receipt_sha256, _after_checkpoint=None):
     """Advance a PREPARED manifest to CUTOVER committed by both assigned journals."""
     output = _output_path(output)
     directory = output.parent
@@ -317,6 +580,10 @@ def cutover_installation(output, *, harness_journal, knowledge_journal, _after_c
             raise ValueError('Cutover journals commit to different manifests')
         if stored['state'] == 'PREPARED':
             _pre_cutover_invariants(stored)
+            if not _sha(source_freeze_receipt_sha256):
+                raise ValueError('CUTOVER requires a verified legacy source freeze receipt')
+            if stored['checkpoint']['source_freeze_receipt_sha256'] != source_freeze_receipt_sha256:
+                raise ValueError('Cutover legacy source freeze does not match readiness evidence')
             if hashlib.sha256(raw).hexdigest() != commitment:
                 raise ValueError('Cutover journals commit to a different manifest')
             advanced = dict(stored, state='CUTOVER', active_writers=dict(_CUTOVER_WRITERS),
@@ -325,6 +592,7 @@ def cutover_installation(output, *, harness_journal, knowledge_journal, _after_c
                 **stored['checkpoint'],
                 'harness_assigned_event_sha256': 'sha256:' + harness_head['sha256'],
                 'knowledge_assigned_event_sha256': 'sha256:' + knowledge_head['sha256'],
+                'source_freeze_receipt_sha256': source_freeze_receipt_sha256,
             }
             validate_manifest(advanced)
             _replace_private(output, encoded(advanced))
@@ -340,6 +608,8 @@ def cutover_installation(output, *, harness_journal, knowledge_journal, _after_c
             raise ValueError('Cutover Harness assignment changed')
         if stored['checkpoint']['knowledge_assigned_event_sha256'] != 'sha256:' + knowledge_head['sha256']:
             raise ValueError('Cutover Knowledge assignment changed')
+        if stored['checkpoint']['source_freeze_receipt_sha256'] != source_freeze_receipt_sha256:
+            raise ValueError('Cutover legacy source freeze receipt changed')
         return _result(stored, True)
     finally:
         os.close(fd)
@@ -424,12 +694,19 @@ def finalize_installation(output, *, _after_checkpoint=None):
 
 
 def _result(manifest, idempotent):
+    readiness_bound = (
+        manifest['state'] in ('PREPARED', 'CUTOVER', 'ROLLED_BACK', 'FINALIZED')
+        and _sha(manifest['checkpoint'].get('knowledge_readiness_receipt_digest'))
+        and _sha(manifest['checkpoint'].get('source_freeze_receipt_sha256'))
+    )
     return {'format': FORMAT, 'state': manifest['state'],
             'manifest_digest': digest(encoded(manifest)),
             'snapshot_digest': manifest['snapshot_digest'], 'idempotent': idempotent,
-            'activation_allowed': False, 'installation_prepared': False,
+            'activation_allowed': False, 'installation_prepared': bool(readiness_bound),
             'installation_cutover_performed': False, 'rollback_completed': False,
-            'writer_fence_verified': False, 'credential_rebind_required': True}
+            'writer_fence_verified': bool(readiness_bound),
+            'credential_rebind_required': any(
+                item['status'] in {'pending', 'failed'} for item in manifest['credential_rebinds'])}
 
 
 def _declared_rebinds(credential_rebinds):
@@ -632,12 +909,15 @@ def discover_installation(source_home_snapshot, output, *, credential_rebinds=()
 
 
 def prepare_installation(source_home_snapshot, orchestrator_staging, knowledge_receipt, output, *,
-                         _after_checkpoint=None):
+                         knowledge_readiness, source_freeze_receipt, _after_checkpoint=None):
     output = _output_path(output)
-    stage, receipt_path = _path(orchestrator_staging), _path(knowledge_receipt)
+    stage, receipt_path, readiness_path, source_fence_path = map(
+        _path, (orchestrator_staging, knowledge_receipt, knowledge_readiness,
+                source_freeze_receipt))
     with VerifiedSourceSnapshot(source_home_snapshot) as snapshot:
         directory = output.parent
-        roots = (snapshot.root, stage, directory)
+        roots = (snapshot.root, stage, directory, receipt_path, readiness_path,
+                 source_fence_path)
         if any(a == b or a.is_relative_to(b) or b.is_relative_to(a)
                for index, a in enumerate(roots) for b in roots[index + 1:]):
             raise ValueError('Manifest, snapshot and staging roots must be disjoint')
@@ -662,19 +942,35 @@ def prepare_installation(source_home_snapshot, orchestrator_staging, knowledge_r
             files = inventory(snapshot.payload, require_sessions=False)
             if files != session_files:
                 raise ValueError('Source snapshot session domain changed since Harness import')
-            receipt = _receipt(_read_private(receipt_path), stage / 'knowledge',
-                               plan['request_digest'], plan['source_identity'])
-            receipt_digest = _digest(json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode())
-            if receipt_digest != checkpoint['receipt_digest']:
+            session_summary = {'domain': 'session_harness', 'object_count': len(files),
+                               'source_digest': digest(encoded(files))}
+            declared_rebinds = [
+                {**item, 'status': 'pending'} for item in stored['credential_rebinds']
+            ]
+            partial_receipt = _receipt(
+                _read_private(receipt_path), stage / 'knowledge',
+                plan['request_digest'], plan['source_identity'])
+            partial_digest = _digest(json.dumps(
+                partial_receipt, sort_keys=True, separators=(',', ':')).encode())
+            if partial_digest != checkpoint['receipt_digest']:
                 raise ValueError('Knowledge receipt does not match the orchestrator checkpoint')
-            discovered = _skeleton(snapshot.commitment, files, stored['credential_rebinds'])
+            readiness_raw = _read_private(readiness_path)
+            readiness = _knowledge_cutover_readiness(
+                readiness_raw, plan, checkpoint, session_summary, declared_rebinds)
+            readiness_digest = digest(readiness_raw)
+            source_fence_raw = _read_private(source_fence_path)
+            source_fence = _source_freeze_readiness(source_fence_raw)
+            source_fence_digest = digest(source_fence_raw)
+            discovered = _skeleton(snapshot.commitment, files, declared_rebinds)
             knowledge_target = _knowledge_target(plan['knowledge_release_identity'])
             staging_namespace = digest(str(stage).encode())
             if stored['state'] == 'DISCOVERED':
                 if stored != discovered:
                     raise ValueError('Discovered installation manifest drifted')
-                prepared = _prepared(discovered, checkpoint, staging_namespace, knowledge_target,
-                                     time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+                prepared = _prepared(
+                    discovered, checkpoint, staging_namespace, knowledge_target,
+                    readiness, readiness_digest, source_fence, source_fence_digest,
+                    time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
                 snapshot.verify()
                 _replace_private(output, encoded(prepared))
                 if _after_checkpoint:
@@ -682,8 +978,10 @@ def prepare_installation(source_home_snapshot, orchestrator_staging, knowledge_r
                 return _result(prepared, False)
             # started_at is stamped once at the PREPARED transition and carried
             # verbatim; every other field is independently re-derived on retry.
-            expected = _prepared(discovered, checkpoint, staging_namespace, knowledge_target,
-                                 stored.get('started_at'))
+            expected = _prepared(
+                discovered, checkpoint, staging_namespace, knowledge_target,
+                readiness, readiness_digest, source_fence, source_fence_digest,
+                stored.get('started_at'))
             if stored != expected:
                 raise ValueError('Prepared installation manifest drifted')
             return _result(stored, True)
@@ -717,6 +1015,10 @@ def main(argv=None):
     prepare.add_argument('--orchestrator-staging', type=Path, required=True)
     prepare.add_argument('--knowledge-receipt', type=Path, required=True,
                          help='Private JSON file carrying the orchestrator knowledge_receipt object')
+    prepare.add_argument('--knowledge-readiness', type=Path, required=True,
+                         help='Authoritative puddingknowledge-cutover-readiness/v1 receipt')
+    prepare.add_argument('--source-freeze-receipt', type=Path, required=True,
+                         help='Canonical path-free receipt for the live legacy source writer fence')
     prepare.add_argument('--output', type=Path, required=True, help='Manifest file inside a private directory')
     cutover = commands.add_parser('cutover', help='Advance a PREPARED manifest to CUTOVER from both assigned journals')
     cutover.add_argument('--output', type=Path, required=True, help='Manifest file inside a private directory')
@@ -724,6 +1026,8 @@ def main(argv=None):
                          help='Private JSON file carrying the validated Harness writer journal')
     cutover.add_argument('--knowledge-journal', type=Path, required=True,
                          help='Private JSON file carrying the validated Knowledge writer journal')
+    cutover.add_argument('--source-freeze-receipt-sha256', required=True,
+                         help='sha256 commitment to the verified live legacy source freeze marker')
     rollback = commands.add_parser('rollback', help='Advance a PREPARED or CUTOVER manifest to ROLLED_BACK bound to rollback evidence')
     rollback.add_argument('--output', type=Path, required=True, help='Manifest file inside a private directory')
     rollback.add_argument('--rollback-evidence', type=Path, required=True,
@@ -737,11 +1041,14 @@ def main(argv=None):
                 credential_rebinds=[_parse_rebind(value) for value in args.credential_rebind])
         elif args.command == 'prepare':
             result = prepare_installation(args.source_snapshot, args.orchestrator_staging,
-                                          args.knowledge_receipt, args.output)
+                                          args.knowledge_receipt, args.output,
+                                          knowledge_readiness=args.knowledge_readiness,
+                                          source_freeze_receipt=args.source_freeze_receipt)
         elif args.command == 'cutover':
             result = cutover_installation(args.output,
                 harness_journal=_json(_read_private(args.harness_journal)),
-                knowledge_journal=_json(_read_private(args.knowledge_journal)))
+                knowledge_journal=_json(_read_private(args.knowledge_journal)),
+                source_freeze_receipt_sha256=args.source_freeze_receipt_sha256)
         elif args.command == 'rollback':
             result = rollback_installation(args.output, rollback_evidence=args.rollback_evidence)
         else:

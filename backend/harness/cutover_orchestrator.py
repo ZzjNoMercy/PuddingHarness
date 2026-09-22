@@ -29,6 +29,7 @@ from harness.target_freeze import _executable_identity, _record
 from harness.knowledge_writer_receipt import (
     FREEZE_NAME, _private_bytes, inspect_binding, validate_receipt,
 )
+from harness.source_writer_fence import verify_source_fence
 
 FORMAT = 'puddingharness-cutover-orchestrator/v1'
 POINTER_FORMAT = 'puddingharness-active-installation/v1'
@@ -44,18 +45,18 @@ def _sha(raw):
 
 
 def cutover(harness_home, knowledge_state, knowledge_python, checkpoint_dir, manifest,
-            operation_id, *, timeout_seconds=120, _after_checkpoint=None):
+            operation_id, *, source_home, timeout_seconds=120, _after_checkpoint=None):
     authority._operation(operation_id)
     if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 3600:
         raise ValueError('Invalid timeout')
-    home, knowledge, stage, manifest_path = map(
-        authority._path, (harness_home, knowledge_state, checkpoint_dir, manifest))
+    home, knowledge, stage, manifest_path, source = map(
+        authority._path, (harness_home, knowledge_state, checkpoint_dir, manifest, source_home))
     harness_binding = authority.load_binding(home)
     if harness_binding is None:
         raise ValueError('Harness Home must already be enrolled')
     knowledge_binding = inspect_binding(knowledge)
     manifest_directory = authority.identity(manifest_path.parent)
-    roots = (home, knowledge, stage, manifest_path.parent,
+    roots = (home, knowledge, stage, manifest_path.parent, source,
              Path(harness_binding['authority']['path']),
              Path(knowledge_binding['authority']['path']))
     if any(a == b or a.is_relative_to(b) or b.is_relative_to(a)
@@ -63,6 +64,7 @@ def cutover(harness_home, knowledge_state, knowledge_python, checkpoint_dir, man
         raise ValueError('Cutover roots must be disjoint')
     python = _validate_executable(knowledge_python)
     executable = _executable_identity(python)
+    source_fence = verify_source_fence(source, operation_id)
     if not stage.exists():
         stage.mkdir(mode=0o700)
         _sync_directory(stage.parent)
@@ -80,7 +82,9 @@ def cutover(harness_home, knowledge_state, knowledge_python, checkpoint_dir, man
                 'harness_binding': harness_binding, 'knowledge_binding': knowledge_binding,
                 'checkpoint_identity': stage_identity, 'manifest_directory': manifest_directory,
                 'manifest_name': manifest_path.name, 'knowledge_python': str(python),
-                'knowledge_executable': executable, 'knowledge_release_identity': release_identity}
+                'knowledge_executable': executable, 'knowledge_release_identity': release_identity,
+                'source_home_identity': source_fence['source_home_identity'],
+                'source_freeze_receipt_sha256': source_fence['source_freeze_receipt_sha256']}
         import os
         lock_identity = os.fstat(fd)
 
@@ -94,6 +98,8 @@ def cutover(harness_home, knowledge_state, knowledge_python, checkpoint_dir, man
                 raise ValueError('Cutover manifest directory changed')
             if authority.load_binding(home) != harness_binding or inspect_binding(knowledge) != knowledge_binding:
                 raise ValueError('Writer enrollment changed')
+            if verify_source_fence(source, operation_id) != source_fence:
+                raise ValueError('Legacy source writer fence changed')
 
         def verify_control():
             verify_control_files()
@@ -174,6 +180,7 @@ def cutover(harness_home, knowledge_state, knowledge_python, checkpoint_dir, man
         harness_before = harness_journal()
         knowledge_before = knowledge_command('status')
         base_keys = {'format', 'operation_id', 'plan_sha256', 'prepared_manifest_sha256',
+                     'source_freeze_receipt_sha256',
                      'activation_allowed', 'installation_cutover_performed',
                      'rollback_completed', 'production_activated'}
         old = None
@@ -230,8 +237,11 @@ def cutover(harness_home, knowledge_state, knowledge_python, checkpoint_dir, man
                     raise ValueError('Installation manifest changed before cutover advance')
             elif document['state'] != 'CUTOVER' or current != old['cutover_manifest_sha256']:
                 raise ValueError('Cutover installation manifest changed')
+        source_freeze_digest = 'sha256:' + source_fence['source_freeze_receipt_sha256']
         base = {'format': FORMAT, 'operation_id': operation_id, 'plan_sha256': authority.digest(plan),
-                'prepared_manifest_sha256': prepared, 'activation_allowed': False,
+                'prepared_manifest_sha256': prepared,
+                'source_freeze_receipt_sha256': source_freeze_digest,
+                'activation_allowed': False,
                 'installation_cutover_performed': False, 'rollback_completed': False,
                 'production_activated': False}
         if old is not None and any(old[key] != value for key, value in base.items()
@@ -287,7 +297,8 @@ def cutover(harness_home, knowledge_state, knowledge_python, checkpoint_dir, man
         commit('both_assigned', journals=journals)
         verify_control()
         advance = manifests.cutover_installation(
-            manifest_path, harness_journal=harness_result, knowledge_journal=knowledge_result)
+            manifest_path, harness_journal=harness_result, knowledge_journal=knowledge_result,
+            source_freeze_receipt_sha256=source_freeze_digest)
         _, cutover_hex, cutover_document = manifest_facts()
         if advance['manifest_digest'] != 'sha256:' + cutover_hex or cutover_document['state'] != 'CUTOVER':
             raise ValueError('Cutover manifest advance changed')
@@ -297,17 +308,19 @@ def cutover(harness_home, knowledge_state, knowledge_python, checkpoint_dir, man
         verify_control()
         pointer = {'format': POINTER_FORMAT, 'operation_id': operation_id,
                    'cutover_manifest_sha256': cutover_hex, 'prepared_manifest_sha256': prepared,
+                   'source_home_identity': source_fence['source_home_identity'],
+                   'source_freeze_receipt_sha256': source_freeze_digest,
                    'active_installation_revision': 'sha256:' + prepared,
                    'harness_assigned_event_sha256': harness_head['sha256'],
                    'knowledge_assigned_event_sha256': knowledge_head['sha256'],
                    'active_writers': dict(manifests._CUTOVER_WRITERS)}
         pointer_bytes = authority.encoded(pointer)
-        pointer_path = home / POINTER_NAME
-        if pointer_path.exists() or pointer_path.is_symlink():
-            if _read_private(pointer_path) != pointer_bytes:
-                raise ValueError('Active installation pointer changed')
-        else:
-            _replace_private(pointer_path, pointer_bytes)
+        for pointer_path in (home / POINTER_NAME, knowledge / POINTER_NAME):
+            if pointer_path.exists() or pointer_path.is_symlink():
+                if _read_private(pointer_path) != pointer_bytes:
+                    raise ValueError('Active installation pointer changed')
+            else:
+                _replace_private(pointer_path, pointer_bytes)
         if reached('active_pointer_published') and old['active_pointer_sha256'] != _sha(pointer_bytes):
             raise ValueError('Committed active installation pointer changed')
         commit('active_pointer_published', journals=journals, cutover_manifest_sha256=cutover_hex,
@@ -376,7 +389,8 @@ def finalize_cutover(manifest, checkpoint_dir):
             if head['migration_manifest_sha256'] != checkpoint['prepared_manifest_sha256']:
                 raise ValueError('Cutover checkpoint manifest commitment changed')
         registration = {'harness_assigned_event_sha256': 'sha256:' + journals['harness']['events'][2]['sha256'],
-                        'knowledge_assigned_event_sha256': 'sha256:' + journals['knowledge']['events'][2]['sha256']}
+                        'knowledge_assigned_event_sha256': 'sha256:' + journals['knowledge']['events'][2]['sha256'],
+                        'source_freeze_receipt_sha256': checkpoint['source_freeze_receipt_sha256']}
         if any(document['checkpoint'].get(key) != value for key, value in registration.items()):
             raise ValueError('Finalized candidate does not bind the completed cutover')
         if document['active_installation_revision'] != 'sha256:' + checkpoint['prepared_manifest_sha256']:
@@ -393,6 +407,7 @@ def main(argv=None):
     commands = parser.add_subparsers(dest='command', required=True)
     run = commands.add_parser('cutover', help='Two-phase CUTOVER commit reassigning both product writers')
     for name in ('harness-home', 'knowledge-state', 'knowledge-python', 'checkpoint-dir',
+                 'source-home',
                  'manifest', 'operation-id'):
         run.add_argument('--'+name, required=True)
     run.add_argument('--timeout-seconds', type=int, default=120)
@@ -404,6 +419,7 @@ def main(argv=None):
         if args.command == 'cutover':
             result = cutover(args.harness_home, args.knowledge_state, args.knowledge_python,
                              args.checkpoint_dir, args.manifest, args.operation_id,
+                             source_home=args.source_home,
                              timeout_seconds=args.timeout_seconds)
         else:
             result = finalize_cutover(args.manifest, args.checkpoint_dir)

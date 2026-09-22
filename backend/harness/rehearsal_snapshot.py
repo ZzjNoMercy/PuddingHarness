@@ -336,6 +336,8 @@ def _repair_catalog(db_dir, before_digests, delete, recommit, work):
         checkpoint = connection.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchall()
         if checkpoint and checkpoint[0][0]:
             raise ValueError('Repaired catalog checkpoint is busy')
+        if connection.execute('PRAGMA journal_mode=DELETE').fetchone() != ('delete',):
+            raise ValueError('Repaired catalog could not leave WAL mode')
     finally:
         connection.close()
     if any((work / name).exists() for name in CATALOG_NAMES[1:]):
